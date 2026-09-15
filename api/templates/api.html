@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>AI 2 AI API</title>
+	<style>
+		:root { color-scheme: light; font-family: system-ui, sans-serif; background: #f4f1eb; color: #211914; }
+		main { max-width: 760px; margin: 8vh auto; padding: 32px; background: #fffdf8; border: 1px solid #ded7cb; border-radius: 12px; }
+		code, pre { background: #f0ece4; border-radius: 6px; padding: 3px 6px; }
+		pre { padding: 16px; overflow-x: auto; line-height: 1.5; }
+		a { color: #9a5d16; }
+	</style>
+</head>
+<body>
+	<main>
+		<h1>AI 2 AI API</h1>
+		<p>Une API compatible avec les clients OpenAI, alimentée par les modèles configurés dans l'administration Django.</p>
+		<h2>Endpoints</h2>
+		<ul>
+			<li><a href="{{ models_url }}"><code>GET /v1/models</code></a></li>
+			<li><code>POST /v1/chat/completions</code></li>
+		</ul>
+		<h2>Exemple</h2>
+		<pre>from openai import OpenAI
+
+client = OpenAI(
+		base_url="{{ base_url }}",
+		api_key="votre-cle-api",
+)
+response = client.chat.completions.create(
+		model="identifiant-du-modele",
+		messages=[{"role": "user", "content": "Bonjour"}],
+)
+print(response.choices[0].message.content)</pre>
+		<p>Configurez un fournisseur, son URL de base, un modèle actif et une clé active dans <a href="/admin/">l'administration</a>.</p>
+	</main>
+</body>
+</html>

@@ -1,0 +1,449 @@
+FICHES DU PROJET AI_2AI
+=======================
+
+1. PRESENTATION
+---------------
+Projet Django de chatbot personnalisable avec gestion de personas, credits, recharges, API compatible OpenAI et atelier de prototypage code.
+
+Technologies principales:
+- Django 6.1+
+- SQLite
+- HTML, CSS et JavaScript vanilla
+- Stripe
+- API externes Anthropic/OpenAI compatibles
+
+Applications Django:
+- chat: chatbot, modeles IA, fournisseurs et atelier DAP
+- ai_user: utilisateurs, authentification, credits et paiements
+- api: API compatible OpenAI
+
+2. ROUTES PRINCIPALES
+---------------------
+Dans ai_2ai/urls.py:
+- /admin/ : administration Django
+- /api/ : page de documentation API
+- /v1/ : endpoints API compatibles OpenAI
+- /auth/ : page connexion/inscription
+- /login/ : connexion
+- /signup/ : inscription
+- /telegram/auth/ : authentification Telegram
+- /whatsapp/send-otp/ : endpoint WhatsApp non finalise
+- /recharge/ : page de recharge
+- /recharge/create-checkout/ : creation session Stripe
+- /recharge/mobile-money/ : tentative Mobile Money
+- /recharge/success/ : retour apres paiement
+- /recharge/webhook/ : webhook Stripe
+- / : chatbot principal
+- /dap/ : atelier dev and prod
+
+3. APPLICATION CHAT
+-------------------
+Fichiers principaux:
+- chat/models.py
+- chat/views.py
+- chat/urls.py
+- chat/admin.py
+- chat/templates/chat.html
+- chat/templates/dap.html
+
+Modeles:
+
+APIProvider:
+- name, slug, base_url, docs_url
+- is_active, created_at
+- represente un fournisseur externe d'IA
+
+AIModel:
+- provider, name, model_id
+- is_active, created_at
+- represente un modele disponible
+
+APIKey:
+- provider, name, key
+- is_active, created_at, last_used_at
+- la cle possede une propriete masked_key
+- les cles sont actuellement stockees en clair en base
+
+Vue chat_home:
+- exige une authentification
+- redirige vers /auth/?next=/ si l'utilisateur est anonyme
+- transmet les modeles actifs au template
+- transmet le solde de credits
+
+Vue dap_home:
+- exige une authentification
+- redirige vers /auth/?next=/dap/ si necessaire
+- affiche dap.html
+
+4. CHAT PRINCIPAL
+-----------------
+Template: chat/templates/chat.html
+
+Interface:
+- barre laterale gauche
+- conversations
+- personas
+- zone de messages
+- panneau de personnalisation
+- compteur et jauge de credits
+- zone de saisie
+- menu mobile
+
+Personas par defaut:
+- Assistant general
+- Tuteur de langues
+- Coach code
+
+Chaque persona contient:
+- id
+- name
+- prompt
+- tone
+- temp
+- length
+
+Les personas sont actuellement geres uniquement en JavaScript et disparaissent au rechargement.
+
+Conversations:
+- creees en JavaScript
+- titre initial: Nouvelle conversation
+- titre ensuite derive du premier message
+- messages conserves uniquement en memoire navigateur
+- aucune persistance serveur actuelle
+
+Generation des reponses:
+
+Mode demo:
+- actif sans cle API
+- reponse generee localement
+- aucun appel reseau
+
+Mode API direct:
+- si state.apiKey est rempli, appel direct a Anthropic
+- URL: https://api.anthropic.com/v1/messages
+- la cle est exposee cote navigateur
+- recommande pour production: passer par le backend
+
+Credits frontend:
+- estimation approximative: longueur du texte / 4
+- deduction du message utilisateur
+- deduction de la reponse
+- affichage de l'historique local
+- notification coloree si credits insuffisants
+
+Limitation importante:
+- les deductions du chat ne sont pas faites cote serveur
+- CreditAccount.debit() n'est pas appele par chat.html
+- un rechargement peut donc contourner le solde frontend
+
+5. PERSONNALISATION
+--------------------
+Le bouton Personnaliser active le mode customize-mode.
+
+Fonctionnalites:
+- affichage pleine page du panneau de personnalisation
+- panneau Persona actif
+- prompt systeme
+- ton
+- temperature
+- longueur des reponses
+- nom du bot
+- avatar emoji
+- couleurs d'accent
+- theme clair/sombre
+- retour au chat
+- gestion du bouton retour Android/navigateur
+
+Apparence:
+- nom du bot et avatar verrouilles par defaut
+- clic sur crayon pour modifier
+- reverrouillage a la sortie du champ
+- sauvegarde localStorage sous ai2ai-appearance
+- titre de l'onglet modifie dynamiquement
+- favicon genere dynamiquement depuis l'emoji
+
+6. MENU MOBILE
+--------------
+Le chat contient:
+- bouton hamburger
+- panneau lateral gauche superpose
+- bouton de fermeture
+- voile sombre derriere le menu
+
+Le mode Personnaliser retire le menu mobile et le voile pour eviter une page sombre ou inutilisable.
+
+7. PAGE DEV AND PROD
+--------------------
+Template: chat/templates/dap.html
+URL: /dap/
+
+Interface:
+- editeur de code a gauche
+- apercu du resultat a droite
+- zone de prompt en bas a gauche
+- bouton Executer
+- bouton Reinitialiser
+- numeros de lignes
+- support de Tab
+- Ctrl/Cmd + Entree pour executer
+- apercu dans iframe sandboxe
+- affichage vertical sur mobile
+
+Limitation:
+- le prompt est seulement affiche comme recu
+- il ne modifie pas encore automatiquement le code avec un modele IA
+
+8. APPLICATION AI_USER
+-----------------------
+Fichiers principaux:
+- ai_user/models.py
+- ai_user/views.py
+- ai_user/signals.py
+- ai_user/urls.py
+- ai_user/admin.py
+- ai_user/templates/losign.html
+- ai_user/templates/recharge.html
+- ai_user/templates/recharge_success.html
+
+Modeles:
+
+TelegramIdentity:
+- lie un compte Django a un identifiant Telegram
+- stocke username, first_name, last_name
+
+CreditAccount:
+- un compte par utilisateur
+- balance
+- credit(amount)
+- debit(amount)
+- bloque les debits superieurs au solde
+
+CreditTransaction:
+- historique des recharges et consommations
+- amount positif pour un credit
+- amount negatif pour un debit
+- reasons: recharge, usage, adjustment
+
+RechargePurchase:
+- user
+- stripe_session_id
+- amount_cents
+- credits
+- status
+- created_at, paid_at
+
+Signal:
+- chaque nouvel utilisateur recoit automatiquement un CreditAccount
+- solde initial actuel: 0
+
+Authentification classique:
+- login par username/password
+- inscription manuelle
+- redirection next securisee
+
+Telegram:
+- validation HMAC du widget Telegram
+- verification de auth_date
+- creation ou recuperation de l'utilisateur
+- connexion automatique
+
+WhatsApp:
+- interface presente
+- endpoint encore non implemente
+- retourne actuellement 501
+
+9. RECHARGES
+------------
+Plans definis:
+- 5 dollars: 50 000 credits
+- 10 dollars: 110 000 credits
+- 25 dollars: 300 000 credits
+
+Regle generale:
+- 1 dollar = 10 000 credits
+
+Stripe:
+- creation d'une Checkout Session
+- metadata avec user_id et credits
+- webhook checkout.session.completed
+- creation idempotente de RechargePurchase
+- credit du compte utilisateur apres confirmation
+
+Mobile Money:
+Operateurs visibles:
+- Wave
+- Orange Money
+- Momo
+- Moov Money
+
+Le backend valide montant, operateur et numero puis retourne 503 car aucun prestataire n'est configure.
+
+10. APPLICATION API
+-------------------
+Fichiers principaux:
+- api/views.py
+- api/urls.py
+- api/templates/api.html
+
+Endpoints:
+- GET /api/
+- GET /v1/models
+- POST /v1/chat/completions
+
+Authentification:
+- variable API_COMPATIBLE_KEY
+- header Authorization: Bearer <cle>
+- si aucune cle et DEBUG=True, l'API est autorisee
+
+/models:
+- retourne les modeles actifs
+- format de liste compatible OpenAI
+
+/chat/completions:
+- POST uniquement
+- validation JSON et messages
+- recherche du modele actif
+- selection du fournisseur et de sa premiere cle active
+- appel externe
+- conversion Anthropic vers format OpenAI
+- streaming non supporte
+- mise a jour de last_used_at
+
+Limites:
+- pas de streaming
+- pas de rate limiting
+- pas de quotas
+- pas de debit de credits
+- cles stockees en clair
+- erreurs fournisseur partiellement renvoyees
+
+11. ADMINISTRATION
+------------------
+chat/admin.py:
+- APIProviderAdmin
+- APIKeyAdmin
+- AIModelAdmin
+
+ai_user/admin.py:
+- CreditAccountAdmin
+- CreditTransactionAdmin
+- transactions en lecture seule
+- creation manuelle des transactions interdite
+
+12. MIGRATIONS
+--------------
+chat:
+- 0001_initial: APIProvider et APIKey
+- 0002_aimodel: AIModel
+
+ai_user:
+- 0001_initial: CreditAccount et CreditTransaction
+- 0002_telegramidentity: TelegramIdentity
+- 0003_rechargepurchase: RechargePurchase
+
+Base de donnees:
+- SQLite
+- fichier: db.sqlite3
+
+13. CONFIGURATION
+-----------------
+requirements.txt:
+- Django>=6.1
+- stripe>=12.0
+
+Variables d'environnement:
+- TELEGRAM_BOT_TOKEN
+- TELEGRAM_BOT_USERNAME
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- API_COMPATIBLE_KEY
+
+Configuration actuelle:
+- DEBUG=True
+- SECRET_KEY en dur dans settings.py
+- ALLOWED_HOSTS=[]
+- SQLite
+- langue en-us
+- timezone UTC
+
+14. SECURITE
+------------
+Problemes a traiter avant production:
+- DEBUG doit etre desactive
+- SECRET_KEY doit venir de l'environnement
+- ALLOWED_HOSTS doit etre configure
+- cles API a chiffrer en base
+- ne pas exposer de cle API au navigateur
+- ajouter rate limiting API
+- ajouter quotas par utilisateur
+- debiter les credits cote serveur
+- renforcer la validation des formulaires
+- proteger les endpoints sensibles
+- ajouter logs et monitoring
+
+15. TESTS
+---------
+Tests chatbot:
+- acces authentifie
+- redirection anonyme
+- modeles actifs
+- credits affiches
+- retour apres login
+
+Tests API:
+- page documentation
+- authentification Bearer
+- liste des modeles
+- reponse chat compatible OpenAI
+
+Tests ai_user:
+- protection de la page recharge
+- operateurs Mobile Money
+- montant minimum
+- operateur inconnu
+- statut prestataire non configure
+
+Etat observe:
+- python3 manage.py check: OK
+- suite: 14 tests executes
+- 2 echecs dans ai_user/tests.py
+
+Les deux echecs concernent assertContains() qui attend par defaut un statut HTTP 200 alors que les endpoints renvoient volontairement 400 ou 503. Les tests devraient preciser status_code=400 ou status_code=503.
+
+16. PRIORITES RECOMMANDEES
+--------------------------
+1. Corriger les assertions des tests Mobile Money.
+2. Debiter les credits avec CreditAccount.debit() cote serveur.
+3. Creer les modeles Conversation, Message et Persona.
+4. Persister conversations et personas.
+5. Utiliser l'API backend au lieu d'Anthropic directement depuis le navigateur.
+6. Chiffrer les APIKey.
+7. Implementer le prompt DAP avec un vrai modele IA.
+8. Implementer WhatsApp OTP.
+9. Implementer Mobile Money reel.
+10. Ajouter tests pour /dap/ et les workflows mobiles.
+11. Ajouter rate limiting et quotas.
+12. Nettoyer settings.py pour la production.
+13. Ajouter validation et observabilite.
+
+17. JOURNAL DES MODIFICATIONS VALIDEES
+--------------------------------------
+Format: date | modification | fichiers | validation
+
+2026-09-13 | Ajout de la page dev and prod avec editeur, apercu iframe, prompt local et responsive mobile | chat/templates/dap.html, chat/views.py, chat/urls.py, chat/templates/chat.html | manage.py check OK
+
+2026-09-13 | Ajout du mode Personnaliser pleine page, retour Android/navigateur et correction de l'overlay mobile sombre | chat/templates/chat.html, chat/templates/base.html | diagnostics templates OK, manage.py check OK
+
+2026-09-13 | Ajout du menu lateral mobile avec bouton hamburger, fermeture et voile de fond | chat/templates/chat.html, chat/templates/base.html | diagnostics templates OK
+
+2026-09-13 | Deplacement des crayons uniquement dans Apparence, champs Nom du bot et Avatar verrouilles par defaut puis activables | chat/templates/chat.html, chat/templates/base.html | diagnostics templates OK
+
+2026-09-13 | Remplacement de l'alerte credits par une notification coloree non bloquante | chat/templates/chat.html, chat/templates/base.html | diagnostics templates OK
+
+2026-09-13 | Premier endpoint backend de chat et suppression de l'appel Anthropic direct dans le navigateur | chat/views.py, chat/urls.py, chat/templates/chat.html, chat/tests.py | tests chat OK avant refactor du contrat SendMessageView
+
+2026-09-13 | Refactor en SendMessageView, service fournisseur, verification avant appel, reserve puis ajustement du debit serveur et tests de securite | chat/services.py, chat/views.py, chat/urls.py, chat/templates/chat.html, chat/tests.py, ai_user/models.py | VALIDE: 9 tests chat OK, manage.py check OK
+
+Regle de suivi:
+- Ne marquer une modification comme VALIDE que si le controle adapte ou le test cible passe.
+- Les modifications non revalidees restent marquees EN COURS DE REVALIDATION.

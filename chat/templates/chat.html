@@ -1,0 +1,882 @@
+{% extends "base.html" %}
+
+{% block title %}AI 2 AI{% endblock %}
+
+
+
+{% block body %}
+<div class="app">
+  <div class="credit-notice" id="creditNotice" role="alert" aria-live="polite"></div>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <button type="button" class="mobile-sidebar-close" id="closeMobileSidebar" title="Fermer le menu" aria-label="Fermer le menu">×</button>
+    <div class="brand">
+      <div class="mark" id="brandMark">🦣</div>
+      <div>
+        <div class="name" id="brandName">Claude</div>
+        <div class="sub">Applications et sites web</div>
+      </div>
+    </div>
+
+    <nav class="quick-nav" aria-label="Navigation principale">
+      <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
+      <button type="button" id="customizeBtn">▣ &nbsp;Personnaliser</button>
+      <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
+    </nav>
+
+    <div class="section-label">Conversations
+      <button id="newConvoBtn" title="Nouvelle conversation">＋</button>
+    </div>
+    <div class="list" id="convoList"></div>
+
+    <div class="section-label">Personas
+      <button id="newPersonaBtn" title="Nouveau persona">＋</button>
+    </div>
+    <div class="list" id="personaList" style="flex:0 0 auto; max-height:180px;"></div>
+
+    <div class="sidebar-footer">Session locale — rien n'est envoyé à un serveur sans clé API renseignée.</div>
+  </aside>
+
+  <!-- MAIN CHAT -->
+  <main class="main">
+    <div class="chat-header">
+      <button type="button" class="mobile-sidebar-toggle" id="openMobileSidebar" title="Ouvrir le menu" aria-label="Ouvrir le menu">☰</button>
+      <div class="who">
+        <div class="avatar" id="chatAvatar">🦣</div>
+        <div>
+          <h2 id="chatTitle">Nouvelle conversation</h2>
+          <div class="persona-name" id="chatPersonaName">Assistant général</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="panel-toggle" id="toggleLeftPanel" title="Masquer le panneau gauche" aria-label="Masquer le panneau gauche">‹</button>
+        <div class="credit-pill" id="creditPill" role="button" tabindex="0" title="Voir les jetons">
+          <span id="creditPillText">— jetons</span>
+          <div class="bar"><div class="bar-fill" id="creditPillBar"></div></div>
+        </div>
+        <button type="button" class="panel-toggle" id="toggleRightPanel" title="Masquer le panneau droit" aria-label="Masquer le panneau droit">›</button>
+      </div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-state">
+        <div class="display">Choisis un persona, écris un message</div>
+        <div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div>
+      </div>
+    </div>
+
+    <form class="composer" id="composerForm">
+      {% csrf_token %}
+      <div class="composer-input-row">
+        <button type="button" class="composer-icon" id="attachBtn" title="Ajouter un fichier" aria-label="Ajouter un fichier">⌕</button>
+        <textarea id="composerInput" placeholder="Merry Christmas" rows="1"></textarea>
+        <button type="button" class="composer-icon" id="voiceBtn" title="Utiliser le microphone" aria-label="Utiliser le microphone">♩</button>
+        <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message">➜</button>
+      </div>
+      <div class="composer-tools" aria-label="Outils du message">
+        <button type="button" class="tool-btn" id="chatModeBtn" title="Mode conversation" aria-label="Mode conversation">◌</button>
+        <button type="button" class="tool-btn" id="imageModeBtn" title="Générer une image" aria-label="Générer une image">▧</button>
+        <button type="button" class="tool-btn" id="webModeBtn" title="Recherche web" aria-label="Recherche web">◎</button>
+        <button type="button" class="tool-btn" id="deepModeBtn" title="Réponse approfondie" aria-label="Réponse approfondie">◇</button>
+        <span class="tool-spacer"></span>
+        <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
+      </div>
+      <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
+        {% for ai_model in ai_models %}
+          <button type="button" class="model-chip{% if forloop.first %} active{% endif %}" data-model-id="{{ ai_model.model_id|escape }}">
+            <span class="model-dot" aria-hidden="true">✦</span>{{ ai_model.name }}
+          </button>
+        {% empty %}
+          <button type="button" class="model-chip active" data-model-id="demo-mistral"><span class="model-dot" aria-hidden="true">✦</span>Mistral</button>
+           <button type="button" class="model-chip" data-model-id="demo-claude"><span class="model-dot" aria-hidden="true">✦</span>Claude</button>
+           <button type="button" class="model-chip" data-model-id="demo-gemini"><span class="model-dot" aria-hidden="true">✦</span>Gemini 3 Pro</button>
+        {% endfor %}
+      </div>
+    </form>
+  </main>
+
+  <!-- RIGHT PANEL -->
+  <aside class="panel" id="customizePanel">
+    <button type="button" class="customize-back" id="customizeBack" aria-label="Retour au chat">‹ <span>Retour au chat</span></button>
+    <div class="gauge-wrap">
+      <h3 style="align-self:flex-start;">Solde de jetons</h3>
+      <div class="gauge">
+        <svg width="128" height="128" viewBox="0 0 128 128">
+          <circle class="track" cx="64" cy="64" r="54"></circle>
+          <circle class="fill" id="gaugeFill" cx="64" cy="64" r="54" stroke-dasharray="339" stroke-dashoffset="0"></circle>
+        </svg>
+        <div class="gauge-center">
+          <div class="num" id="gaugeNum">0</div>
+          <div class="lbl">jetons restants</div>
+        </div>
+      </div>
+      <div class="low-warning" id="lowWarning">⚠ Solde bas — pense à recharger</div>
+      <button class="recharge-btn" id="rechargeBtn" type="button" {% if not is_authenticated %}disabled{% endif %}>
+        Recharger
+      </button>
+    </div>
+
+    <h3 id="customizationStart">Persona actif</h3>
+    <div class="field">
+      <label for="personaSelect">Choisir un persona</label>
+      <select id="personaSelect"></select>
+    </div>
+    <div class="field">
+      <label for="personaSystemPrompt">Prompt système</label>
+      <textarea id="personaSystemPrompt"></textarea>
+    </div>
+    <div class="field">
+      <label for="personaTone">Ton de réponse</label>
+      <select id="personaTone">
+        <option value="neutre">Neutre</option>
+        <option value="decontracte">Décontracté</option>
+        <option value="formel">Formel</option>
+        <option value="pedagogue">Pédagogue</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="personaTemp">Créativité (température) — <span id="tempVal">0.7</span></label>
+      <input type="range" id="personaTemp" min="0" max="1" step="0.1" value="0.7">
+      <div class="range-row"><span>précis</span><span>créatif</span></div>
+    </div>
+    <div class="field">
+      <label for="personaLength">Longueur des réponses</label>
+      <select id="personaLength">
+        <option value="courte">Courte</option>
+        <option value="moyenne" selected>Moyenne</option>
+        <option value="longue">Détaillée</option>
+      </select>
+    </div>
+
+    <div class="divider"></div>
+
+    <h3>Apparence</h3>
+    <div class="field">
+      <label for="botNameInput">Nom du bot</label>
+      <div class="editable-field"><input type="text" id="botNameInput" value="Le Comptoir" maxlength="40" readonly><button type="button" class="edit-icon" data-edit-target="botNameInput" title="Modifier le nom du bot" aria-label="Modifier le nom du bot">✎</button></div>
+    </div>
+    <div class="field">
+      <label for="botAvatarInput">Avatar (emoji)</label>
+      <div class="editable-field"><input type="text" id="botAvatarInput" value="🦣" maxlength="4" readonly><button type="button" class="edit-icon" data-edit-target="botAvatarInput" title="Modifier l'avatar" aria-label="Modifier l'avatar">✎</button></div>
+    </div>
+    <div class="field">
+      <label>Couleur d'accent</label>
+      <div class="swatches" id="swatches" role="group" aria-label="Couleurs d'accent"></div>
+    </div>
+    <div class="toggle-row">
+      <label style="margin:0;font-size:11.5px;opacity:.65;">Thème</label>
+      <div class="theme-toggle">
+        <button type="button" id="themeLight" class="active">Clair</button>
+        <button type="button" id="themeDark">Sombre</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <h3>Connexion API (optionnel)</h3>
+    <div class="field">
+      <label for="aiModelSelect">Modèle IA</label>
+      <select id="aiModelSelect">
+        {% for ai_model in ai_models %}
+          <option value="{{ ai_model.model_id }}" data-provider="{{ ai_model.provider.slug }}">{{ ai_model.name }} — {{ ai_model.provider.name }}</option>
+        {% empty %}
+          <option value="demo-mistral">Mistral (démo)</option>
+          <option value="demo-claude">Claude (démo)</option>
+          <option value="demo-gemini">Gemini 3 Pro (démo)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="font-size:10.5px; opacity:.55; line-height:1.5; margin-bottom:10px;">
+      Les appels IA passent par le backend Django. Si aucun modèle actif n'est configuré, le mode démo local reste disponible.
+    </div>
+
+    <div class="divider"></div>
+
+    <h3>Historique de consommation</h3>
+    <div class="log" id="usageLog"><div style="opacity:.5;">Aucune activité pour l'instant</div></div>
+  </aside>
+
+</div>
+
+<script>
+(function(){
+  // ---------- State ----------
+  const ACCENTS = ["#E8A33D","#3F8E8A","#B4483A","#6C6FCB","#4E9F3D"];
+  let state = {
+    credits: Number("{{ initial_credits|default:0 }}"),
+    totalCredits: Math.max(Number("{{ initial_credits|default:0 }}"), 1),
+    isAuthenticated: "{{ is_authenticated|yesno:'true,false' }}" === "true",
+    loginUrl: "{{ login_url|default:'/auth/?next=/' }}",
+    hasActiveModels: "{{ has_active_models|yesno:'true,false' }}" === "true",
+    theme: "light",
+    accent: ACCENTS[0],
+    accentHover: ACCENTS[0],
+    accentInk: "#211914",
+    botName: "Le Comptoir",
+    botAvatar: "🦣",
+    modelId: "{{ ai_models.0.model_id|default:'demo-mistral'|escapejs }}",
+    demoModels: {
+      "demo-mistral": "Mistral",
+      "demo-claude": "Claude",
+      "demo-gemini": "Gemini 3 Pro"
+    },
+    personas: [],
+    activePersonaId: null,
+    conversations: [],
+    activeConvoId: null,
+    usageLog: []
+  };
+
+  function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
+
+  async function newConversation(personaId){
+    const persona = state.personas.find(p => p.id === personaId) || state.personas[0];
+    const convo = { id: null, title: "Nouvelle conversation", personaId: persona.id, messages: [] };
+    state.conversations.unshift(convo);
+    state.activeConvoId = null;
+    return convo;
+  }
+
+  async function loadConversations(){
+    if(!state.isAuthenticated) return;
+    try{
+      const res = await fetch("/chat/api/conversations/");
+      if(!res.ok) throw new Error("Erreur serveur " + res.status);
+      const list = await res.json();
+      state.conversations = list.map(c => ({ id: c.id, title: c.title, personaId: c.persona_id || state.activePersonaId, messages: null }));
+      if(state.conversations.length > 0){
+        state.activeConvoId = state.conversations[0].id;
+        await loadConversationMessages(state.activeConvoId);
+      }
+    }catch(err){
+      console.error("Erreur chargement conversations", err);
+    }
+  }
+
+  async function loadPersonas(){
+    if(!state.isAuthenticated){
+      state.personas = [{ id: "p1", name: "Assistant général", prompt: "Tu es un assistant poli, clair et utile.", tone: "neutre", temp: 0.7, length: "moyenne" }];
+      state.activePersonaId = "p1";
+      return;
+    }
+    try{
+      const res = await fetch("/chat/api/personas/");
+      if(!res.ok) throw new Error("Erreur serveur " + res.status);
+      const list = await res.json();
+      state.personas = list;
+      state.activePersonaId = list.length ? list[0].id : null;
+    }catch(err){
+      console.error("Erreur chargement personas", err);
+    }
+  }
+
+  async function loadConversationMessages(convoId){
+    const convo = state.conversations.find(c => c.id === convoId);
+    if(!convo || !convoId) return;
+    try{
+      const res = await fetch(`/chat/api/conversations/${convoId}/`);
+      if(!res.ok) throw new Error("Erreur serveur " + res.status);
+      const data = await res.json();
+      convo.messages = data.messages.map(m => ({
+        role: m.role === "assistant" ? "bot" : m.role,
+        content: m.content,
+        tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens
+      }));
+      convo.title = data.title;
+      convo.personaId = data.persona_id || convo.personaId;
+      renderAll();
+    }catch(err){
+      console.error("Erreur chargement messages", err);
+    }
+  }
+
+  function activePersona(){
+    const convo = activeConvo();
+    const pid = convo ? convo.personaId : state.activePersonaId;
+    return state.personas.find(p => p.id === pid) || state.personas[0];
+  }
+  function activeConvo(){
+    return state.conversations.find(c => c.id === state.activeConvoId) || null;
+  }
+
+  // ---------- Token estimation ----------
+  function estimateTokens(text){
+    return Math.max(1, Math.round(text.length / 4));
+  }
+
+  function contrastColor(hex){
+    const value = hex.replace("#", "");
+    const red = parseInt(value.slice(0, 2), 16);
+    const green = parseInt(value.slice(2, 4), 16);
+    const blue = parseInt(value.slice(4, 6), 16);
+    const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+    return luminance > 0.62 ? "#211914" : "#FFFFFF";
+  }
+
+  function darken(hex, amount){
+    const value = hex.replace("#", "");
+    const channel = index => Math.max(0, Math.round(parseInt(value.slice(index, index + 2), 16) * (1 - amount)));
+    return "#" + [0, 2, 4].map(index => channel(index).toString(16).padStart(2, "0")).join("");
+  }
+
+  function applyAccent(color){
+    state.accent = color;
+    state.accentHover = darken(color, 0.16);
+    state.accentInk = contrastColor(color);
+    document.documentElement.style.setProperty("--accent", state.accent);
+    document.documentElement.style.setProperty("--accent-hover", state.accentHover);
+    document.documentElement.style.setProperty("--accent-ink", state.accentInk);
+  }
+
+  function saveAppearance(){
+    try{
+      localStorage.setItem("ai2ai-appearance", JSON.stringify({
+        theme: state.theme,
+        accent: state.accent,
+        botName: state.botName,
+        botAvatar: state.botAvatar
+      }));
+    }catch(err){}
+  }
+
+  function loadAppearance(){
+    try{
+      const saved = JSON.parse(localStorage.getItem("ai2ai-appearance") || "null");
+      if(saved && ACCENTS.includes(saved.accent)) state.accent = saved.accent;
+      if(saved && (saved.theme === "light" || saved.theme === "dark")) state.theme = saved.theme;
+      if(saved && typeof saved.botName === "string" && saved.botName.trim()) state.botName = saved.botName.trim();
+      if(saved && typeof saved.botAvatar === "string" && saved.botAvatar.trim()) state.botAvatar = saved.botAvatar.trim();
+    }catch(err){}
+  }
+
+  // ---------- Rendering ----------
+  const el = id => document.getElementById(id);
+
+  function renderConvoList(){
+    const list = el("convoList");
+    list.innerHTML = "";
+    if(state.conversations.length === 0){
+      list.innerHTML = '<div style="padding:8px 18px;font-size:12px;opacity:.5;">Aucune conversation</div>';
+      return;
+    }
+    state.conversations.forEach(c => {
+      const div = document.createElement("div");
+      div.className = "item" + (c.id === state.activeConvoId ? " active" : "");
+      div.innerHTML = `<span class="it-label"><span class="txt">${escapeHtml(c.title)}</span></span><button class="del" data-id="${c.id}">✕</button>`;
+      div.querySelector(".it-label").addEventListener("click", async () => {
+        state.activeConvoId = c.id;
+        if(c.messages === null){
+          await loadConversationMessages(c.id);
+        } else {
+          renderAll();
+        }
+      });
+      div.querySelector(".del").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if(c.id){
+          await fetch(`/chat/api/conversations/${c.id}/delete/`, {
+            method: "DELETE",
+            headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
+          });
+        }
+        state.conversations = state.conversations.filter(x => x.id !== c.id);
+        if(state.activeConvoId === c.id){
+          state.activeConvoId = state.conversations.length ? state.conversations[0].id : null;
+        }
+        renderAll();
+      });
+      list.appendChild(div);
+    });
+  }
+
+  let personaSwitchTimer = null;
+  function setActivePersona(personaId){
+    const persona = state.personas.find(p => String(p.id) === String(personaId));
+    if(!persona) return;
+    const convo = activeConvo();
+    const previousPersonaId = convo ? convo.personaId : state.activePersonaId;
+    if(convo){
+      convo.personaId = persona.id;
+    } else {
+      state.activePersonaId = persona.id;
+    }
+    renderAll();
+
+    clearTimeout(personaSwitchTimer);
+    if(!convo || !convo.id) return;
+    const conversationId = convo.id;
+    personaSwitchTimer = setTimeout(async () => {
+      try{
+        const res = await fetch(`/chat/api/conversations/${conversationId}/`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+          },
+          body: JSON.stringify({ persona_id: persona.id })
+        });
+        if(!res.ok) throw new Error("Erreur sauvegarde persona " + res.status);
+      }catch(err){
+        console.error(err);
+        if(activeConvo() === convo && convo.personaId === persona.id){
+          convo.personaId = previousPersonaId;
+          renderAll();
+        }
+      }
+    }, 150);
+  }
+
+  function renderPersonaList(){
+    const list = el("personaList");
+    list.innerHTML = "";
+    state.personas.forEach(p => {
+      const div = document.createElement("div");
+      const isActive = activePersona().id === p.id;
+      div.className = "item" + (isActive ? " active" : "");
+      div.innerHTML = `<span class="it-label"><span class="persona-dot"></span><span class="txt">${escapeHtml(p.name)}</span></span><button class="del" data-id="${p.id}">✕</button>`;
+      div.querySelector(".it-label").addEventListener("click", () => setActivePersona(p.id));
+      div.querySelector(".del").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if(state.personas.length <= 1) return;
+        if(state.isAuthenticated && typeof p.id === "number"){
+          const res = await fetch(`/chat/api/personas/${p.id}/`, {
+            method: "DELETE",
+            headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
+          });
+          if(!res.ok) return;
+        }
+        state.personas = state.personas.filter(x => x.id !== p.id);
+        if(state.activePersonaId === p.id){
+          state.activePersonaId = state.personas.length ? state.personas[0].id : null;
+        }
+        renderAll();
+      });
+      list.appendChild(div);
+    });
+  }
+
+  function renderPersonaEditor(){
+    const p = activePersona();
+    const select = el("personaSelect");
+    select.innerHTML = state.personas.map(persona => `<option value="${persona.id}">${escapeHtml(persona.name)}</option>`).join("");
+    select.value = String(p.id);
+    el("personaSystemPrompt").value = p.prompt;
+    el("personaTone").value = p.tone;
+    el("personaTemp").value = p.temp;
+    el("tempVal").textContent = p.temp;
+    el("personaLength").value = p.length;
+    el("chatPersonaName").textContent = p.name;
+  }
+
+  function renderHeader(){
+    const convo = activeConvo();
+    el("chatTitle").textContent = convo ? convo.title : "Nouvelle conversation";
+    el("chatAvatar").textContent = state.botAvatar;
+    el("brandMark").textContent = state.botAvatar;
+    el("brandName").textContent = state.botName;
+    document.title = state.botName;
+    updateBrowserIdentity();
+  }
+
+  function updateBrowserIdentity(){
+    const favicon = el("botFavicon");
+    if(!favicon) return;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text x="32" y="50" text-anchor="middle" font-size="48">${state.botAvatar}</text></svg>`;
+    favicon.href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    document.title = state.botName || "Chatbot";
+  }
+
+  function renderMessages(){
+    const wrap = el("messages");
+    const convo = activeConvo();
+    if(!convo || !convo.messages || convo.messages.length === 0){
+      wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div></div>`;
+      return;
+    }
+    wrap.innerHTML = "";
+    convo.messages.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "msg " + m.role;
+      div.innerHTML = `${escapeHtml(m.content)}<span class="meta">${m.tokens} jetons</span>`;
+      wrap.appendChild(div);
+    });
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function renderCredits(){
+    const pct = Math.max(0, Math.min(1, state.credits / state.totalCredits));
+    const circumference = 2 * Math.PI * 54;
+    el("gaugeFill").setAttribute("stroke-dasharray", circumference);
+    el("gaugeFill").setAttribute("stroke-dashoffset", circumference * (1 - pct));
+    el("gaugeFill").style.stroke = pct < 0.15 ? "#B4483A" : "var(--accent)";
+    el("gaugeNum").textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR");
+    el("creditPillText").textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR") + " jetons";
+    el("creditPillBar").style.width = (pct*100) + "%";
+    el("lowWarning").classList.toggle("show", pct < 0.15);
+    el("sendBtn").disabled = (state.isAuthenticated && state.credits <= 0) || state.sending;
+    el("rechargeBtn").disabled = !state.isAuthenticated;
+    el("rechargeBtn").title = state.isAuthenticated
+      ? "Recharger les jetons"
+      : "Connecte-toi pour recharger";
+  }
+
+  function ensureCreditAccess(){
+    if(!state.isAuthenticated){
+      window.location.href = state.loginUrl;
+      return false;
+    }
+    if(state.credits <= 0){
+      const notice = el("creditNotice");
+      notice.textContent = "Crédits insuffisants — recharge ton solde pour continuer.";
+      notice.classList.add("show");
+      window.clearTimeout(state.creditNoticeTimer);
+      state.creditNoticeTimer = window.setTimeout(() => notice.classList.remove("show"), 4200);
+      return false;
+    }
+    return true;
+  }
+
+  function renderUsageLog(){
+    const log = el("usageLog");
+    if(state.usageLog.length === 0){
+      log.innerHTML = '<div style="opacity:.5;">Aucune activité pour l\'instant</div>';
+      return;
+    }
+    log.innerHTML = "";
+    state.usageLog.slice(0,12).forEach(entry => {
+      const row = document.createElement("div");
+      row.innerHTML = `<span>${escapeHtml(entry.label)}</span><span>-${entry.tokens}</span>`;
+      log.appendChild(row);
+    });
+  }
+
+  function renderSwatches(){
+    const wrap = el("swatches");
+    wrap.innerHTML = "";
+    ACCENTS.forEach(c => {
+      const sw = document.createElement("div");
+      sw.className = "swatch" + (state.accent === c ? " active" : "");
+      sw.style.background = c;
+      sw.addEventListener("click", () => {
+        applyAccent(c);
+        saveAppearance();
+        renderSwatches();
+        renderCredits();
+      });
+      wrap.appendChild(sw);
+    });
+  }
+
+  function escapeHtml(str){
+    const d = document.createElement("div");
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function renderAll(){
+    renderConvoList();
+    renderPersonaList();
+    renderPersonaEditor();
+    renderHeader();
+    renderMessages();
+    renderCredits();
+    renderUsageLog();
+  }
+
+  function editField(id){
+    const field = el(id);
+    if(field){
+      field.readOnly = false;
+      field.focus();
+      field.select();
+    }
+  }
+
+  // ---------- Simulated / real bot response ----------
+  function toneOpener(tone){
+    switch(tone){
+      case "decontracte": return "Ok, ";
+      case "formel": return "Bien entendu. ";
+      case "pedagogue": return "Voyons ça ensemble. ";
+      default: return "";
+    }
+  }
+
+  function simulateReply(persona, userText){
+    const lengths = { courte: 1, moyenne: 2, longue: 3 };
+    const n = lengths[persona.length] || 2;
+    const modelName = state.demoModels[state.modelId] || state.modelId;
+    let sentences = [
+      toneOpener(persona.tone) + "Réponse de " + modelName + " en mode démo, dans le style du persona « " + persona.name + " ».",
+      "En connectant une vraie clé API, ce même espace afficherait la réponse du modèle, calculée à partir de ton prompt système et de tes réglages de créativité.",
+      "Ceci reste un aperçu local : aucune donnée n'a quitté ton navigateur pour ce message."
+    ];
+    return sentences.slice(0, n).join(" ");
+  }
+
+  async function callBackend(persona, userText, convo){
+    const res = await fetch("/chat/api/send/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+      },
+      body: JSON.stringify({
+        conversation_id: convo.id,
+        content: userText,
+        model_id: state.modelId,
+        persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
+        system_prompt: persona.prompt,
+        temperature: persona.temp
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+    return data;
+  }
+
+  async function sendMessage(text){
+    if(state.sending || !ensureCreditAccess()) return;
+    state.sending = true;
+    renderCredits();
+    let convo = activeConvo();
+    if(!convo){
+      convo = state.conversations.find(c => c.id === null) || await newConversation(state.activePersonaId);
+    }
+    const persona = state.personas.find(p => p.id === convo.personaId) || state.personas[0];
+
+    convo.messages.push({ role: "user", content: text, tokens: 0 });
+    renderAll();
+
+    try{
+      let data;
+      if(state.hasActiveModels){
+        data = await callBackend(persona, text, convo);
+        if(!convo.id && data.conversation_id){
+          convo.id = data.conversation_id;
+          state.activeConvoId = convo.id;
+        }
+        if(data.title) convo.title = data.title;
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        data = { reply: simulateReply(persona, text), remaining_balance: state.credits };
+      }
+      const replyText = data.reply || "(réponse vide)";
+      const inputTokens = data.prompt_tokens ?? estimateTokens(text);
+      const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
+      convo.messages[convo.messages.length - 1].tokens = inputTokens;
+      convo.messages.push({ role: "bot", content: replyText, tokens: replyTokens });
+      state.credits = Number(data.remaining_balance ?? state.credits);
+      state.usageLog.unshift({ label: "Message (" + persona.name + ")", tokens: inputTokens });
+      state.usageLog.unshift({ label: "Réponse (" + persona.name + ")", tokens: replyTokens });
+      renderAll();
+    }catch(err){
+      convo.messages.push({ role: "bot", content: "⚠ " + err.message, tokens: 0 });
+      renderAll();
+    } finally {
+      state.sending = false;
+      renderCredits();
+    }
+  }
+
+  // ---------- Event wiring ----------
+  el("newConvoBtn").addEventListener("click", () => { newConversation(activePersona().id); renderAll(); });
+  function togglePanel(side){
+    const app = document.querySelector(".app");
+    const isLeft = side === "left";
+    const collapsedClass = isLeft ? "left-collapsed" : "right-collapsed";
+    const button = el(isLeft ? "toggleLeftPanel" : "toggleRightPanel");
+    const collapsed = app.classList.toggle(collapsedClass);
+    const action = collapsed ? "Afficher" : "Masquer";
+    const label = action + " le panneau " + (isLeft ? "gauche" : "droit");
+    button.textContent = collapsed ? (isLeft ? "›" : "‹") : (isLeft ? "‹" : "›");
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  }
+  function toggleMobileSidebar(isOpen){
+    document.querySelector(".app").classList.toggle("mobile-sidebar-open", isOpen);
+  }
+  function openCustomization(){
+    const app = document.querySelector(".app");
+    app.classList.remove("left-collapsed", "right-collapsed", "mobile-sidebar-open");
+    app.classList.add("customize-mode");
+    el("customizationStart").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function closeCustomization(){
+    document.querySelector(".app").classList.remove("customize-mode");
+    history.replaceState(null, "", window.location.pathname);
+    window.scrollTo(0, 0);
+  }
+  el("customizeBtn").addEventListener("click", () => {
+    history.pushState({ customize: true }, "", "?customize=1");
+    openCustomization();
+  });
+  el("customizeBack").addEventListener("click", closeCustomization);
+  window.addEventListener("popstate", () => {
+    if(new URLSearchParams(window.location.search).get("customize") !== "1") closeCustomization();
+  });
+  el("toggleLeftPanel").addEventListener("click", () => togglePanel("left"));
+  el("toggleRightPanel").addEventListener("click", () => togglePanel("right"));
+  el("openMobileSidebar").addEventListener("click", () => toggleMobileSidebar(true));
+  el("closeMobileSidebar").addEventListener("click", () => toggleMobileSidebar(false));
+  let personaSaveTimer = null;
+  function schedulePersonaSave(){
+    clearTimeout(personaSaveTimer);
+    const persona = activePersona();
+    if(!state.isAuthenticated || typeof persona.id !== "number") return;
+    const personaId = persona.id;
+    const payload = { name: persona.name, prompt: persona.prompt, tone: persona.tone, temp: persona.temp, length: persona.length };
+    personaSaveTimer = setTimeout(async () => {
+      try{
+        await fetch(`/chat/api/personas/${personaId}/`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+          },
+          body: JSON.stringify(payload)
+        });
+      }catch(err){
+        console.error("Erreur sauvegarde persona", err);
+      }
+    }, 600);
+  }
+
+  el("newPersonaBtn").addEventListener("click", async () => {
+    const payload = { name: "Nouveau persona", prompt: "Décris ici le comportement de ce persona.", tone: "neutre", temp: 0.7, length: "moyenne" };
+    if(!state.isAuthenticated) return;
+    try{
+      const res = await fetch("/chat/api/personas/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        },
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok) throw new Error("Erreur serveur " + res.status);
+      const p = await res.json();
+      state.personas.push(p);
+      const convo = activeConvo();
+      if(convo) convo.personaId = p.id; else state.activePersonaId = p.id;
+      renderAll();
+    }catch(err){
+      console.error("Erreur création persona", err);
+    }
+  });
+
+  el("personaSystemPrompt").addEventListener("input", e => { activePersona().prompt = e.target.value; schedulePersonaSave(); });
+  el("personaSelect").addEventListener("change", e => setActivePersona(e.target.value));
+  el("personaTone").addEventListener("change", e => { activePersona().tone = e.target.value; schedulePersonaSave(); });
+  el("personaTemp").addEventListener("input", e => { activePersona().temp = parseFloat(e.target.value); el("tempVal").textContent = e.target.value; schedulePersonaSave(); });
+  el("personaLength").addEventListener("change", e => { activePersona().length = e.target.value; schedulePersonaSave(); });
+
+  el("botNameInput").value = state.botName;
+  el("botAvatarInput").value = state.botAvatar;
+  el("botNameInput").addEventListener("input", e => {
+    state.botName = e.target.value.trim() || "Chatbot";
+    saveAppearance();
+    renderHeader();
+  });
+  el("botAvatarInput").addEventListener("input", e => {
+    state.botAvatar = e.target.value.trim() || "🤖";
+    saveAppearance();
+    renderHeader();
+  });
+  document.querySelectorAll("[data-edit-target]").forEach(button => {
+    button.addEventListener("click", () => editField(button.dataset.editTarget));
+  });
+  document.querySelectorAll("#botNameInput, #botAvatarInput").forEach(field => {
+    field.addEventListener("blur", () => { field.readOnly = true; });
+  });
+  el("aiModelSelect").addEventListener("change", e => { state.modelId = e.target.value; });
+
+  document.querySelectorAll(".model-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      state.modelId = chip.dataset.modelId;
+      document.querySelectorAll(".model-chip").forEach(item => item.classList.toggle("active", item === chip));
+      el("aiModelSelect").value = state.modelId;
+    });
+  });
+  document.querySelectorAll(".tool-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".tool-btn").forEach(item => item.classList.remove("active"));
+      button.classList.add("active");
+    });
+  });
+  el("attachBtn").addEventListener("click", () => {
+    el("creditNotice").textContent = "L'ajout de fichiers sera disponible prochainement.";
+    el("creditNotice").classList.add("show");
+    window.setTimeout(() => el("creditNotice").classList.remove("show"), 2800);
+  });
+  el("voiceBtn").addEventListener("click", () => input.focus());
+
+  el("themeLight").addEventListener("click", () => setTheme("light"));
+  el("themeDark").addEventListener("click", () => setTheme("dark"));
+  function setTheme(t){
+    state.theme = t;
+    document.body.setAttribute("data-theme", t);
+    el("themeLight").classList.toggle("active", t === "light");
+    el("themeDark").classList.toggle("active", t === "dark");
+    saveAppearance();
+  }
+
+  el("rechargeBtn").addEventListener("click", () => {
+    if(!state.isAuthenticated){
+      ensureCreditAccess();
+      return;
+    }
+    window.location.href = "/recharge/";
+  });
+
+  const form = el("composerForm");
+  const input = el("composerInput");
+  const creditPill = el("creditPill");
+  creditPill.addEventListener("click", ensureCreditAccess);
+  creditPill.addEventListener("keydown", e => {
+    if(e.key === "Enter" || e.key === " "){
+      e.preventDefault();
+      ensureCreditAccess();
+    }
+  });
+  input.addEventListener("focus", () => {
+    if(!state.isAuthenticated) ensureCreditAccess();
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(140, input.scrollHeight) + "px";
+  });
+  input.addEventListener("keydown", (e) => {
+    if(e.key === "Enter" && !e.shiftKey){
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if(!ensureCreditAccess() || !text) return;
+    input.value = "";
+    input.style.height = "auto";
+    sendMessage(text);
+  });
+
+  // ---------- Init ----------
+  loadAppearance();
+  applyAccent(state.accent);
+  setTheme(state.theme);
+  renderSwatches();
+  (async () => {
+    await loadPersonas();
+    await loadConversations();
+    if(state.conversations.length === 0){
+      await newConversation(state.activePersonaId);
+    }
+    renderAll();
+  })();
+  if(new URLSearchParams(window.location.search).get("customize") === "1") openCustomization();
+})();
+</script>
+
+{% endblock %}

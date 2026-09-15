@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Connexion — Le Comptoir{% endblock %}
+
+{% block extra_head %}
+<style>
+  :root{
+    --ink:var(--theme-ink);
+    --paper:var(--theme-paper);
+    --panel:var(--theme-panel);
+    --amber:var(--accent);
+    --amber-deep:var(--accent-hover);
+    --teal:#3F8E8A;
+    --line:var(--theme-line);
+    --danger:#B4483A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    padding:24px;
+  }
+  .card{
+    width:100%;
+    max-width:380px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:32px 28px 28px;
+  }
+  .brand{
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:22px;
+  }
+  .brand .mark{
+    width:34px;height:34px;border-radius:8px;
+    background:var(--amber);
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;
+  }
+  .brand .name{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:16px;}
+
+  .tabs{
+    display:flex;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:3px;
+    margin-bottom:22px;
+  }
+  .tabs button{
+    flex:1;
+    border:none;background:none;
+    padding:8px 0;
+    font-family:'Inter',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink);
+    opacity:.55;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .tabs button.active{
+    background:var(--amber);
+    opacity:1;
+    color:#1B1F3B;
+  }
+
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:20px;
+    margin:0 0 4px;
+  }
+  .subtitle{
+    font-size:12.5px;
+    opacity:.6;
+    margin:0 0 20px;
+  }
+
+  .errorlist{
+    list-style:none;
+    margin:0 0 14px;
+    padding:10px 12px;
+    background:rgba(180,72,58,.08);
+    border:1px solid var(--danger);
+    border-radius:8px;
+    color:var(--danger);
+    font-size:12.5px;
+  }
+
+  .field{margin-bottom:14px;}
+  .field label{
+    display:block;
+    font-size:11.5px;
+    opacity:.65;
+    margin-bottom:5px;
+  }
+  .field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:10px 12px;
+    font-size:13.5px;
+    font-family:inherit;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .field input:focus{outline:2px solid var(--amber);outline-offset:1px;}
+  .field .help{font-size:10.5px;opacity:.5;margin-top:4px;}
+
+  .submit-btn{
+    width:100%;
+    border:none;
+    background:var(--amber);
+    color:#1B1F3B;
+    font-weight:600;
+    font-size:13.5px;
+    padding:11px 0;
+    border-radius:10px;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  .submit-btn:hover{background:var(--amber-deep);color:#fff;}
+
+  .divider{
+    display:flex;align-items:center;gap:10px;
+    margin:22px 0 16px;
+    font-size:11px;
+    opacity:.55;
+  }
+  .divider::before, .divider::after{
+    content:"";flex:1;height:1px;background:var(--line);
+  }
+
+  .social-btn{
+    width:100%;
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--ink);
+    font-size:13px;
+    font-weight:500;
+    padding:10px 0;
+    border-radius:10px;
+    cursor:pointer;
+    margin-bottom:10px;
+    text-decoration:none;
+  }
+  .social-btn:hover{background:var(--paper);}
+  .social-btn .ic{width:18px;height:18px;flex:none;}
+  .social-btn.google{border-color:var(--line);}
+  .social-btn.telegram{border-color:#2AABEE55;}
+  .social-btn.whatsapp{border-color:#25D36655;}
+
+  #telegram-login-wrap{display:flex;justify-content:center;margin-bottom:10px;}
+
+  .wa-panel{
+    display:none;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px;
+    margin-bottom:10px;
+    background:var(--paper);
+  }
+  .wa-panel.open{display:block;}
+  .wa-panel .field{margin-bottom:10px;}
+  .wa-panel .send-otp-btn{
+    width:100%;border:none;background:#25D366;color:#0B3B2E;
+    font-weight:600;font-size:12.5px;padding:9px 0;border-radius:8px;cursor:pointer;
+  }
+
+  .switch-line{
+    text-align:center;
+    font-size:12px;
+    opacity:.65;
+    margin-top:18px;
+  }
+  .switch-line a{color:var(--amber-deep);font-weight:600;text-decoration:none;}
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="card">
+
+  <div class="brand">
+    <div class="mark">🦣</div>
+    <div class="name">Le Comptoir</div>
+  </div>
+
+  <div class="tabs">
+    <button type="button" id="tabLogin" class="active">Connexion</button>
+    <button type="button" id="tabSignup">Inscription</button>
+  </div>
+
+  <!-- ========== CONNEXION ========== -->
+  <div id="panelLogin">
+    <h1>Content de te revoir</h1>
+    <p class="subtitle">Connecte-toi pour retrouver tes conversations et tes crédits.</p>
+
+    {% if form.errors %}
+      <ul class="errorlist">
+        <li>Identifiants incorrects. Réessaie.</li>
+      </ul>
+    {% endif %}
+
+    <form method="post" action="{% url 'login' %}?next={{ next_url|urlencode }}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <div class="field">
+        <label for="id_login_username">Nom d'utilisateur ou e-mail</label>
+        <input type="text" name="username" id="id_login_username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="id_login_password">Mot de passe</label>
+        <input type="password" name="password" id="id_login_password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="submit-btn">Se connecter</button>
+    </form>
+
+    <div class="divider">ou continuer avec</div>
+
+    <a class="social-btn google" href="/accounts/google/login/">
+      <svg class="ic" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 7 29.6 5 24 5 16.3 5 9.6 9.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.8 14.3-5l-6.6-5.6C29.7 34.9 27 36 24 36c-5.3 0-9.7-3.1-11.3-7.5l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H24v8h11.3c-.8 2.3-2.3 4.2-4.3 5.6l6.6 5.6C41 36.5 44 30.9 44 24c0-1.3-.1-2.5-.4-3.5z"/></svg>
+      Continuer avec Google
+    </a>
+
+    <div id="telegram-login-wrap">
+      <!-- Widget officiel Telegram -->
+      {% if telegram_bot_username %}
+      <script async src="https://telegram.org/js/telegram-widget.js?22"
+        data-telegram-login="{{ telegram_bot_username }}"
+        data-size="large"
+        data-radius="10"
+        data-auth-url="{% url 'telegram_auth' %}?next={{ next_url|urlencode }}"
+        data-request-access="write"></script>
+      {% endif %}
+    </div>
+
+    <button type="button" class="social-btn whatsapp" id="waToggle">
+      <svg class="ic" viewBox="0 0 32 32" fill="#25D366"><path d="M16 3C9 3 3.3 8.6 3.3 15.6c0 2.6.8 5.1 2.2 7.2L3 29l6.4-2.4c2 1.1 4.3 1.7 6.6 1.7 7 0 12.7-5.6 12.7-12.6C28.7 8.6 23 3 16 3z" fill="#25D366"/><path fill="#fff" d="M22 19.2c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2s-.8 1-.9 1.1c-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.2-.2.2-.3.3-.5.1-.2 0-.4 0-.6-.1-.2-.7-1.7-1-2.3-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3 4.8 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3z"/></svg>
+      Continuer avec WhatsApp
+    </button>
+    <div class="wa-panel" id="waPanel">
+      <div class="field">
+        <label for="wa_phone">Numéro WhatsApp</label>
+        <input type="tel" id="wa_phone" name="phone" placeholder="+225 07 00 00 00 00">
+        <div class="help">Un code de vérification te sera envoyé par WhatsApp.</div>
+      </div>
+      <button type="button" class="send-otp-btn" id="waSendOtp">Envoyer le code</button>
+    </div>
+
+    <p class="switch-line">Pas encore de compte ? <a href="#" id="linkToSignup">Créer un compte</a></p>
+  </div>
+
+  <!-- ========== INSCRIPTION ========== -->
+  <div id="panelSignup" style="display:none;">
+    <h1>Créer un compte</h1>
+    <p class="subtitle">Tu démarres avec des crédits offerts, sans carte bancaire.</p>
+
+    {% if signup_form.errors %}
+      <ul class="errorlist">
+        {% for field in signup_form %}
+          {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="post" action="{% url 'signup' %}?next={{ next_url|urlencode }}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <div class="field">
+        <label for="id_signup_username">Nom d'utilisateur</label>
+        <input type="text" name="username" id="id_signup_username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="id_signup_email">E-mail</label>
+        <input type="email" name="email" id="id_signup_email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label for="id_signup_password1">Mot de passe</label>
+        <input type="password" name="password1" id="id_signup_password1" autocomplete="new-password" required>
+      </div>
+      <div class="field">
+        <label for="id_signup_password2">Confirmer le mot de passe</label>
+        <input type="password" name="password2" id="id_signup_password2" autocomplete="new-password" required>
+      </div>
+      <button type="submit" class="submit-btn">Créer mon compte</button>
+    </form>
+
+    <div class="divider">ou s'inscrire avec</div>
+
+    <a class="social-btn google" href="/accounts/google/login/">
+      <svg class="ic" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.9 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 6 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l5.7-5.7C34.6 7 29.6 5 24 5 16.3 5 9.6 9.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-1.8 14.3-5l-6.6-5.6C29.7 34.9 27 36 24 36c-5.3 0-9.7-3.1-11.3-7.5l-6.6 5.1C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H24v8h11.3c-.8 2.3-2.3 4.2-4.3 5.6l6.6 5.6C41 36.5 44 30.9 44 24c0-1.3-.1-2.5-.4-3.5z"/></svg>
+      Continuer avec Google
+    </a>
+
+    <div id="telegram-login-wrap-signup" style="display:flex;justify-content:center;margin-bottom:10px;">
+      <script async src="https://telegram.org/js/telegram-widget.js?22"
+        data-telegram-login="{{ telegram_bot_username }}"
+        data-size="large"
+        data-radius="10"
+        data-auth-url="{% url 'telegram_auth' %}?next={{ next_url|urlencode }}"
+        data-request-access="write"></script>
+    </div>
+
+    <button type="button" class="social-btn whatsapp" id="waToggleSignup">
+      <svg class="ic" viewBox="0 0 32 32" fill="#25D366"><path d="M16 3C9 3 3.3 8.6 3.3 15.6c0 2.6.8 5.1 2.2 7.2L3 29l6.4-2.4c2 1.1 4.3 1.7 6.6 1.7 7 0 12.7-5.6 12.7-12.6C28.7 8.6 23 3 16 3z" fill="#25D366"/><path fill="#fff" d="M22 19.2c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2s-.8 1-.9 1.1c-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.2-.2.2-.3.3-.5.1-.2 0-.4 0-.6-.1-.2-.7-1.7-1-2.3-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3 4.8 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.6-.6 1.8-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.6-.3z"/></svg>
+      Continuer avec WhatsApp
+    </button>
+    <div class="wa-panel" id="waPanelSignup">
+      <div class="field">
+        <label for="wa_phone_signup">Numéro WhatsApp</label>
+        <input type="tel" id="wa_phone_signup" name="phone" placeholder="+225 07 00 00 00 00">
+        <div class="help">Un code de vérification te sera envoyé par WhatsApp.</div>
+      </div>
+      <button type="button" class="send-otp-btn" id="waSendOtpSignup">Envoyer le code</button>
+    </div>
+
+    <p class="switch-line">Déjà un compte ? <a href="#" id="linkToLogin">Se connecter</a></p>
+  </div>
+
+</div>
+
+<script>
+  const tabLogin = document.getElementById("tabLogin");
+  const tabSignup = document.getElementById("tabSignup");
+  const panelLogin = document.getElementById("panelLogin");
+  const panelSignup = document.getElementById("panelSignup");
+
+  function showLogin(){
+    panelLogin.style.display = "block";
+    panelSignup.style.display = "none";
+    tabLogin.classList.add("active");
+    tabSignup.classList.remove("active");
+  }
+  function showSignup(){
+    panelLogin.style.display = "none";
+    panelSignup.style.display = "block";
+    tabSignup.classList.add("active");
+    tabLogin.classList.remove("active");
+  }
+  tabLogin.addEventListener("click", showLogin);
+  tabSignup.addEventListener("click", showSignup);
+  document.getElementById("linkToSignup").addEventListener("click", (e) => { e.preventDefault(); showSignup(); });
+  document.getElementById("linkToLogin").addEventListener("click", (e) => { e.preventDefault(); showLogin(); });
+
+  // WhatsApp : pas d'OAuth standard, on ouvre un panneau numéro + OTP
+  const waToggle = document.getElementById("waToggle");
+  const waPanel = document.getElementById("waPanel");
+  waToggle.addEventListener("click", () => waPanel.classList.toggle("open"));
+
+  document.getElementById("waSendOtp").addEventListener("click", () => {
+    const phone = document.getElementById("wa_phone").value.trim();
+    if(!phone){ return; }
+    // À brancher sur une vraie vue Django qui déclenche l'envoi du code
+    // (ex. via l'API WhatsApp Cloud de Meta ou un fournisseur comme Twilio).
+    fetch("{% url 'whatsapp_send_otp' %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+      },
+      body: JSON.stringify({ phone })
+    });
+  });
+
+  // Mêmes comportements pour le panneau Inscription
+  const waToggleSignup = document.getElementById("waToggleSignup");
+  const waPanelSignup = document.getElementById("waPanelSignup");
+  waToggleSignup.addEventListener("click", () => waPanelSignup.classList.toggle("open"));
+
+  document.getElementById("waSendOtpSignup").addEventListener("click", () => {
+    const phone = document.getElementById("wa_phone_signup").value.trim();
+    if(!phone){ return; }
+    fetch("{% url 'whatsapp_send_otp' %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+      },
+      body: JSON.stringify({ phone })
+    });
+  });
+</script>
+{% endblock %}
