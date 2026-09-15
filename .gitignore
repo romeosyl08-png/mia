@@ -1,3 +1,6 @@
 .env
-requirements.txt
 fiches.txt
+db.sqlite3
+staticfiles/
+__pycache__/
+*.py[cod]
