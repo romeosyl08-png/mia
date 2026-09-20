@@ -14,7 +14,7 @@ from django.http import HttpResponseBadRequest, HttpResponseServerError, JsonRes
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
-
+from django.views.decorators.csrf import csrf_exempt
 from .models import RechargePurchase, TelegramIdentity
 
 RECHARGE_PLANS = {
@@ -158,7 +158,7 @@ def create_mobile_money_checkout(request):
 def recharge_success(request):
 	return render(request, "recharge_success.html")
 
-
+@csrf_exempt
 def stripe_webhook(request):
 	if not settings.STRIPE_WEBHOOK_SECRET:
 		return HttpResponse("Stripe webhook non configure.", status=503)
@@ -176,7 +176,7 @@ def stripe_webhook(request):
 
 	if event["type"] == "checkout.session.completed":
 		session = event["data"]["object"]
-		metadata = session.get("metadata", {})
+		metadata = session.metadata or {}
 		try:
 			user_id = int(metadata["user_id"])
 			credits = int(metadata["credits"])
@@ -184,10 +184,10 @@ def stripe_webhook(request):
 			return HttpResponse("Metadonnees invalides.", status=400)
 		with transaction.atomic():
 			purchase, created = RechargePurchase.objects.get_or_create(
-				stripe_session_id=session["id"],
+				stripe_session_id=session.id,
 				defaults={
 					"user_id": user_id,
-					"amount_cents": session.get("amount_total") or 0,
+					"amount_cents": session.amount_total or 0,
 					"credits": credits,
 				},
 			)
@@ -196,7 +196,7 @@ def stripe_webhook(request):
 				purchase.paid_at = timezone.now()
 				purchase.save(update_fields=["status", "paid_at"])
 				account = purchase.user.credit_account
-				account.credit(credits, reason="recharge", note=f"Stripe {session['id']}")
+				account.credit(credits, reason="recharge", note=f"Stripe {session.id}")
 	return HttpResponse("ok")
 
 

@@ -2,12 +2,14 @@ import json
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase, override_settings
+from django.core.cache import cache
 
 from api.models import AIModel, APIKey, APIProvider
 
 
 class OpenAICompatibleAPITests(TestCase):
 	def setUp(self):
+		cache.clear()
 		self.provider = APIProvider.objects.create(
 			name='OpenAI compatible',
 			base_url='https://provider.example.test',
@@ -35,6 +37,12 @@ class OpenAICompatibleAPITests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json()['data'][0]['id'], 'test-model')
+
+	@override_settings(DEBUG=True, API_COMPATIBLE_KEY='')
+	def test_api_requires_a_configured_key_even_in_debug(self):
+		response = self.client.get('/v1/models')
+
+		self.assertEqual(response.status_code, 401)
 
 	@override_settings(DEBUG=True, API_COMPATIBLE_KEY='client-secret')
 	@patch('api.views.urlopen')
@@ -64,5 +72,19 @@ class OpenAICompatibleAPITests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json()['choices'][0]['message']['content'], 'Bonjour.')
 		self.assertEqual(urlopen.call_args.args[0].full_url, 'https://provider.example.test/v1/chat/completions')
+
+	@override_settings(
+		DEBUG=True,
+		API_COMPATIBLE_KEY='client-secret',
+		API_RATE_LIMIT_REQUESTS=1,
+		API_RATE_LIMIT_WINDOW_SECONDS=60,
+	)
+	def test_models_rate_limit_is_enforced(self):
+		response = self.client.get('/v1/models', HTTP_AUTHORIZATION='Bearer client-secret')
+		self.assertEqual(response.status_code, 200)
+
+		response = self.client.get('/v1/models', HTTP_AUTHORIZATION='Bearer client-secret')
+		self.assertEqual(response.status_code, 429)
+		self.assertEqual(response.json()['error']['code'], 'rate_limit_exceeded')
 
 # Create your tests here.

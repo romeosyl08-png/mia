@@ -7,13 +7,20 @@ class ProviderError(Exception):
     """Erreur contrôlée lors d'un appel au fournisseur IA."""
 
 
-def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
-    """Estime le coût en crédits avant l'appel, avec une réserve de sortie."""
-    history_text = json.dumps(history or [], ensure_ascii=False)
-    input_tokens = max(1, round(len(content + system_prompt + history_text) / 4))
+def credit_multiplier(model):
     provider_slug = (model.provider.slug or "").lower()
-    multiplier = 2 if any(name in provider_slug for name in ("opus", "gpt-4", "large")) else 1
-    return input_tokens + min(max_output_tokens, 500) * multiplier, input_tokens
+    return 2 if any(name in provider_slug for name in ("opus", "gpt-4", "large")) else 1
+
+
+def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
+    """Réserve un plafond conservateur avant l'appel au fournisseur."""
+    history = history or []
+    history_text = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
+    input_bytes = len((content + system_prompt + history_text).encode("utf-8"))
+    message_overhead = 8 * (len(history) + 1)
+    input_tokens = max(1, input_bytes + message_overhead)
+    multiplier = credit_multiplier(model)
+    return (input_tokens + min(max_output_tokens, 500)) * multiplier, input_tokens
 
 
 
@@ -69,6 +76,8 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
         with urlopen(request, timeout=120) as response:
             data = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
+        if error.code == 429:
+            raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
         raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
     except (URLError, TimeoutError, ValueError) as error:
         raise ProviderError("Le fournisseur est temporairement indisponible.") from error

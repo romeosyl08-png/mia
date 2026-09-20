@@ -10,7 +10,7 @@ from django.views import View
 from .models import Conversation, Message, Persona
 from ai_user.models import InsufficientCreditsError
 
-from .services import ProviderError, call_llm_provider, estimate_cost
+from .services import ProviderError, call_llm_provider, credit_multiplier, estimate_cost
 from api.models import AIModel
 
 
@@ -107,15 +107,11 @@ class SendMessageView(View):
 
 		prompt_tokens = provider_input or estimated_input
 		completion_tokens = provider_output or round(len(reply) / 4)
-		actual_cost = max(1, prompt_tokens) + max(1, completion_tokens)
+		actual_cost = (
+			max(1, prompt_tokens) + max(1, completion_tokens)
+		) * credit_multiplier(model)
 		if actual_cost < reserve:
 			account.credit(reserve - actual_cost, reason='adjustment', note=f'Ajustement {model.model_id}')
-		elif actual_cost > reserve:
-			try:
-				account.debit(actual_cost - reserve, reason='usage', note=f'Ajustement {model.model_id}')
-			except InsufficientCreditsError:
-				account.credit(reserve, reason='adjustment', note='Remboursement coût réel insuffisant')
-				return _chat_error('Crédits insuffisants pour finaliser la réponse.', 'insufficient_credits', 402)
 
 		if conversation is None:
 			conversation = Conversation.objects.create(

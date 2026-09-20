@@ -2,6 +2,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from unittest.mock import MagicMock, patch
 import json
+from urllib.error import HTTPError
 
 from .models import AIModel, APIProvider, Conversation, Message, Persona
 
@@ -103,6 +104,60 @@ class ChatHomeTests(TestCase):
 		self.assertIsNotNone(response.json()['conversation_id'])
 		self.assertEqual(response.json()['title'], 'Bonjour')
 		self.assertEqual(Message.objects.filter(role='user').count(), 1)
+		self.assertEqual(Message.objects.filter(role='assistant').count(), 1)
+
+	@patch('chat.services.urlopen')
+	def test_send_message_handles_provider_rate_limit(self, urlopen):
+		user = User.objects.create_user(username='rate-limited-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(
+			name='Rate limited provider',
+			base_url='https://provider.example.test',
+		)
+		AIModel.objects.create(provider=provider, name='Rate limited model', model_id='rate-limited-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		urlopen.side_effect = HTTPError(
+			'https://provider.example.test/v1/chat/completions',
+			429,
+			'Too Many Requests',
+			{},
+			None,
+		)
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'model_id': 'rate-limited-model',
+			'content': 'Bonjour',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 502)
+		self.assertEqual(response.json()['error']['message'], 'Trop de requêtes, réessaie dans un instant.')
+
+	@patch('chat.views.estimate_cost', return_value=(1, 1))
+	@patch('chat.services.urlopen')
+	def test_send_message_keeps_reservation_when_usage_exceeds_it(self, urlopen, estimate_cost):
+		user = User.objects.create_user(username='reserved-chat-user', password='test-password')
+		user.credit_account.balance = 1
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Reserved provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Reserved model', model_id='reserved-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		provider_response = MagicMock()
+		provider_response.__enter__.return_value.read.return_value = json.dumps({
+			'choices': [{'message': {'content': 'Bonjour.'}}],
+			'usage': {'prompt_tokens': 10, 'completion_tokens': 10},
+		}).encode()
+		urlopen.return_value = provider_response
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'model_id': 'reserved-model',
+			'content': 'Bonjour',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['remaining_balance'], 0)
 		self.assertEqual(Message.objects.filter(role='assistant').count(), 1)
 
 	def test_conversation_routes_are_scoped_to_authenticated_user(self):

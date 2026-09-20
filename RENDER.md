@@ -31,6 +31,8 @@ Sur Render, execute cette commande depuis le Shell du service web.
 
 Ajoute les secrets Stripe, Telegram et API dans les variables d'environnement Render si ces fonctions sont utilisees. Configure ensuite l'URL publique du service dans les webhooks Stripe et Telegram.
 
+Pour activer l'API compatible OpenAI, `API_COMPATIBLE_KEY` est obligatoire. Les requetes sont limitees a 60 par minute et par adresse IP par defaut. Ajuste `API_RATE_LIMIT_REQUESTS` et `API_RATE_LIMIT_WINDOW_SECONDS` si necessaire.
+
 ## Notes
 
 - PostgreSQL est la base persistante de production ; SQLite reste uniquement un fallback local.

@@ -38,7 +38,7 @@ class RechargeTests(TestCase):
 		})
 
 		self.assertEqual(response.status_code, 400)
-		self.assertContains(response, "minimum est de 1 dollar")
+		self.assertContains(response, "minimum est de 1 dollar", status_code=400)
 
 	def test_mobile_money_rejects_unknown_operator(self):
 		self.client.force_login(self.user)
@@ -62,6 +62,6 @@ class RechargeTests(TestCase):
 			})
 
 			self.assertEqual(response.status_code, 503)
-			self.assertContains(response, "prestataire Mobile Money")
+			self.assertContains(response, "prestataire Mobile Money", status_code=503)
 
 # Create your tests here.

@@ -1,12 +1,15 @@
 import json
 import time
 import uuid
+from hashlib import sha256
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import render
+from django.utils.crypto import constant_time_compare
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
@@ -27,13 +30,33 @@ def _error(message, code, status):
 def _authorized(request):
 	configured_key = getattr(settings, 'API_COMPATIBLE_KEY', '')
 	if not configured_key:
-		return settings.DEBUG
-	return request.headers.get('Authorization', '') == f'Bearer {configured_key}'
+		return False
+	return constant_time_compare(
+		request.headers.get('Authorization', ''),
+		f'Bearer {configured_key}',
+	)
 
 
 def _check_auth(request):
 	if not _authorized(request):
 		return _error('Invalid API key.', 'invalid_api_key', 401)
+	return None
+
+
+def _check_rate_limit(request):
+	max_requests = max(1, getattr(settings, 'API_RATE_LIMIT_REQUESTS', 60))
+	window_seconds = max(1, getattr(settings, 'API_RATE_LIMIT_WINDOW_SECONDS', 60))
+	client_ip = request.META.get('REMOTE_ADDR', 'unknown')
+	cache_key = 'api-rate-limit:' + sha256(client_ip.encode()).hexdigest()
+	if cache.add(cache_key, 1, timeout=window_seconds):
+		return None
+	try:
+		request_count = cache.incr(cache_key)
+	except ValueError:
+		cache.add(cache_key, 1, timeout=window_seconds)
+		return None
+	if request_count > max_requests:
+		return _error('Rate limit exceeded. Try again later.', 'rate_limit_exceeded', 429)
 	return None
 
 
@@ -49,6 +72,9 @@ def models_view(request):
 	auth_error = _check_auth(request)
 	if auth_error:
 		return auth_error
+	rate_limit_error = _check_rate_limit(request)
+	if rate_limit_error:
+		return rate_limit_error
 	models = AIModel.objects.filter(
 		is_active=True,
 		provider__is_active=True,
@@ -143,6 +169,9 @@ def chat_completions(request):
 	auth_error = _check_auth(request)
 	if auth_error:
 		return auth_error
+	rate_limit_error = _check_rate_limit(request)
+	if rate_limit_error:
+		return rate_limit_error
 	payload = _json_body(request)
 	if not payload or not isinstance(payload.get('messages'), list):
 		return _error('The request must contain a messages array.', 'invalid_request_error', 400)
