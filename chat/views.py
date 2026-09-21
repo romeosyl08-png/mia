@@ -155,7 +155,7 @@ class ConversationDetailView(View):
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))
 	def get(self, request, pk):
 		conv = get_object_or_404(Conversation, id=pk, user=request.user)
-		messages = list(conv.messages.values("role", "content", "prompt_tokens", "completion_tokens"))
+		messages = list(conv.messages.values("role", "content", "prompt_tokens", "completion_tokens", "created_at"))
 		return JsonResponse({"id": conv.id, "title": conv.title, "persona_id": conv.persona_id, "messages": messages})
 
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))

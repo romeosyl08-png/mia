@@ -70,16 +70,16 @@
     <form class="composer" id="composerForm">
       {% csrf_token %}
       <div class="composer-input-row">
-        <button type="button" class="composer-icon" id="attachBtn" title="Ajouter un fichier" aria-label="Ajouter un fichier">⌕</button>
+        <button type="button" class="composer-icon" id="attachBtn" title="Ajouter un fichier" aria-label="Ajouter un fichier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg></button>
         <textarea id="composerInput" placeholder="Merry Christmas" rows="1"></textarea>
-        <button type="button" class="composer-icon" id="voiceBtn" title="Utiliser le microphone" aria-label="Utiliser le microphone">♩</button>
-        <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message">➜</button>
+        <button type="button" class="composer-icon" id="voiceBtn" title="Utiliser le microphone" aria-label="Utiliser le microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg></button>
+        <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button>
       </div>
       <div class="composer-tools" aria-label="Outils du message">
-        <button type="button" class="tool-btn" id="chatModeBtn" title="Mode conversation" aria-label="Mode conversation">◌</button>
-        <button type="button" class="tool-btn" id="imageModeBtn" title="Générer une image" aria-label="Générer une image">▧</button>
-        <button type="button" class="tool-btn" id="webModeBtn" title="Recherche web" aria-label="Recherche web">◎</button>
-        <button type="button" class="tool-btn" id="deepModeBtn" title="Réponse approfondie" aria-label="Réponse approfondie">◇</button>
+        <button type="button" class="tool-btn" id="chatModeBtn" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
+        <button type="button" class="tool-btn" id="imageModeBtn" title="Générer une image" aria-label="Générer une image"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
+        <button type="button" class="tool-btn" id="webModeBtn" title="Recherche web" aria-label="Recherche web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button>
+        <button type="button" class="tool-btn" id="deepModeBtn" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
         <span class="tool-spacer"></span>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
@@ -285,7 +285,8 @@
       convo.messages = data.messages.map(m => ({
         role: m.role === "assistant" ? "bot" : m.role,
         content: m.content,
-        tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens
+        tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens,
+        createdAt: m.created_at
       }));
       convo.title = data.title;
       convo.personaId = data.persona_id || convo.personaId;
@@ -511,21 +512,95 @@
     document.title = state.botName || "Chatbot";
   }
 
-  function renderMessages(){
-    const wrap = el("messages");
-    const convo = activeConvo();
-    if(!convo || !convo.messages || convo.messages.length === 0){
-      wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div></div>`;
-      return;
+function renderMessages(){
+  const wrap = el("messages");
+  const convo = activeConvo();
+  if(!convo || !convo.messages || convo.messages.length === 0){
+    wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div></div>`;
+    return;
+  }
+  wrap.innerHTML = "";
+  convo.messages.forEach((m, messageIndex) => {
+    const div = document.createElement("div");
+    div.className = "msg " + m.role;
+
+    if(m.role === "bot"){
+      div.classList.add("has-actions");
     }
-    wrap.innerHTML = "";
-    convo.messages.forEach(m => {
-      const div = document.createElement("div");
-      div.className = "msg " + m.role;
-      div.innerHTML = `${escapeHtml(m.content)}<span class="meta">${m.tokens} jetons</span>`;
-      wrap.appendChild(div);
-    });
-    wrap.scrollTop = wrap.scrollHeight;
+
+    const contentDiv = document.createElement("div");
+    contentDiv.className = "msg-content";
+    if(m.role === "bot"){
+      contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(m.content));
+    } else {
+      contentDiv.textContent = m.content;
+    }
+    div.appendChild(contentDiv);
+
+    if(m.role === "bot"){
+      const actions = document.createElement("div");
+      actions.className = "response-actions";
+      const icons = {
+        copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+        volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"></path></svg>',
+        like: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H3V10h4Zm0 10h10.4a2 2 0 0 0 1.9-1.4l1.3-4A2 2 0 0 0 18.7 12H15l.6-3.2A2.3 2.3 0 0 0 13.3 6L7 13"></path></svg>',
+        dislike: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H3v10h4Zm0-10h10.4a2 2 0 0 1 1.9 1.4l1.3 4A2 2 0 0 1 18.7 12H15l.6 3.2a2.3 2.3 0 0 1-2.3 2.8L7 11"></path></svg>',
+        refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-14.8-3L3 11"></path><path d="M3 5v6h6M4 13a8.1 8.1 0 0 0 14.8 3L21 13"></path><path d="M21 19v-6h-6"></path></svg>'
+      };
+      const addAction = (icon, title, handler) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "response-action";
+        button.innerHTML = icons[icon];
+        button.title = title;
+        button.setAttribute("aria-label", title);
+        button.addEventListener("click", handler);
+        actions.appendChild(button);
+        return button;
+      };
+      const copyBtn = addAction("copy", "Copier la réponse", async () => {
+        await navigator.clipboard.writeText(m.content);
+        copyBtn.classList.add("active");
+        setTimeout(() => { copyBtn.classList.remove("active"); }, 1500);
+      });
+      addAction("volume", "Lire la réponse", () => {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(m.content));
+      });
+      const likeBtn = addAction("like", "J'aime cette réponse", () => {
+        likeBtn.classList.toggle("active");
+        dislikeBtn.classList.remove("active");
+      });
+      const dislikeBtn = addAction("dislike", "Je n'aime pas cette réponse", () => {
+        dislikeBtn.classList.toggle("active");
+        likeBtn.classList.remove("active");
+      });
+      addAction("refresh", "Régénérer la réponse", () => regenerateResponse(messageIndex));
+      const time = document.createElement("span");
+      time.className = "response-time";
+      time.textContent = relativeTime(m.createdAt);
+      actions.appendChild(time);
+      div.appendChild(actions);
+    }
+
+    const footer = document.createElement("div");
+    footer.className = "msg-footer";
+    footer.innerHTML = `<span class="meta">${m.tokens} jetons</span>`;
+    div.appendChild(footer);
+
+    wrap.appendChild(div);
+  });
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+  function relativeTime(value){
+    const date = value ? new Date(value) : new Date();
+    const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+    if(minutes < 1) return "à l'instant";
+    if(minutes < 60) return "il y a " + minutes + " min";
+    const hours = Math.floor(minutes / 60);
+    if(hours < 24) return "il y a " + hours + " h";
+    return "il y a " + Math.floor(hours / 24) + " j";
   }
 
   function renderCredits(){
@@ -660,7 +735,7 @@
     return data;
   }
 
-  async function sendMessage(text){
+  async function sendMessage(text, reuseLastUser = false){
     if(state.sending || !ensureCreditAccess()) return;
     state.sending = true;
     renderCredits();
@@ -675,7 +750,7 @@
     }
     const persona = state.personas.find(p => p.id === convo.personaId) || state.personas[0];
 
-    convo.messages.push({ role: "user", content: text, tokens: 0 });
+    if(!reuseLastUser) convo.messages.push({ role: "user", content: text, tokens: 0, createdAt: new Date().toISOString() });
     renderAll();
 
     try{
@@ -695,7 +770,7 @@
       const inputTokens = data.prompt_tokens ?? estimateTokens(text);
       const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
       convo.messages[convo.messages.length - 1].tokens = inputTokens;
-      convo.messages.push({ role: "bot", content: replyText, tokens: replyTokens });
+      convo.messages.push({ role: "bot", content: replyText, tokens: replyTokens, createdAt: new Date().toISOString() });
       state.credits = Number(data.remaining_balance ?? state.credits);
       state.usageLog.unshift({ label: "Message (" + persona.name + ")", tokens: inputTokens });
       state.usageLog.unshift({ label: "Réponse (" + persona.name + ")", tokens: replyTokens });
@@ -707,6 +782,15 @@
       state.sending = false;
       renderCredits();
     }
+  }
+
+  async function regenerateResponse(messageIndex){
+    const convo = activeConvo();
+    const previousMessage = convo && convo.messages[messageIndex - 1];
+    if(!convo || !previousMessage || previousMessage.role !== "user" || state.sending) return;
+    convo.messages.splice(messageIndex, 1);
+    renderAll();
+    await sendMessage(previousMessage.content, true);
   }
 
   // ---------- Event wiring ----------
@@ -875,6 +959,14 @@
   const form = el("composerForm");
   const input = el("composerInput");
   const creditPill = el("creditPill");
+  const main = document.querySelector(".main");
+  const updateComposerHeight = () => {
+    main.style.setProperty("--composer-height", form.offsetHeight + "px");
+  };
+  if(window.ResizeObserver){
+    new ResizeObserver(updateComposerHeight).observe(form);
+  }
+  updateComposerHeight();
   creditPill.addEventListener("click", ensureCreditAccess);
   creditPill.addEventListener("keydown", e => {
     if(e.key === "Enter" || e.key === " "){
@@ -920,5 +1012,6 @@
   if(new URLSearchParams(window.location.search).get("customize") === "1") openCustomization();
 })();
 </script>
+
 
 {% endblock %}
