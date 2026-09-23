@@ -170,3 +170,7 @@ MAILERS = {
         },
     },
 }
+
+
+CINETPAY_API_KEY = env("CINETPAY_API_KEY")
+CINETPAY_SITE_ID = env("CINETPAY_SITE_ID")

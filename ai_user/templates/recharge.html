@@ -45,6 +45,10 @@
       <button type="submit">Payer avec Mobile Money</button>
     </form>
   </div>
+  <div style="margin-top:40px;">
+    <h2>Autres méthodes de paiement</h2>
+    <p><a class="back" href="{% url 'chat:wave-recharge-request' %}">Par wave</a></p>
+  </div>
   <a class="back" href="{% url 'chat:chat-home' %}">Retour au chat</a>
   <script>
     const operatorInput = document.getElementById("operator");

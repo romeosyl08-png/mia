@@ -104,16 +104,24 @@ class CreditTransaction(models.Model):
 class RechargePurchase(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending", "En attente"
-        PAID = "paid", "Payee"
-        FAILED = "failed", "Echouee"
+        PAID = "paid", "Payé"
+        FAILED = "failed", "Échoué"
+
+    class Method(models.TextChoices):
+        STRIPE = "stripe", "Stripe"
+        CINETPAY = "cinetpay", "CinetPay"
+        WAVE = "wave", "Wave (manuel)"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    stripe_session_id = models.CharField(max_length=255, unique=True)
+    stripe_session_id = models.CharField(max_length=200, blank=True, null=True, unique=True)
+    method = models.CharField(max_length=20, choices=Method.choices, default=Method.STRIPE)
+    reference = models.CharField(max_length=100, blank=True, help_text="Référence ou numéro de transaction Wave donné par l'utilisateur")
+    phone_number = models.CharField(max_length=20, blank=True)
     amount_cents = models.PositiveIntegerField()
     credits = models.PositiveIntegerField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     paid_at = models.DateTimeField(null=True, blank=True)
 
-    class Meta:
-        ordering = ["-created_at"]
+    def __str__(self):
+        return f"{self.user} — {self.credits} crédits ({self.get_status_display()})"

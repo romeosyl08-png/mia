@@ -10,9 +10,10 @@ from django.views import View
 from .models import Conversation, Message, Persona
 from ai_user.models import InsufficientCreditsError
 
-from .services import ProviderError, call_llm_provider, credit_multiplier, estimate_cost
+from .services import ProviderError, call_llm_provider, call_llm_team, credit_multiplier, estimate_cost, is_local_provider
 from api.models import AIModel
-
+from chat.services import PRICING_TIERS
+from itertools import groupby
 
 def chat_home(request):
 	if not request.user.is_authenticated:
@@ -24,9 +25,14 @@ def chat_home(request):
 	models = AIModel.objects.filter(
 		is_active=True,
 		provider__is_active=True,
-	).select_related('provider')
+	).select_related('provider').order_by('provider__name', 'name')
+	models_by_provider = [
+    {'provider_name': provider_name, 'models': list(group)}
+    for provider_name, group in groupby(models, key=lambda m: m.provider.name)
+	]
 
 	return render(request, 'chat.html', {
+		'models_by_provider': models_by_provider,
 		'ai_models': models,
 		'initial_credits': credits,
 		'is_authenticated': request.user.is_authenticated,
@@ -61,13 +67,18 @@ class SendMessageView(View):
 
 		model_query = AIModel.objects.filter(is_active=True, provider__is_active=True).select_related('provider')
 		model_id = payload.get('model_id')
-		model = model_query.filter(model_id=model_id).first() if model_id else model_query.first()
+		team_mode = bool(payload.get('team_mode'))
+		team_ids = payload.get('team_model_ids') or []
+		if not isinstance(team_ids, list):
+			team_ids = []
+		if team_mode:
+			team_models = list(model_query.filter(model_id__in=team_ids[:3])) if team_ids else []
+			model = team_models[0] if team_models else None
+		else:
+			team_models = []
+			model = model_query.filter(model_id=model_id).first() if model_id else model_query.first()
 		if not model:
 			return _chat_error('Aucun modèle actif n’est configuré.', 'provider_unavailable', 503)
-
-		api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
-		if not api_key or not model.provider.base_url:
-			return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
 
 		conversation_id = payload.get('conversation_id')
 		conversation = None
@@ -85,6 +96,8 @@ class SendMessageView(View):
 			messages = list(conversation.messages.filter(role__in={'user', 'assistant'}).values('role', 'content'))
 		messages.append({'role': 'user', 'content': content})
 		reserve, estimated_input = estimate_cost(content, model, system_prompt, messages)
+		if team_mode:
+			reserve *= max(1, len(team_models) + 1)
 		account = request.user.credit_account
 		try:
 			account.debit(reserve, reason='usage', note=f'Reservation {model.model_id}')
@@ -92,15 +105,24 @@ class SendMessageView(View):
 			return _chat_error('Crédits insuffisants pour ce message.', 'insufficient_credits', 402)
 
 		try:
-			reply, provider_input, provider_output = call_llm_provider(
-				model.provider,
-				api_key.get_key(),
-				model.model_id,
-				messages,
-				system_prompt,
-				float(payload.get('temperature', 0.7)),
-				500,
-			)
+			if team_mode:
+				reply, provider_input, provider_output = call_llm_team(
+					team_models, messages, system_prompt, float(payload.get('temperature', 0.7)), 500
+				)
+			else:
+				api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
+				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
+					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
+					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
+				reply, provider_input, provider_output = call_llm_provider(
+					model.provider,
+					api_key.get_key() if api_key else '',
+					model.model_id,
+					messages,
+					system_prompt,
+					float(payload.get('temperature', 0.7)),
+					500,
+				)
 		except ProviderError as error:
 			account.credit(reserve, reason='adjustment', note='Remboursement appel IA échoué')
 			return _chat_error(str(error), 'provider_error', 502)
@@ -236,3 +258,12 @@ class PersonaDetailView(View):
 		persona = get_object_or_404(Persona, id=pk, user=request.user)
 		persona.delete()
 		return JsonResponse({}, status=204)
+
+
+
+
+def pricing_page(request):
+    return render(request, 'pricing.html', {
+        'is_authenticated': request.user.is_authenticated,
+        'tiers': PRICING_TIERS,
+    })

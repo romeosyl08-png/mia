@@ -4,6 +4,15 @@ from chat.models import APIProvider, AIModel
 
 PROVIDERS = [
     {
+        "slug": "ollama-local",
+        "name": "Mia (Ollama local)",
+        "base_url": "http://127.0.0.1:11434",
+        "docs_url": "https://ollama.com/blog/openai-compatibility",
+        "models": [
+            {"model_id": "qwen2.5-coder:1.5b", "name": "Mia — Qwen Coder local"},
+        ],
+    },
+    {
         "slug": "groq",
         "name": "Groq",
         "base_url": "https://api.groq.com/openai",

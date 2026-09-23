@@ -83,16 +83,57 @@
         <span class="tool-spacer"></span>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
-      <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
-        {% for ai_model in ai_models %}
-          <button type="button" class="model-chip{% if forloop.first %} active{% endif %}" data-model-id="{{ ai_model.model_id|escape }}">
-            <span class="model-dot" aria-hidden="true">✦</span>{{ ai_model.name }}
-          </button>
-        {% empty %}
-          <button type="button" class="model-chip active" data-model-id="demo-mistral"><span class="model-dot" aria-hidden="true">✦</span>Mistral</button>
-           <button type="button" class="model-chip" data-model-id="demo-claude"><span class="model-dot" aria-hidden="true">✦</span>Claude</button>
-           <button type="button" class="model-chip" data-model-id="demo-gemini"><span class="model-dot" aria-hidden="true">✦</span>Gemini 3 Pro</button>
+<div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
+  <button type="button" class="model-chip team-chip" id="teamModeBtn" data-team="true">
+    <span class="model-dot" aria-hidden="true">✦</span>Équipe IA
+  </button>
+  {% for group in models_by_provider %}
+    <div class="model-group">
+      <span class="model-group-label">{{ group.provider_name }}</span>
+      {% for ai_model in group.models %}
+        <button type="button" class="model-chip{% if forloop.first and forloop.parentloop.first %} active{% endif %}" data-model-id="{{ ai_model.model_id|escape }}">
+          <span class="model-dot" aria-hidden="true">✦</span>{{ ai_model.name }}
+        </button>
+      {% endfor %}
+    </div>
+  {% empty %}
+    <button type="button" class="model-chip active" data-model-id="demo-mistral"><span class="model-dot" aria-hidden="true">✦</span>Mistral</button>
+    <button type="button" class="model-chip" data-model-id="demo-claude"><span class="model-dot" aria-hidden="true">✦</span>Claude</button>
+    <button type="button" class="model-chip" data-model-id="demo-gemini"><span class="model-dot" aria-hidden="true">✦</span>Gemini 3 Pro</button>
+  {% endfor %}
+</div>
+
+      <div class="team-options" id="teamOptions" hidden>
+        <div class="team-options-head">
+          <div>
+            <strong>Construis ton équipe</strong>
+            <span>Choisis jusqu'à 3 IA</span>
+          </div>
+          <div class="team-count" id="teamCount">0 / 3</div>
+        </div>
+        <div class="team-model-grid" id="teamModelGrid">
+  {% for group in models_by_provider %}
+    <div class="team-model-group">
+      <span class="team-model-group-label">{{ group.provider_name }}</span>
+      {% for ai_model in group.models %}
+        <button type="button" class="team-model-option" data-model-id="{{ ai_model.model_id|escape }}">
+          <span class="team-model-check">✓</span>
+          <span class="team-model-copy"><strong>{{ ai_model.name }}</strong><small>{{ ai_model.provider.name }}</small></span>
+        </button>
+      {% endfor %}
+    </div>
+  {% endfor %}
+</div>
+        <select id="teamModelSelect" multiple hidden aria-hidden="true">
+        {% for group in models_by_provider %}
+          <div class="model-group-label">{{ group.provider_name }}</div>
+          {% for ai_model in group.models %}
+            <button type="button" class="model-chip" data-model-id="{{ ai_model.model_id|escape }}">
+              <span class="model-dot" aria-hidden="true">✦</span>{{ ai_model.name }}
+            </button>
+          {% endfor %}
         {% endfor %}
+        </select>
       </div>
     </form>
   </main>
@@ -727,7 +768,9 @@ function renderMessages(){
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
         system_prompt: persona.prompt,
-        temperature: persona.temp
+        temperature: persona.temp,
+        team_mode: el("teamModeBtn").classList.contains("active"),
+        team_model_ids: Array.from(el("teamModelSelect").selectedOptions).map(option => option.value)
       })
     });
     const data = await res.json().catch(() => ({}));
@@ -918,12 +961,37 @@ function renderMessages(){
   });
   el("aiModelSelect").addEventListener("change", e => { state.modelId = e.target.value; });
 
-  document.querySelectorAll(".model-chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      state.modelId = chip.dataset.modelId;
-      document.querySelectorAll(".model-chip").forEach(item => item.classList.toggle("active", item === chip));
-      el("aiModelSelect").value = state.modelId;
-    });
+document.querySelectorAll(".model-chip:not(.team-chip)").forEach(chip => {
+  chip.addEventListener("click", () => {
+    el("teamModeBtn").classList.remove("active");
+    el("teamOptions").hidden = true;
+    state.modelId = chip.dataset.modelId;
+    document.querySelectorAll(".model-chip").forEach(item => item.classList.toggle("active", item === chip));
+    el("aiModelSelect").value = state.modelId;
+  });
+});
+  el("teamModeBtn").addEventListener("click", () => {
+    const active = el("teamModeBtn").classList.toggle("active");
+    el("teamOptions").hidden = !active;
+    if(active){
+      document.querySelectorAll(".model-chip:not(.team-chip)").forEach(item => item.classList.remove("active"));
+      el("teamModelGrid").querySelector(".team-model-option")?.focus();
+    }
+  });
+  el("teamModelGrid").addEventListener("click", event => {
+    const button = event.target.closest(".team-model-option");
+    if(!button) return;
+    const option = Array.from(el("teamModelSelect").options).find(item => item.value === button.dataset.modelId);
+    if(!option) return;
+    if(!option.selected && el("teamModelSelect").selectedOptions.length >= 3){
+      el("creditNotice").textContent = "Tu peux choisir au maximum 3 IA.";
+      el("creditNotice").classList.add("show");
+      window.setTimeout(() => el("creditNotice").classList.remove("show"), 2800);
+      return;
+    }
+    option.selected = !option.selected;
+    button.classList.toggle("selected", option.selected);
+    el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
   });
   document.querySelectorAll(".tool-btn").forEach(button => {
     button.addEventListener("click", () => {
@@ -991,6 +1059,13 @@ function renderMessages(){
     e.preventDefault();
     const text = input.value.trim();
     if(!ensureCreditAccess() || !text) return;
+    if(el("teamModeBtn").classList.contains("active") && el("teamModelSelect").selectedOptions.length === 0){
+      el("creditNotice").textContent = "Choisis au moins une IA pour former ton équipe.";
+      el("creditNotice").classList.add("show");
+      window.setTimeout(() => el("creditNotice").classList.remove("show"), 2800);
+      el("teamModelGrid").querySelector(".team-model-option")?.focus();
+      return;
+    }
     input.value = "";
     input.style.height = "auto";
     sendMessage(text);
@@ -1015,3 +1090,5 @@ function renderMessages(){
 
 
 {% endblock %}
+
+

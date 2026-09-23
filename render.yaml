@@ -3,7 +3,7 @@ services:
     name: ai-2ai
     runtime: python
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input
-    startCommand: python manage.py migrate --noinput --verbosity 2 && exec gunicorn ai_2ai.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: python manage.py migrate --noinput --verbosity 2 && exec gunicorn ai_2ai.wsgi:application --bind 0.0.0.0:$PORT 
     envVars:
       - key: DATABASE_URL
         fromDatabase:
