@@ -15,7 +15,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
-from .models import RechargePurchase, TelegramIdentity
+from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 import requests
 import uuid
 
@@ -286,45 +286,7 @@ def cinetpay_webhook(request):
     return HttpResponse("ok")
 
 
-@login_required(login_url="/auth/?next=/recharge/wave/")
-def wave_recharge_request(request):
-    if request.method == "POST":
-        try:
-            amount = Decimal(request.POST.get("amount", ""))
-            amount_cents = int(amount * 100)
-        except (ArithmeticError, TypeError, ValueError):
-            return render(request, "wave_request.html", {"error": "Montant invalide."})
 
-        phone_number = request.POST.get("phone_number", "").strip()
-        reference = request.POST.get("reference", "").strip()
-        if not phone_number:
-            return render(request, "wave_request.html", {"error": "Le numéro utilisé pour payer est requis."})
-
-        credits = (amount_cents * CREDITS_PER_DOLLAR) // 100
-        RechargePurchase.objects.create(
-            user=request.user,
-            method=RechargePurchase.Method.WAVE,
-            phone_number=phone_number,
-            reference=reference,
-            amount_cents=amount_cents,
-            credits=credits,
-            status=RechargePurchase.Status.PENDING,
-        )
-        return render(request, "wave_request.html", {"submitted": True})
-
-    return render(request, "wave_request.html")
-
-@login_required
-def confirm_wave_payment(request, purchase_id):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
-    purchase = get_object_or_404(RechargePurchase, id=purchase_id, status=RechargePurchase.Status.PENDING)
-    with transaction.atomic():
-        purchase.status = RechargePurchase.Status.PAID
-        purchase.paid_at = timezone.now()
-        purchase.save(update_fields=["status", "paid_at"])
-        purchase.user.credit_account.credit(purchase.credits, reason="recharge", note="Wave manuel")
-    return redirect("admin:ai_user_rechargepurchase_changelist")
 def telegram_auth(request):
 	"""Validate Telegram's login widget payload before opening a session."""
 	if not settings.TELEGRAM_BOT_TOKEN:
@@ -383,41 +345,90 @@ def telegram_auth(request):
 		next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
 	) else reverse("chat-home"))
 
-# Create your views here.
-@login_required
-def reject_wave_payment(request, purchase_id):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
-    purchase = get_object_or_404(
-        RechargePurchase, id=purchase_id,
-        status=RechargePurchase.Status.PENDING,
-        method=RechargePurchase.Method.WAVE,
-    )
-    if request.method == "POST":
-        purchase.delete()
-        return redirect("wave-pending-payments")
-    return render(request, "wave_reject_confirm.html", {"purchase": purchase})
+import secrets
+import requests
 
-from django.core.paginator import Paginator
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
-@login_required
-def wave_pending_payments(request):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
 
-    pending_qs = RechargePurchase.objects.filter(
-        method=RechargePurchase.Method.WAVE,
-        status=RechargePurchase.Status.PENDING,
-    ).select_related("user").order_by("created_at")
+def google_login(request):
+    state = secrets.token_urlsafe(24)
+    request.session["google_oauth_state"] = state
+    next_url = request.GET.get("next", "/")
+    request.session["google_oauth_next"] = next_url
 
-    total_credits = sum(p.credits for p in pending_qs)
-    total_amount_cents = sum(p.amount_cents for p in pending_qs)
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": request.build_absolute_uri(reverse("google-callback")),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    query = "&".join(f"{k}={requests.utils.quote(str(v))}" for k, v in params.items())
+    return redirect(f"{GOOGLE_AUTH_URL}?{query}")
 
-    paginator = Paginator(pending_qs, 25)
-    page = paginator.get_page(request.GET.get("page"))
 
-    return render(request, "wave_pending.html", {
-        "pending": page,
-        "total_credits": total_credits,
-        "total_amount_cents": total_amount_cents,
-    })
+def google_callback(request):
+    error = request.GET.get("error")
+    if error:
+        return HttpResponseBadRequest("Connexion Google annulée.")
+
+    state = request.GET.get("state")
+    code = request.GET.get("code")
+    expected_state = request.session.pop("google_oauth_state", None)
+    if not state or state != expected_state or not code:
+        return HttpResponseBadRequest("Requête Google invalide.")
+
+    try:
+        token_response = requests.post(GOOGLE_TOKEN_URL, data={
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": request.build_absolute_uri(reverse("google-callback")),
+        }, timeout=20)
+        token_data = token_response.json()
+        access_token = token_data["access_token"]
+
+        userinfo_response = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=20,
+        )
+        info = userinfo_response.json()
+    except (requests.RequestException, KeyError, ValueError):
+        return HttpResponseServerError("Impossible de contacter Google.")
+
+    google_sub = info.get("sub")
+    email = info.get("email", "")
+    if not google_sub:
+        return HttpResponseBadRequest("Réponse Google incomplète.")
+
+    identity = GoogleIdentity.objects.select_related("user").filter(google_sub=google_sub).first()
+    if identity is None:
+        base_username = (email.split("@")[0] if email else f"google_{google_sub[:8]}").strip() or f"google_{google_sub[:8]}"
+        django_username = base_username
+        suffix = 1
+        while User.objects.filter(username=django_username).exists():
+            django_username = f"{base_username}_{suffix}"
+            suffix += 1
+        user = User.objects.create_user(
+            username=django_username,
+            email=email,
+            first_name=info.get("given_name", ""),
+            last_name=info.get("family_name", ""),
+        )
+        identity = GoogleIdentity.objects.create(user=user, google_sub=google_sub, email=email)
+    else:
+        user = identity.user
+
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+
+    next_url = request.session.pop("google_oauth_next", "/")
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        next_url = reverse("chat-home")
+    return redirect(next_url)

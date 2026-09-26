@@ -1,0 +1,53 @@
+note pour bandit0
+
+pour ssh: ssh -p port_number user@IP
+ou @addressweb
+
+si le fichier est -:	cat ./-
+
+si le fichier a un nom encore plus bae:  cat ./"--spaces in this filename--"
+
+si le fichier est caché je dois juste faire: ls -a
+
+ouvrir plusieurs files:cat -- -file{00..09}
+
+trouve dans "inhere" un fichier(f) avec 1033 bytes  : find inhere -type f -size 1033c
+
+pour inhere/maybehere07/.file2  :cat inhere/maybehere07/".file2"
+
+pour trouver un fichier ayant pour proprietaire bandit7 ,groupe propriétaire bandit6 avec taille 33 bytes si erreur(2) envoyé dans /dev/null/ qui n'existe pas donc jetter:
+
+find / -type f -user bandit7 -group bandit6 -size 33c 2>/dev/null
+
+
+trouver le mot qui vient après l'espace après millionth : grep -oP 'millionth\s+\K\S+' data.txt
+rechercher avec uniq:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ZjLjTmM6FvvyRnrb2rfNWOZOTa6ip5If :mot de passe 1
+263JGJPfgU6LtdEvgfWU1XP5yac29mFx :mot de passe 2
+MNk8KNH3Usiio41PRUEoDFPqfxLPlSmx :mot de passe 3
+2WmrDFRmJIq3IPxneAaMGhap0pFhF3NJ :mot de passe 4
+4oQYVPkxZOOEOO5pTW81FB8j8lxXGUQw :mot de passe 5
+
+HWasnPhtq9AVKe0dmk45nxy20cvUa6EG :mot de passe 6
+morbNTDkSW6jIlUc0ymOdMaLnOlFVAaj :mot de passe 7
+dfwvzFQi4mU0wfNbFOe9RoWskMLg7eEc :mot de passe 8
+4CKMh1JI91bUIZZPXDqGanal4xvAg0JM :mot de passe 9
+FGUW5ilLVJrxX9kMYMmlN4MgbpfMiqey :mot de passe 10
+
+
+
+

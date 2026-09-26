@@ -8,13 +8,14 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.core.cache import cache
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils.crypto import constant_time_compare
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-
-from .models import AIModel
-
+from django.contrib.auth.decorators import login_required
+from .models import AIModel, UserAPIKey
+import hashlib
+from chat.services import estimate_cost, credit_multiplier
 
 def api_home(request):
 	return render(request, 'api.html', {
@@ -163,15 +164,21 @@ def _openai_response(model, provider_data, is_anthropic):
 
 
 @csrf_exempt
+@csrf_exempt
 def chat_completions(request):
 	if request.method != 'POST':
 		return _error('Only POST is supported for chat completions.', 'method_not_allowed', 405)
-	auth_error = _check_auth(request)
-	if auth_error:
-		return auth_error
+
+	user, user_key = _authenticate_user_key(request)
+	if not user:
+		auth_error = _check_auth(request)  # repli sur la clé globale existante
+		if auth_error:
+			return auth_error
+
 	rate_limit_error = _check_rate_limit(request)
 	if rate_limit_error:
 		return rate_limit_error
+
 	payload = _json_body(request)
 	if not payload or not isinstance(payload.get('messages'), list):
 		return _error('The request must contain a messages array.', 'invalid_request_error', 400)
@@ -182,18 +189,77 @@ def chat_completions(request):
 	if payload.get('stream'):
 		return _error('Streaming is not supported yet.', 'invalid_request_error', 400)
 
+	account = None
+	reserve = 0
+	if user:
+		content = "".join(m.get("content", "") for m in payload["messages"] if isinstance(m.get("content"), str))
+		reserve, _estimated = estimate_cost(content, model)
+		account = user.credit_account
+		try:
+			account.debit(reserve, reason='usage', note=f'API — {model.model_id}')
+		except Exception:
+			return _error('Insufficient credits.', 'insufficient_quota', 402)
+
 	try:
 		upstream_request, key, is_anthropic = _upstream_request(model, payload)
 		with urlopen(upstream_request, timeout=120) as response:
 			provider_data = json.loads(response.read().decode('utf-8'))
 	except ValueError as error:
+		if account:
+			account.credit(reserve, reason='adjustment', note='Remboursement — config manquante')
 		return _error(str(error), 'configuration_error', 503)
 	except HTTPError as error:
+		if account:
+			account.credit(reserve, reason='adjustment', note='Remboursement — erreur fournisseur')
 		detail = error.read().decode('utf-8', errors='replace')
 		return _error(f'Provider request failed ({error.code}): {detail[:500]}', 'provider_error', 502)
 	except (URLError, TimeoutError) as error:
+		if account:
+			account.credit(reserve, reason='adjustment', note='Remboursement — fournisseur indisponible')
 		return _error(f'Provider request failed: {error}', 'provider_error', 502)
 
 	key.last_used_at = timezone.now()
 	key.save(update_fields=['last_used_at'])
-	return JsonResponse(_openai_response(model, provider_data, is_anthropic))
+	if user_key:
+		user_key.last_used_at = timezone.now()
+		user_key.save(update_fields=['last_used_at'])
+
+	result = _openai_response(model, provider_data, is_anthropic)
+	if account:
+		result['usage']['remaining_balance'] = account.balance
+	return JsonResponse(result)
+
+
+
+@login_required(login_url="/auth/?next=/api-keys/")
+def api_keys_page(request):
+    new_key = None
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create":
+            name = (request.POST.get("name") or "").strip() or "Clé par défaut"
+            full_key, prefix, key_hash = UserAPIKey.generate()
+            UserAPIKey.objects.create(user=request.user, name=name, key_prefix=prefix, key_hash=key_hash)
+            new_key = full_key
+        elif action == "revoke":
+            UserAPIKey.objects.filter(id=request.POST.get("key_id"), user=request.user).delete()
+            return redirect("api-keys-page")
+
+    keys = request.user.api_keys.all()
+    return render(request, "api_keys.html", {"keys": keys, "new_key": new_key})
+
+
+
+
+def _authenticate_user_key(request):
+    header = request.headers.get('Authorization', '')
+    if not header.startswith('Bearer '):
+        return None, None
+    token = header[len('Bearer '):].strip()
+    if not token.startswith('sk-ai2ai-'):
+        return None, None
+    key_hash = hashlib.sha256(token.encode()).hexdigest()
+    api_key = UserAPIKey.objects.filter(key_hash=key_hash, is_active=True).select_related('user').first()
+    if not api_key:
+        return None, None
+    return api_key.user, api_key

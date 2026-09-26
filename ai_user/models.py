@@ -1,7 +1,12 @@
 from django.conf import settings
 from django.db import models, transaction
 
-
+class GoogleIdentity(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="google_identity")
+    google_sub = models.CharField(max_length=100, unique=True)  # identifiant unique Google
+    email = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
 class TelegramIdentity(models.Model):
     """Associe un compte Django a un identifiant Telegram verifie."""
 
@@ -110,7 +115,7 @@ class RechargePurchase(models.Model):
     class Method(models.TextChoices):
         STRIPE = "stripe", "Stripe"
         CINETPAY = "cinetpay", "CinetPay"
-        WAVE = "wave", "Wave (manuel)"
+        
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     stripe_session_id = models.CharField(max_length=200, blank=True, null=True, unique=True)

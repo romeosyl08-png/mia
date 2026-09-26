@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Personnaliser — Le Comptoir{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/customize.css' %}">
+{% endblock %}
+
+{% block body %}
+
+<div class="customize-page">
+
+    <header class="customize-header">
+
+        <a href="/" class="back-btn">
+            ← Retour au chat
+        </a>
+
+        <div class="customize-brand">
+            <span class="brand-avatar" id="customizeAvatar">🐘</span>
+            <span id="customizeBotName">Le Comptoir</span>
+        </div>
+
+    </header>
+
+
+    <main class="customize-content">
+
+        <!-- PERSONA -->
+
+        <section class="settings-section">
+
+            <h2>Persona actif</h2>
+
+            <div class="field">
+                <label for="personaSelect">
+                    Choisir un persona
+                </label>
+
+                <select id="personaSelect"></select>
+            </div>
+
+
+            <div class="field">
+
+                <label for="personaSystemPrompt">
+                    Prompt système
+                </label>
+
+                <textarea id="personaSystemPrompt"></textarea>
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="personaTone">
+                    Ton de réponse
+                </label>
+
+                <select id="personaTone">
+
+                    <option value="neutre">
+                        Neutre
+                    </option>
+
+                    <option value="decontracte">
+                        Décontracté
+                    </option>
+
+                    <option value="formel">
+                        Formel
+                    </option>
+
+                    <option value="pedagogue">
+                        Pédagogue
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="personaTemp">
+                    Créativité (température) —
+                    <span id="tempVal">0.7</span>
+                </label>
+
+                <input
+                    type="range"
+                    id="personaTemp"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value="0.7"
+                >
+
+                <div class="range-row">
+                    <span>Précis</span>
+                    <span>Créatif</span>
+                </div>
+
+            </div>
+
+
+            <div class="field">
+
+                <label for="personaLength">
+                    Longueur des réponses
+                </label>
+
+                <select id="personaLength">
+
+                    <option value="courte">
+                        Courte
+                    </option>
+
+                    <option value="moyenne" selected>
+                        Moyenne
+                    </option>
+
+                    <option value="longue">
+                        Détaillée
+                    </option>
+
+                </select>
+
+            </div>
+
+        </section>
+
+
+        <!-- APPARENCE -->
+
+        <section class="settings-section">
+
+            <h2>Apparence</h2>
+
+
+            <div class="customize-brand">
+
+                    <span
+                        class="brand-avatar"
+                        data-bot-avatar>
+                        🐘
+                    </span>
+
+                <div class="editable-field">
+
+                    <input
+                        type="text"
+                        id="botNameInput"
+                        maxlength="40"
+                        readonly
+                    >
+
+                    <button
+                        type="button"
+                        class="edit-icon"
+                        data-edit-target="botNameInput"
+                    >
+                        ✎
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="field">
+
+                    <span data-bot-name>
+                        Le Comptoir
+                    </span>
+
+                <div class="editable-field">
+
+                    <input
+                        type="text"
+                        id="botAvatarInput"
+                        maxlength="4"
+                        readonly
+                    >
+
+                    <button
+                        type="button"
+                        class="edit-icon"
+                        data-edit-target="botAvatarInput"
+                    >
+                        ✎
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    Couleur d'accent
+                </label>
+
+                <div
+                    class="swatches"
+                    id="swatches"
+                    role="group"
+                    aria-label="Couleurs d'accent">
+                </div>
+
+            </div>
+
+
+            <div class="toggle-row">
+
+                <label>
+                    Thème
+                </label>
+
+                <div class="theme-toggle">
+
+                    <button
+                        type="button"
+                        id="themeLight">
+                        Clair
+                    </button>
+
+                    <button
+                        type="button"
+                        id="themeDark">
+                        Sombre
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- API -->
+
+
+
+    </main>
+
+</div>
+
+{% endblock %}
+
+
+{% block extra_js %}
+<script src="{% static 'app/js/customize.js' %}"></script>
+{% endblock %}

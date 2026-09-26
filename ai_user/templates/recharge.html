@@ -3,18 +3,52 @@
 {% block title %}Recharger ses jetons{% endblock %}
 
 {% block extra_head %}
-  <style>
-    body{font-family:Arial,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;color:var(--ink);background:var(--paper)}
-    h1{margin-bottom:8px}.intro{color:var(--ink);opacity:.65;margin-bottom:28px}.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
-    .plan{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}.plan h2{margin:0 0 8px}.plan p{color:var(--ink);opacity:.65;min-height:42px}
-    button{width:100%;padding:11px;border:0;border-radius:8px;background:var(--accent);color:var(--accent-ink);font-weight:700;cursor:pointer}
-    button:hover{background:var(--accent-hover);color:var(--accent-ink)}.back{display:inline-block;margin-top:24px;color:var(--accent-hover)}
-    .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.custom-plan{max-width:440px}.amount-row{display:flex;align-items:center;margin-top:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:0 10px;font-size:20px}.amount-row input{width:100%;border:0;background:transparent;padding:10px;font-size:20px;color:var(--ink)}.amount-row input:focus{outline:0}.field{display:block;width:100%;margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font-size:15px}.field input{width:100%;border:0;background:transparent;padding:4px;font-size:15px;color:var(--ink)}
-    .operator-label{display:block;margin-top:16px;font-weight:700}.operator-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}.operator-choice{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);padding:9px;text-align:left;cursor:pointer}.operator-choice:hover,.operator-choice.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--paper))}.operator-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;font-size:11px;font-weight:800;color:#fff}.wave{background:#1db7a6}.orange{background:#f58220}.momo{background:#f5c400;color:#211914}.moov{background:#1c9c62}.operator-name{font-size:12px}.operator-prefix{display:block;font-size:10px;opacity:.6}
-  </style>
+{% load static %}
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}">
 {% endblock %}
 
 {% block body %}
+
+  <!-- CRÉDITS -->
+<section class="settings-section">
+
+            <h2>Solde de jetons</h2>
+
+            <div class="gauge-wrap">
+
+                <div class="gauge">
+                    <svg width="128" height="128" viewBox="0 0 128 128">
+                        <circle
+                            class="track"
+                            cx="64"
+                            cy="64"
+                            r="54">
+                        </circle>
+
+                        <circle
+                            class="fill"
+                            id="gaugeFill"
+                            cx="64"
+                            cy="64"
+                            r="54"
+                            stroke-dasharray="339"
+                            stroke-dashoffset="0">
+                        </circle>
+                    </svg>
+
+                    <div class="gauge-center">
+                        <div class="num" id="gaugeNum">0</div>
+                        <div class="lbl">jetons restants</div>
+                    </div>
+                </div>
+
+                <div class="low-warning" id="lowWarning">
+                    ⚠ Solde bas — pense à recharger
+                </div>
+            </div>
+
+        </section>
+
   <h1>Recharger mes jetons</h1>
   <p class="intro">Paiement sécurisé par Stripe. Les jetons sont ajoutés après confirmation du paiement.</p>
   <div class="plans">
@@ -47,27 +81,8 @@
   </div>
   <div style="margin-top:40px;">
     <h2>Autres méthodes de paiement</h2>
-    <p><a class="back" href="{% url 'chat:wave-recharge-request' %}">Par wave</a></p>
+    <p>Si tu souhaites utiliser un autre moyen de paiement (Wave, Orange Money, Moov Money, Momo, CinetPay, PayPal, crypto-monnaies...), contacte-nous à </p>
   </div>
   <a class="back" href="{% url 'chat:chat-home' %}">Retour au chat</a>
-  <script>
-    const operatorInput = document.getElementById("operator");
-    const phoneInput = document.getElementById("phone");
-    const operatorChoices = [...document.querySelectorAll(".operator-choice")];
-    let waveChosenManually = false;
-    function selectOperator(operator, manual = false){
-      operatorInput.value = operator;
-      if(manual) waveChosenManually = operator === "wave";
-      operatorChoices.forEach(choice => choice.classList.toggle("active", choice.dataset.operator === operator));
-    }
-    operatorChoices.forEach(choice => choice.addEventListener("click", () => selectOperator(choice.dataset.operator, true)));
-    phoneInput.addEventListener("input", () => {
-      if(waveChosenManually) return;
-      const digits = phoneInput.value.replace(/\D/g, "");
-      const prefix = digits.startsWith("225") ? digits.slice(3, 5) : digits.slice(0, 2);
-      if(prefix === "01") selectOperator("momo");
-      if(prefix === "05") selectOperator("moov");
-      if(prefix === "07") selectOperator("orange");
-    });
-  </script>
+
 {% endblock %}

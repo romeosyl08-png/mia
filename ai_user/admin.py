@@ -39,48 +39,4 @@ class CreditTransactionAdmin(admin.ModelAdmin):
         return False
 
 
-@login_required
-def wave_pending_payments(request):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
-    pending = RechargePurchase.objects.filter(
-        method=RechargePurchase.Method.WAVE,
-        status=RechargePurchase.Status.PENDING,
-    ).select_related("user").order_by("created_at")
-    return render(request, "wave_pending.html", {"pending": pending})
 
-
-@login_required
-def confirm_wave_payment(request, purchase_id):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
-    if request.method != "POST":
-        return HttpResponseNotAllowed(["POST"])
-    purchase = get_object_or_404(
-        RechargePurchase, id=purchase_id,
-        status=RechargePurchase.Status.PENDING,
-        method=RechargePurchase.Method.WAVE,
-    )
-    with transaction.atomic():
-        purchase.status = RechargePurchase.Status.PAID
-        purchase.paid_at = timezone.now()
-        purchase.save(update_fields=["status", "paid_at"])
-        purchase.user.credit_account.credit(
-            purchase.credits, reason="recharge", note=f"Wave manuel — ref {purchase.reference or 'N/A'}"
-        )
-    return redirect("wave-pending-payments")
-
-
-@login_required
-def reject_wave_payment(request, purchase_id):
-    if not request.user.is_staff:
-        return HttpResponseForbidden()
-    if request.method != "POST":
-        return HttpResponseNotAllowed(["POST"])
-    purchase = get_object_or_404(
-        RechargePurchase, id=purchase_id,
-        status=RechargePurchase.Status.PENDING,
-        method=RechargePurchase.Method.WAVE,
-    )
-    purchase.delete()
-    return redirect("wave-pending-payments")

@@ -26,6 +26,8 @@ DEBUG = env.bool("DEBUG", default=True)
 
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '')
+GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID",default="")
+GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET",default="")
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_CURRENCY = 'usd'
@@ -52,6 +54,7 @@ INSTALLED_APPS = [
     'chat.apps.ChatConfig',
     'ai_user.apps.AiUserConfig',
     'api.apps.ApiConfig',
+    'bara',
 ]
 
 MIDDLEWARE = [
@@ -155,22 +158,20 @@ CSRF_COOKIE_SECURE = not DEBUG
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
-MAILERS = {
-    'default': {
-        'BACKEND': env(
-            'EMAIL_BACKEND',
-            default='django.core.mail.backends.smtp.EmailBackend',
-        ),
-        'OPTIONS': {
-            'host': env('EMAIL_HOST', default='localhost'),
-            'port': env.int('EMAIL_PORT', default=25),
-            'username': env('EMAIL_HOST_USER', default=''),
-            'password': env('EMAIL_HOST_PASSWORD', default=''),
-            'use_tls': env.bool('EMAIL_USE_TLS', default=False),
-        },
-    },
-}
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env.int("EMAIL_PORT", default=25)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
 
 
-CINETPAY_API_KEY = env("CINETPAY_API_KEY")
-CINETPAY_SITE_ID = env("CINETPAY_SITE_ID")
+SEARCH_API_KEY = env("SEARCH_API_KEY", default="")
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+STATIC_URL = "static/"
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]

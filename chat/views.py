@@ -15,6 +15,8 @@ from api.models import AIModel
 from chat.services import PRICING_TIERS
 from itertools import groupby
 
+from bara.services import get_workspace_context
+
 def chat_home(request):
 	if not request.user.is_authenticated:
 		return redirect(f'{reverse("auth-page")}?next=/')
@@ -31,21 +33,34 @@ def chat_home(request):
     for provider_name, group in groupby(models, key=lambda m: m.provider.name)
 	]
 
+	chat_config = {
+		'initialCredits': credits,
+		'isAuthenticated': request.user.is_authenticated,
+		'loginUrl': '/auth/?next=/',
+		'hasActiveModels': models.exists(),
+		'modelId': models.first().model_id if models.exists() else 'demo-mistral',
+	}
+
 	return render(request, 'chat.html', {
 		'models_by_provider': models_by_provider,
 		'ai_models': models,
-		'initial_credits': credits,
-		'is_authenticated': request.user.is_authenticated,
-		'login_url': '/auth/?next=/',
-		'has_active_models': models.exists(),
+		'chat_config': chat_config,
 	})
-
 
 def dap_home(request):
 	if not request.user.is_authenticated:
 		return redirect(f'{reverse("auth-page")}?next=/dap/')
 	return render(request, 'dap.html')
 
+def customize(request):
+    return render(
+        request,
+        "customize.html",
+        {
+            "is_authenticated": request.user.is_authenticated,
+            "ai_models": AIModel.objects.filter(is_active=True),
+        },
+    )
 
 def _chat_error(message, error_type, status):
 	return JsonResponse({'error': {'message': message, 'type': error_type}}, status=status)
@@ -95,7 +110,12 @@ class SendMessageView(View):
 		if conversation:
 			messages = list(conversation.messages.filter(role__in={'user', 'assistant'}).values('role', 'content'))
 		messages.append({'role': 'user', 'content': content})
-		reserve, estimated_input = estimate_cost(content, model, system_prompt, messages)
+
+		
+		workspace_context = get_workspace_context(conversation)
+		full_system_prompt = (system_prompt + "\n\n" + workspace_context).strip() if workspace_context else system_prompt
+		
+		reserve, estimated_input = estimate_cost(content, model, full_system_prompt, messages)
 		if team_mode:
 			reserve *= max(1, len(team_models) + 1)
 		account = request.user.credit_account
@@ -107,7 +127,7 @@ class SendMessageView(View):
 		try:
 			if team_mode:
 				reply, provider_input, provider_output = call_llm_team(
-					team_models, messages, system_prompt, float(payload.get('temperature', 0.7)), 500
+					team_models, messages, full_system_prompt, float(payload.get('temperature', 0.7)), 500
 				)
 			else:
 				api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
@@ -119,7 +139,7 @@ class SendMessageView(View):
 					api_key.get_key() if api_key else '',
 					model.model_id,
 					messages,
-					system_prompt,
+					full_system_prompt,
 					float(payload.get('temperature', 0.7)),
 					500,
 				)

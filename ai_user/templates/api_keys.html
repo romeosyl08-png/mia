@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Clés API{% endblock %}
+{% block body %}
+<div style="max-width:700px;margin:50px auto;padding:0 20px;">
+  <h2>Tes clés API</h2>
+  <p style="opacity:.65;font-size:13.5px;margin-bottom:20px;">
+    Chaque appel via ta clé débite directement tes jetons, comme dans le chat.
+  </p>
+
+  {% if new_key %}
+    <div style="background:#EEF7EC;border:1px solid #5F7C70;border-radius:10px;padding:16px;margin-bottom:24px;">
+      <strong>Nouvelle clé créée — copie-la maintenant, elle ne sera plus jamais affichée :</strong>
+      <code style="display:block;margin-top:8px;padding:10px;background:#fff;border-radius:6px;font-size:13px;word-break:break-all;">{{ new_key }}</code>
+    </div>
+  {% endif %}
+
+  <form method="post" style="display:flex;gap:8px;margin-bottom:28px;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    <input type="text" name="name" placeholder="Nom de la clé (ex: script perso)" style="flex:1;padding:10px;border:1px solid #D9D7D2;border-radius:8px;">
+    <button type="submit" style="background:#E56B45;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600;">Créer</button>
+  </form>
+
+  <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+    <thead>
+      <tr style="text-align:left;border-bottom:1px solid #E7E5E4;">
+        <th style="padding:8px;">Nom</th><th style="padding:8px;">Clé</th><th style="padding:8px;">Créée le</th><th style="padding:8px;">Dernier usage</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in keys %}
+      <tr style="border-bottom:1px solid #F0F0EE;">
+        <td style="padding:8px;">{{ k.name }}</td>
+        <td style="padding:8px;font-family:monospace;">{{ k.key_prefix }}</td>
+        <td style="padding:8px;">{{ k.created_at|date:"d/m/Y" }}</td>
+        <td style="padding:8px;">{{ k.last_used_at|date:"d/m/Y H:i"|default:"—" }}</td>
+        <td style="padding:8px;">
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="key_id" value="{{ k.id }}">
+            <button type="submit" onclick="return confirm('Révoquer cette clé ?')" style="background:none;border:1px solid #B4483A;color:#B4483A;padding:5px 10px;border-radius:6px;cursor:pointer;">Révoquer</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

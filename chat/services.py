@@ -13,17 +13,16 @@ def credit_multiplier(model):
 
 
 def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
-    """Réserve un plafond conservateur avant l'appel au fournisseur."""
+    """Réserve le prix du palier correspondant au modèle choisi."""
     history = history or []
     history_text = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
     input_bytes = len((content + system_prompt + history_text).encode("utf-8"))
     message_overhead = 8 * (len(history) + 1)
     input_tokens = max(1, input_bytes + message_overhead)
-    multiplier = credit_multiplier(model)
+
     tier = get_tier_for_model(model)
-    # Le prix du palier devient directement le coût facturé en crédits (1 crédit = 1 FCFA, à ajuster selon ta grille)
     reserve = tier_price_fcfa(tier)
-    return (input_tokens + min(max_output_tokens, 500)) * multiplier, input_tokens,reserve
+    return reserve, input_tokens
 
 def is_local_provider(provider):
     return provider.slug in {"ollama-local", "mia"}
@@ -53,7 +52,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
         payload["temperature"] = temperature
         headers = {
             **base_headers,
-            "x-api-key": api_key,  # TODO: déchiffrer via Fernet avant lecture.
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
         }
     else:
@@ -66,7 +65,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
         }
         headers = base_headers.copy()
         if not is_local_provider(provider):
-            headers["Authorization"] = f"Bearer {api_key}"  # TODO: clé chiffrée via Fernet.
+            headers["Authorization"] = f"Bearer {api_key}"
 
     request = Request(
         url,
@@ -80,7 +79,8 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
     except HTTPError as error:
         if error.code == 429:
             raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
-        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
+        body = error.read().decode("utf-8", errors="replace")
+        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}): {body[:300]}") from error
     except (URLError, TimeoutError, ValueError) as error:
         raise ProviderError("Le fournisseur est temporairement indisponible.") from error
 

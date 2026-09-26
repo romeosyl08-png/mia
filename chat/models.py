@@ -47,7 +47,6 @@ class Message(models.Model):
         return f"{self.role}: {self.content[:40]}"
 
 
-from api.models import AIModel, APIKey, APIProvider
 
 
 

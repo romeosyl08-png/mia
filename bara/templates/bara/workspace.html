@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if workspace %}{{ workspace.title }}{% else %}Bara{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bara-wrap{max-width:1100px;margin:0 auto;padding:30px 24px 60px;height:100%;overflow-y:auto;}
+  .bara-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .bara-header h1{font-size:22px;margin:0;}
+  .bara-back{font-size:13px;color:var(--ink);opacity:.6;text-decoration:none;}
+  .bara-back:hover{opacity:1;}
+
+  /* ---- Liste des workspaces ---- */
+  .ws-create-form{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;}
+  .ws-create-form input[type=text]{flex:1;min-width:180px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);}
+  .ws-create-form select{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);}
+  .ws-create-form button{background:var(--accent);color:var(--accent-ink);border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;}
+  .ws-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+  .ws-card{display:block;padding:16px;border:1px solid var(--line);border-radius:12px;text-decoration:none;color:var(--ink);background:var(--panel);transition:border-color .15s;}
+  .ws-card:hover{border-color:var(--accent);}
+  .ws-card strong{display:block;font-size:14.5px;margin-bottom:4px;}
+  .ws-card span{font-size:11.5px;opacity:.55;}
+  .ws-empty{opacity:.55;font-size:13.5px;padding:20px 0;}
+
+  /* ---- Vue détail workspace ---- */
+  .bara-main{display:grid;grid-template-columns:260px 1fr;gap:24px;height:calc(100% - 60px);}
+  .bara-sidebar{border-right:1px solid var(--line);padding-right:20px;overflow-y:auto;}
+  .bara-sidebar h2{font-size:12px;text-transform:uppercase;opacity:.55;margin:0 0 12px;}
+  .upload-form{margin-bottom:16px;}
+  .upload-form label{
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    border:1.5px dashed var(--line);border-radius:10px;padding:16px 10px;
+    font-size:12.5px;color:var(--ink);opacity:.7;cursor:pointer;text-align:center;
+  }
+  .upload-form label:hover{border-color:var(--accent);opacity:1;}
+  .upload-form input[type=file]{display:none;}
+  .file-list{list-style:none;padding:0;margin:0;}
+  .file-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:12.5px;}
+  .file-item:hover{background:var(--hover);}
+  .file-item .file-icon{opacity:.5;}
+  .file-item .file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .file-empty{opacity:.5;font-size:12px;padding:8px 10px;}
+
+  .bara-chat{display:flex;flex-direction:column;min-height:0;}
+  .bara-messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding-bottom:12px;}
+  .bara-msg{max-width:80%;padding:12px 15px;border-radius:14px;font-size:14.5px;line-height:1.5;}
+  .bara-msg.user{align-self:flex-end;background:var(--user-bubble);color:var(--ink);border-bottom-right-radius:5px;}
+  .bara-msg.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px;}
+  .bara-msg.error{align-self:flex-start;background:#FFF0ED;color:#8E2F25;border:1px solid #B4483A;}
+  .bara-msg .role-label{display:block;font-size:10.5px;font-weight:700;opacity:.5;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px;}
+  .bara-msg.thinking{opacity:.6;font-style:italic;}
+  .bara-msg-content p:first-child{margin-top:0;}
+  .bara-msg-content p:last-child{margin-bottom:0;}
+  .bara-msg-content code{background:rgba(0,0,0,.08);padding:2px 5px;border-radius:4px;font-size:.9em;}
+  .bara-msg-content pre{background:rgba(0,0,0,.08);padding:10px;border-radius:6px;overflow-x:auto;}
+
+  .bara-empty-state{margin:auto;text-align:center;opacity:.55;font-size:13.5px;padding:40px 0;}
+
+  .bara-composer{display:flex;gap:8px;border:1px solid var(--composer-border);border-radius:16px;padding:10px 10px 10px 16px;background:var(--paper);}
+  .bara-composer textarea{flex:1;border:0;background:transparent;color:var(--ink);font:inherit;font-size:14.5px;resize:none;max-height:120px;padding:6px 0;}
+  .bara-composer textarea:focus{outline:0;}
+  .bara-composer button{background:var(--accent);color:var(--accent-ink);border:none;width:38px;height:38px;border-radius:50%;font-size:16px;cursor:pointer;flex:none;}
+  .bara-composer button:disabled{opacity:.4;cursor:not-allowed;}
+
+  .model-badge{font-size:11px;opacity:.55;margin-top:2px;}
+
+  @media (max-width: 760px){
+    .bara-main{grid-template-columns:1fr;}
+    .bara-sidebar{border-right:0;border-bottom:1px solid var(--line);padding-right:0;padding-bottom:16px;max-height:180px;}
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="bara-wrap">
+
+{% if not workspace %}
+
+  <div class="bara-header">
+    <h1>🧩 Bara — Espaces de travail</h1>
+  </div>
+
+  <form method="post" action="{% url 'bara:create' %}" class="ws-create-form">
+    {% csrf_token %}
+    <input type="text" name="title" placeholder="Nom du workspace" required>
+    <select name="active_model_id">
+      {% for model in available_models %}
+        <option value="{{ model.id }}">{{ model.name }} — {{ model.provider.name }}</option>
+      {% empty %}
+        <option value="">Aucun modèle disponible</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Créer</button>
+  </form>
+
+  <div class="ws-list">
+    {% for item in workspaces %}
+      <a class="ws-card" href="{% url 'bara:detail' item.id %}">
+        <strong>{{ item.title }}</strong>
+        <span>{{ item.active_model.name|default:"Aucun modèle" }} · {{ item.updated_at|date:"d/m/Y" }}</span>
+      </a>
+    {% empty %}
+      <div class="ws-empty">Aucun espace de travail pour l'instant — crée le premier ci-dessus.</div>
+    {% endfor %}
+  </div>
+
+{% else %}
+
+  <div class="bara-header">
+    <div>
+      <a href="{% url 'bara:home' %}" class="bara-back">‹ Tous les espaces</a>
+      <h1 style="margin-top:6px;">{{ workspace.title }}</h1>
+      <div class="model-badge">
+  <form method="post" action="{% url 'bara:update-model' workspace.id %}" style="display:inline-flex;gap:6px;align-items:center;">
+    {% csrf_token %}
+    <select name="active_model_id" onchange="this.form.submit()" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);">
+      <option value="">Aucun modèle</option>
+      {% for model in available_models %}
+        <option value="{{ model.id }}" {% if workspace.active_model_id == model.id %}selected{% endif %}>{{ model.name }} — {{ model.provider.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+    </div>
+  </div>
+
+  <div class="bara-main">
+    <aside class="bara-sidebar">
+      <h2>Fichiers</h2>
+
+      <form id="upload-form" class="upload-form" method="post" enctype="multipart/form-data" action="{% url 'bara:upload' workspace.id %}">
+        {% csrf_token %}
+        <label for="file-input">📎 Ajouter un fichier<br><span style="opacity:.6;">10 Mo max</span></label>
+        <input type="file" name="file" id="file-input" required>
+      </form>
+
+      <ul class="file-list" id="file-list">
+  {% for file in files %}
+    {% if "/" in file.original_name %}
+      <li class="file-item" style="padding-left:22px;opacity:.85;">
+        <span class="file-icon">📄</span>
+        <a href="{% url 'bara:download-file' workspace.id file.id %}" class="file-name" style="text-decoration:none;color:inherit;">{{ file.original_name }}</a>
+      </li>
+    {% else %}
+      <li class="file-item">
+        <span class="file-icon">📄</span>
+        <a href="{% url 'bara:download-file' workspace.id file.id %}" class="file-name" style="text-decoration:none;color:inherit;">{{ file.original_name }}</a>
+      </li>
+    {% endif %}
+  {% empty %}
+    <li class="file-empty" id="file-empty">Aucun fichier.</li>
+  {% endfor %}
+</ul>
+    </aside>
+
+    <section class="bara-chat">
+      <div id="messages" class="bara-messages">
+        {% for message in messages %}
+          <div class="bara-msg {{ message.role }}">
+            <span class="role-label">{% if message.role == 'user' %}Toi{% else %}Assistant{% endif %}</span>
+            <div class="bara-msg-content">{{ message.content }}</div>
+          </div>
+        {% empty %}
+          <div class="bara-empty-state">Envoie un message ou dépose un fichier pour démarrer.</div>
+        {% endfor %}
+      </div>
+
+      <form id="agent-form" class="bara-composer">
+        {% csrf_token %}
+        <textarea id="message-content" name="content" placeholder="Que veux-tu faire ?" rows="1" required></textarea>
+        <button type="submit" id="submit-btn" title="Envoyer">➜</button>
+      </form>
+    </section>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.0/purify.min.js"></script>
+<script>
+(function(){
+  const messagesDiv = document.getElementById('messages');
+  const form = document.getElementById('agent-form');
+  const textarea = document.getElementById('message-content');
+  const submitBtn = document.getElementById('submit-btn');
+  const csrfToken = form.querySelector('[name=csrfmiddlewaretoken]').value;
+  const messageUrl = "{% url 'bara:message' workspace.id %}";
+  const uploadUrl = "{% url 'bara:upload' workspace.id %}";
+
+  function clearEmptyState(){
+    const empty = messagesDiv.querySelector('.bara-empty-state');
+    if(empty) empty.remove();
+  }
+
+  function appendMessage(role, content, isThinking){
+    clearEmptyState();
+    const div = document.createElement('div');
+    div.className = 'bara-msg ' + role + (isThinking ? ' thinking' : '');
+    const label = document.createElement('span');
+    label.className = 'role-label';
+    label.textContent = role === 'user' ? 'Toi' : (role === 'error' ? 'Erreur' : 'Assistant');
+    const body = document.createElement('div');
+    body.className = 'bara-msg-content';
+    if(role === 'assistant' && !isThinking && window.marked && window.DOMPurify){
+      body.innerHTML = DOMPurify.sanitize(marked.parse(content));
+    } else {
+      body.textContent = content;
+    }
+    div.appendChild(label);
+    div.appendChild(body);
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return div;
+  }
+
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(120, textarea.scrollHeight) + 'px';
+  });
+  textarea.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
+form.addEventListener('submit', async function(e){
+  e.preventDefault();
+  const content = textarea.value.trim();
+  if(!content || submitBtn.disabled) return;
+
+  appendMessage('user', content);
+  textarea.value = '';
+  textarea.style.height = 'auto';
+  submitBtn.disabled = true;
+
+  const assistantDiv = appendMessage('assistant', '', false);
+  const bodyEl = assistantDiv.querySelector('.bara-msg-content');
+  let rawText = '';
+  let stepEl = null;
+
+  try{
+    const res = await fetch(messageUrl, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrfToken },
+      body: new URLSearchParams({ content })
+    });
+
+    if(!res.ok || !res.body){
+      const data = await res.json().catch(() => ({}));
+      const message = (data.error && data.error.message) || data.error || 'Une erreur est survenue.';
+      assistantDiv.remove();
+      appendMessage('error', message);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while(true){
+      const { value, done } = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop(); // dernier morceau incomplet, on le garde pour la suite
+
+      for(const part of parts){
+        const line = part.trim();
+        if(!line.startsWith('data:')) continue;
+        let event;
+        try{ event = JSON.parse(line.slice(5).trim()); } catch(err){ continue; }
+
+        if(event.type === 'token'){
+          rawText += event.text;
+          bodyEl.textContent = rawText; // texte brut pendant le streaming (rendu markdown appliqué à la fin)
+          messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        } else if(event.type === 'step'){
+          if(!stepEl){
+            stepEl = document.createElement('div');
+            stepEl.style.cssText = 'font-size:11.5px;opacity:.5;font-style:italic;margin-top:4px;';
+            bodyEl.parentNode.appendChild(stepEl);
+          }
+          stepEl.textContent = event.status === 'calling_tool'
+            ? `Utilise l'outil « ${event.tool} »…`
+            : `Outil « ${event.tool} » terminé.`;
+        } else if(event.type === 'error'){
+          assistantDiv.remove();
+          appendMessage('error', event.message);
+        } else if(event.type === 'done'){
+          if(stepEl) stepEl.remove();
+          if(window.marked && window.DOMPurify){
+            bodyEl.innerHTML = DOMPurify.sanitize(marked.parse(rawText));
+          }
+          if(typeof event.remaining_balance === 'number'){
+            document.getElementById('creditPillText').textContent =
+              Math.max(0, Math.round(event.remaining_balance)).toLocaleString('fr-FR') + ' jetons';
+          }
+        }
+      }
+    }
+  } catch(err){
+    appendMessage('error', 'Connexion interrompue pendant le streaming.');
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+
+  // ---- Upload de fichier en AJAX, avec rafraîchissement de la liste ----
+  const uploadForm = document.getElementById('upload-form');
+  const fileInput = document.getElementById('file-input');
+  const fileList = document.getElementById('file-list');
+
+  fileInput.addEventListener('change', async () => {
+    if(!fileInput.files.length) return;
+    const formData = new FormData(uploadForm);
+
+    try{
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok) throw new Error(data.error || 'Échec de l\'upload.');
+
+      const emptyItem = document.getElementById('file-empty');
+      if(emptyItem) emptyItem.remove();
+
+      const li = document.createElement('li');
+      li.className = 'file-item';
+      li.innerHTML = `<span class="file-icon">📄</span><span class="file-name">${data.name}</span>`;
+      fileList.appendChild(li);
+    } catch(err){
+      appendMessage('error', 'Upload échoué : ' + err.message);
+    } finally {
+      fileInput.value = '';
+    }
+  });
+})();
+
+
+if(res.ok){
+  appendMessage('assistant', data.content || '(réponse vide)');
+  if(typeof data.remaining_balance === 'number'){
+    document.getElementById('creditPillText').textContent =
+      Math.max(0, Math.round(data.remaining_balance)).toLocaleString('fr-FR') + ' jetons';
+  }
+}
+</script>
+
+{% endif %}
+</div>
+{% endblock %}
