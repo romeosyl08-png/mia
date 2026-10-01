@@ -1,6 +1,16 @@
 # ai_2ai
 # mia
 
+## PostgreSQL local
+
+Le fichier `.env` à la racine du projet (`ai_2ai/.env`) peut sélectionner une base PostgreSQL locale :
+
+```dotenv
+DATABASE_URL=postgresql://postgres:mot_de_passe@127.0.0.1:5432/ai_2ai
+```
+
+Crée d'abord la base `ai_2ai` dans PostgreSQL, puis applique les migrations avec `python manage.py migrate`. Si `DATABASE_URL` est absent, le projet utilise SQLite (`db.sqlite3`).
+
 ## Barrassons CLI
 
 Barrassons is an AI2AI coding assistant that runs in the current project directory.

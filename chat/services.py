@@ -73,7 +73,6 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "balance": True,
         }
         headers = base_headers.copy()
         if not is_local_provider(provider):

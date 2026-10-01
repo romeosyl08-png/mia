@@ -112,6 +112,8 @@ class ChatHomeTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json()['reply'], 'Bonjour.')
+		provider_request = urlopen.call_args.args[0]
+		self.assertNotIn('balance', json.loads(provider_request.data))
 		user.credit_account.refresh_from_db()
 		self.assertEqual(response.json()['remaining_balance'], user.credit_account.balance)
 		self.assertLess(user.credit_account.balance, 1000)
