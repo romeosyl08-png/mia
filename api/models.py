@@ -43,7 +43,11 @@ class AIModel(models.Model):
     name = models.CharField(max_length=100, help_text="Nom affiché dans l'interface")
     model_id = models.CharField(max_length=150, help_text="Identifiant attendu par l'API")
     is_active = models.BooleanField(default=True)
+
+    input_price_per_million = models.DecimalField(max_digits=8, decimal_places=4, default=0, help_text="Prix en $ pour 1M tokens en entrée")
+    output_price_per_million = models.DecimalField(max_digits=8, decimal_places=4, default=0, help_text="Prix en $ pour 1M tokens en sortie")
     created_at = models.DateTimeField(auto_now_add=True)
+    
 
     class Meta:
         ordering = ["provider__name", "name"]
@@ -94,26 +98,3 @@ class APIKey(models.Model):
         return f"{self.provider.name} — {self.name}"
 
 
-
-class UserAPIKey(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="api_keys")
-    name = models.CharField(max_length=100, default="Clé par défaut")
-    key_prefix = models.CharField(max_length=20)   # partie visible, ex: sk-ai2ai-Ab3d...
-    key_hash = models.CharField(max_length=64, unique=True)  # sha256 hex, jamais réversible
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_used_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-
-    @staticmethod
-    def generate():
-        raw = secrets.token_urlsafe(32)
-        full_key = f"sk-ai2ai-{raw}"
-        key_hash = hashlib.sha256(full_key.encode()).hexdigest()
-        prefix = full_key[:18] + "..."
-        return full_key, prefix, key_hash
-
-    def __str__(self):
-        return f"{self.user} — {self.name} ({self.key_prefix})"

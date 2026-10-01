@@ -23,6 +23,24 @@
     const themeDark =
         document.getElementById("themeDark");
 
+    const personaSelect =
+        document.getElementById("personaSelect");
+
+    const personaPrompt =
+        document.getElementById("personaSystemPrompt");
+
+    const personaTone =
+        document.getElementById("personaTone");
+
+    const personaTemp =
+        document.getElementById("personaTemp");
+
+    const personaLength =
+        document.getElementById("personaLength");
+
+    const personaSaveStatus =
+        document.getElementById("personaSaveStatus");
+
 
     /*
      * =========================
@@ -169,6 +187,15 @@
         });
 
 
+    [botNameInput, botAvatarInput].forEach(input => {
+        if (input) {
+            input.addEventListener("blur", () => {
+                input.readOnly = true;
+            });
+        }
+    });
+
+
     /*
      * =========================
      * COULEURS
@@ -249,6 +276,103 @@
             }
         );
 
+    }
+
+
+    if (personaSelect && personaPrompt && personaTone && personaTemp && personaLength) {
+
+        let personas = [];
+        let activePersona = null;
+        let saveTimer = null;
+
+        const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
+
+        function renderPersona(persona) {
+            activePersona = persona;
+            personaPrompt.value = persona.prompt || "";
+            personaTone.value = persona.tone || "neutre";
+            personaTemp.value = persona.temp ?? 0.7;
+            personaLength.value = persona.length || "moyenne";
+            const temperatureLabel = document.getElementById("tempVal");
+            if (temperatureLabel) temperatureLabel.textContent = personaTemp.value;
+            if (personaSaveStatus) personaSaveStatus.textContent = "";
+        }
+
+        async function loadPersonas() {
+            try {
+                const response = await fetch("/chat/api/personas/");
+                if (!response.ok) throw new Error("Chargement des personas impossible.");
+                personas = await response.json();
+                personaSelect.replaceChildren();
+                personas.forEach(persona => {
+                    const option = document.createElement("option");
+                    option.value = persona.id;
+                    option.textContent = persona.name;
+                    personaSelect.appendChild(option);
+                });
+                if (personas.length) {
+                    personaSelect.value = String(personas[0].id);
+                    renderPersona(personas[0]);
+                } else {
+                    personaSelect.disabled = true;
+                    personaPrompt.disabled = true;
+                    personaTone.disabled = true;
+                    personaTemp.disabled = true;
+                    personaLength.disabled = true;
+                    if (personaSaveStatus) personaSaveStatus.textContent = "Aucun persona disponible.";
+                }
+            } catch (error) {
+                if (personaSaveStatus) personaSaveStatus.textContent = error.message;
+                console.error("Erreur chargement persona", error);
+            }
+        }
+
+        async function savePersona() {
+            if (!activePersona) return;
+            const payload = {
+                prompt: personaPrompt.value,
+                tone: personaTone.value,
+                temp: Number(personaTemp.value),
+                length: personaLength.value
+            };
+            try {
+                const response = await fetch(`/chat/api/personas/${activePersona.id}/`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error("Enregistrement impossible.");
+                activePersona = await response.json();
+                if (personaSaveStatus) personaSaveStatus.textContent = "Modifications enregistrées.";
+            } catch (error) {
+                if (personaSaveStatus) personaSaveStatus.textContent = error.message;
+                console.error("Erreur sauvegarde persona", error);
+            }
+        }
+
+        function schedulePersonaSave() {
+            if (personaSaveStatus) personaSaveStatus.textContent = "Enregistrement…";
+            window.clearTimeout(saveTimer);
+            saveTimer = window.setTimeout(savePersona, 500);
+        }
+
+        personaSelect.addEventListener("change", () => {
+            const selectedPersona = personas.find(persona => String(persona.id) === personaSelect.value);
+            if (selectedPersona) renderPersona(selectedPersona);
+        });
+
+        personaPrompt.addEventListener("input", schedulePersonaSave);
+        personaTone.addEventListener("change", schedulePersonaSave);
+        personaTemp.addEventListener("input", () => {
+            const temperatureLabel = document.getElementById("tempVal");
+            if (temperatureLabel) temperatureLabel.textContent = personaTemp.value;
+            schedulePersonaSave();
+        });
+        personaLength.addEventListener("change", schedulePersonaSave);
+        loadPersonas();
     }
 
 

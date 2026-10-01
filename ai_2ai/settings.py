@@ -31,7 +31,8 @@ GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET",default="")
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_CURRENCY = 'usd'
-API_COMPATIBLE_KEY = os.environ.get('API_COMPATIBLE_KEY', '')
+CINETPAY_API_KEY = env('CINETPAY_API_KEY', default='')
+CINETPAY_SITE_ID = env('CINETPAY_SITE_ID', default='')
 API_RATE_LIMIT_REQUESTS = env.int('API_RATE_LIMIT_REQUESTS', default=60)
 API_RATE_LIMIT_WINDOW_SECONDS = env.int('API_RATE_LIMIT_WINDOW_SECONDS', default=60)
 
@@ -142,7 +143,11 @@ STORAGES = {
         'BACKEND': 'django.core.files.storage.FileSystemStorage',
     },
     'staticfiles': {
-        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+        'BACKEND': (
+            'whitenoise.storage.CompressedManifestStaticFilesStorage'
+            if not DEBUG else
+            'django.contrib.staticfiles.storage.StaticFilesStorage'
+        ),
     },
 }
 
@@ -175,3 +180,22 @@ STATIC_URL = "static/"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
+
+REDIS_URL = env("REDIS_URL", default="")
+
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+        }
+    }
+
+BARA_USER_STORAGE_LIMIT_MB = env.int("BARA_USER_STORAGE_LIMIT_MB", default=50)
+BARA_USER_FILE_LIMIT = env.int("BARA_USER_FILE_LIMIT", default=300)
+
+API_MAX_OUTPUT_TOKENS = env.int("API_MAX_OUTPUT_TOKENS", default=4096)
+LOGIN_URL = "/auth/"

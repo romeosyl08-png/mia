@@ -1,249 +1,7 @@
-//base
-
-(function(){
-
-  // ------------------------------------------------------------
-  // Calcul de la couleur du texte sur l'accent
-  // ------------------------------------------------------------
-
-  function contrastColor(hex){
-
-    const value = hex.replace("#", "");
-
-    const red = parseInt(value.slice(0, 2), 16);
-    const green = parseInt(value.slice(2, 4), 16);
-    const blue = parseInt(value.slice(4, 6), 16);
-
-    const luminance =
-      (0.299 * red +
-       0.587 * green +
-       0.114 * blue) / 255;
-
-    return luminance > 0.62
-      ? "#211914"
-      : "#FFFFFF";
-  }
-
-
-  // ------------------------------------------------------------
-  // Accent plus sombre pour hover
-  // ------------------------------------------------------------
-
-  function darken(hex, amount){
-
-    const value = hex.replace("#", "");
-
-    const channel = index =>
-      Math.max(
-        0,
-        Math.round(
-          parseInt(
-            value.slice(index, index + 2),
-            16
-          ) * (1 - amount)
-        )
-      );
-
-    return "#" +
-      [0, 2, 4]
-        .map(index =>
-          channel(index)
-            .toString(16)
-            .padStart(2, "0")
-        )
-        .join("");
-  }
-
-
-  // ------------------------------------------------------------
-  // Appliquer toute l'apparence
-  // ------------------------------------------------------------
-
-  function applyAppearance(){
-
-    const accent = appearance.accent;
-
-    const accentHover = darken(accent, 0.16);
-
-    const accentInk = contrastColor(accent);
-
-
-    // Variables CSS globales
-
-    document.documentElement.style.setProperty(
-      "--accent",
-      accent
-    );
-
-    document.documentElement.style.setProperty(
-      "--accent-hover",
-      accentHover
-    );
-
-    document.documentElement.style.setProperty(
-      "--accent-ink",
-      accentInk
-    );
-
-
-    // Thème
-
-    document.body.setAttribute(
-      "data-theme",
-      appearance.theme
-    );
-
-
-    // ----------------------------------------------------------
-    // Nom du bot
-    // ----------------------------------------------------------
-
-    document.querySelectorAll("[data-bot-name]").forEach(element => {
-      element.textContent = appearance.botName;
-    });
-
-
-    // ----------------------------------------------------------
-    // Avatar du bot
-    // ----------------------------------------------------------
-
-    document.querySelectorAll("[data-bot-avatar]").forEach(element => {
-      element.textContent = appearance.botAvatar;
-    });
-
-
-    // ----------------------------------------------------------
-    // Titre de la page
-    // ----------------------------------------------------------
-
-    document.title = appearance.botName;
-
-
-    // ----------------------------------------------------------
-    // Favicon
-    // ----------------------------------------------------------
-
-    const favicon = document.getElementById("botFavicon");
-
-    if(favicon){
-
-      const svg = `
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 64 64"
-        >
-          <text
-            x="32"
-            y="50"
-            text-anchor="middle"
-            font-size="48"
-          >${appearance.botAvatar}</text>
-        </svg>
-      `;
-
-      favicon.href =
-        "data:image/svg+xml;charset=utf-8," +
-        encodeURIComponent(svg);
-    }
-
-  }
-
-
-  // ------------------------------------------------------------
-  // Exposer l'apparence globalement
-  // ------------------------------------------------------------
-
-  window.AI2AIAppearance = {
-
-    get(){
-      return { ...appearance };
-    },
-
-    setAccent(color){
-
-      if(!ACCENTS.includes(color)) return;
-
-      appearance.accent = color;
-
-      save();
-      applyAppearance();
-    },
-
-    setTheme(theme){
-
-      if(!["light", "dark"].includes(theme)) return;
-
-      appearance.theme = theme;
-
-      save();
-      applyAppearance();
-    },
-
-    setBotName(name){
-
-      name = String(name || "").trim();
-
-      appearance.botName =
-        name || DEFAULT_APPEARANCE.botName;
-
-      save();
-      applyAppearance();
-    },
-
-    setBotAvatar(avatar){
-
-      avatar = String(avatar || "").trim();
-
-      appearance.botAvatar =
-        avatar || DEFAULT_APPEARANCE.botAvatar;
-
-      save();
-      applyAppearance();
-    },
-
-    apply(){
-      applyAppearance();
-    }
-
-  };
-
-
-  // ------------------------------------------------------------
-  // Sauvegarde
-  // ------------------------------------------------------------
-
-  function save(){
-
-    try{
-
-      localStorage.setItem(
-        "ai2ai-appearance",
-        JSON.stringify(appearance)
-      );
-
-    }catch(error){
-      console.error(
-        "Impossible de sauvegarder l'apparence",
-        error
-      );
-    }
-
-  }
-
-
-  // ------------------------------------------------------------
-  // Application immédiate
-  // ------------------------------------------------------------
-
-  applyAppearance();
-
-})();
-
-
 //chat
-const chatConfig = JSON.parse(
-  document.getElementById("chat-config").textContent
-);
+const chatConfigElement = document.getElementById("chat-config");
+if (chatConfigElement) {
+const chatConfig = JSON.parse(chatConfigElement.textContent);
 (function(){
   // ---------- State ----------
   const globalAppearance =
@@ -550,50 +308,48 @@ let state = {
   function renderPersonaEditor(){
     const p = activePersona();
     const select = el("personaSelect");
-    select.innerHTML = state.personas.map(persona => `<option value="${persona.id}">${escapeHtml(persona.name)}</option>`).join("");
+    if(select){
+      select.innerHTML = state.personas.map(persona => `<option value="${persona.id}">${escapeHtml(persona.name)}</option>`).join("");
+    }
     if(!p) return;
-    select.value = String(p.id);
-    el("personaSystemPrompt").value = p.prompt;
-    el("personaTone").value = p.tone;
-    el("personaTemp").value = p.temp;
-    el("tempVal").textContent = p.temp;
-    el("personaLength").value = p.length;
-    el("chatPersonaName").textContent = p.name;
+    if(select) select.value = String(p.id);
+    const personaName = el("chatPersonaName");
+    if(personaName) personaName.textContent = p.name;
   }
 
-function renderHeader() {
+function renderHeader(){
 
-    const convo = activeConvo();
+  const convo = activeConvo();
 
-    const appearance =
-        window.AI2AIAppearance
-            ? window.AI2AIAppearance.get()
-            : {
-                botName: "Le Comptoir",
-                botAvatar: "🐘"
-            };
-
-
-    el("chatTitle").textContent =
-        convo
-            ? convo.title
-            : "Nouvelle conversation";
+  const appearance =
+    window.AI2AIAppearance
+      ? window.AI2AIAppearance.get()
+      : {
+          botName: "Le Comptoir",
+          botAvatar: "🐘"
+        };
 
 
-    el("chatAvatar").textContent =
-        appearance.botAvatar;
+  el("chatTitle").textContent =
+    convo
+      ? convo.title
+      : "Nouvelle conversation";
 
 
-    el("brandMark").textContent =
-        appearance.botAvatar;
+  el("chatAvatar").textContent =
+    appearance.botAvatar;
 
 
-    el("brandName").textContent =
-        appearance.botName;
+  el("brandMark").textContent =
+    appearance.botAvatar;
 
 
-    document.title =
-        appearance.botName;
+  el("brandName").textContent =
+    appearance.botName;
+
+
+  document.title =
+    appearance.botName;
 
 }
 
@@ -609,7 +365,7 @@ function renderMessages(){
   const wrap = el("messages");
   const convo = activeConvo();
   if(!convo || !convo.messages || convo.messages.length === 0){
-    wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div></div>`;
+    wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé, consultable en haut de la page.</div></div>`;
     return;
   }
   wrap.innerHTML = "";
@@ -699,18 +455,22 @@ function renderMessages(){
   function renderCredits(){
     const pct = Math.max(0, Math.min(1, state.credits / state.totalCredits));
     const circumference = 2 * Math.PI * 54;
-    el("gaugeFill").setAttribute("stroke-dasharray", circumference);
-    el("gaugeFill").setAttribute("stroke-dashoffset", circumference * (1 - pct));
-    el("gaugeFill").style.stroke = pct < 0.15 ? "#B4483A" : "var(--accent)";
-    el("gaugeNum").textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR");
-    el("creditPillText").textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR") + " jetons";
-    el("creditPillBar").style.width = (pct*100) + "%";
-    el("lowWarning").classList.toggle("show", pct < 0.15);
-    el("sendBtn").disabled = (state.isAuthenticated && state.credits <= 0) || state.sending;
-    el("rechargeBtn").disabled = !state.isAuthenticated;
-    el("rechargeBtn").title = state.isAuthenticated
-      ? "Recharger les jetons"
-      : "Connecte-toi pour recharger";
+    const gaugeFill = el("gaugeFill");
+    const gaugeNum = el("gaugeNum");
+    const creditText = el("creditPillText");
+    const creditBar = el("creditPillBar");
+    const lowWarning = el("lowWarning");
+    const sendButton = el("sendBtn");
+    if(gaugeFill){
+      gaugeFill.setAttribute("stroke-dasharray", circumference);
+      gaugeFill.setAttribute("stroke-dashoffset", circumference * (1 - pct));
+      gaugeFill.style.stroke = pct < 0.15 ? "#B4483A" : "var(--accent)";
+    }
+    if(gaugeNum) gaugeNum.textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR");
+    if(creditText) creditText.textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR") + " jetons";
+    if(creditBar) creditBar.style.width = (pct * 100) + "%";
+    if(lowWarning) lowWarning.classList.toggle("show", pct < 0.15);
+    if(sendButton) sendButton.disabled = (state.isAuthenticated && state.credits <= 0) || state.sending;
   }
 
   function ensureCreditAccess(){
@@ -729,41 +489,6 @@ function renderMessages(){
     return true;
   }
 
-  function renderUsageLog(){
-    const log = el("usageLog");
-    if(state.usageLog.length === 0){
-      log.innerHTML = '<div style="opacity:.5;">Aucune activité pour l\'instant</div>';
-      return;
-    }
-    log.innerHTML = "";
-    state.usageLog.slice(0,12).forEach(entry => {
-      const row = document.createElement("div");
-      row.innerHTML = `<span>${escapeHtml(entry.label)}</span><span>-${entry.tokens}</span>`;
-      log.appendChild(row);
-    });
-  }
-
-  function renderSwatches(){
-    const wrap = el("swatches");
-    wrap.innerHTML = "";
-    ACCENTS.forEach(c => {
-      const sw = document.createElement("div");
-      sw.className = "swatch" + (state.accent === c ? " active" : "");
-      sw.style.background = c;
-      sw.addEventListener("click", () => {
-
-        window.AI2AIAppearance.setAccent(c);
-
-        state.accent = c;
-
-        renderSwatches();
-        renderCredits();
-
-        });
-      wrap.appendChild(sw);
-    });
-  }
-
   function escapeHtml(str){
     const d = document.createElement("div");
     d.textContent = str;
@@ -777,7 +502,6 @@ function renderMessages(){
     renderHeader();
     renderMessages();
     renderCredits();
-    renderUsageLog();
   }
 
   function editField(id){
@@ -902,6 +626,9 @@ function renderMessages(){
     newConversation(persona.id);
     renderAll();
   });
+  el("customizeBtn").addEventListener("click", () => {
+    window.location.href = el("customizeBtn").dataset.url;
+  });
   function togglePanel(side){
     const app = document.querySelector(".app");
     const isLeft = side === "left";
@@ -923,25 +650,6 @@ function renderMessages(){
   mobileBreakpoint.addEventListener("change", event => {
     if(!event.matches) toggleMobileSidebar(false);
   });
-  function openCustomization(){
-    const app = document.querySelector(".app");
-    app.classList.remove("left-collapsed", "right-collapsed", "mobile-sidebar-open");
-    app.classList.add("customize-mode");
-    el("customizationStart").scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-  function closeCustomization(){
-    document.querySelector(".app").classList.remove("customize-mode");
-    history.replaceState(null, "", window.location.pathname);
-    window.scrollTo(0, 0);
-  }
-  el("customizeBtn").addEventListener("click", () => {
-    history.pushState({ customize: true }, "", "?customize=1");
-    openCustomization();
-  });
-  el("customizeBack").addEventListener("click", closeCustomization);
-  window.addEventListener("popstate", () => {
-    if(new URLSearchParams(window.location.search).get("customize") !== "1") closeCustomization();
-  });
   el("toggleLeftPanel").addEventListener("click", () => togglePanel("left"));
   el("openMobileSidebar").addEventListener("click", () => toggleMobileSidebar(true));
   el("closeMobileSidebar").addEventListener("click", () => toggleMobileSidebar(false));
@@ -949,29 +657,6 @@ function renderMessages(){
   document.addEventListener("keydown", event => {
     if(event.key === "Escape") toggleMobileSidebar(false);
   });
-  let personaSaveTimer = null;
-  function schedulePersonaSave(){
-    clearTimeout(personaSaveTimer);
-    const persona = activePersona();
-    if(!state.isAuthenticated || typeof persona.id !== "number") return;
-    const personaId = persona.id;
-    const payload = { name: persona.name, prompt: persona.prompt, tone: persona.tone, temp: persona.temp, length: persona.length };
-    personaSaveTimer = setTimeout(async () => {
-      try{
-        await fetch(`/chat/api/personas/${personaId}/`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
-          },
-          body: JSON.stringify(payload)
-        });
-      }catch(err){
-        console.error("Erreur sauvegarde persona", err);
-      }
-    }, 600);
-  }
-
   el("newPersonaBtn").addEventListener("click", async () => {
     const payload = { name: "Nouveau persona", prompt: "Décris ici le comportement de ce persona.", tone: "neutre", temp: 0.7, length: "moyenne" };
     if(!state.isAuthenticated) return;
@@ -992,40 +677,6 @@ function renderMessages(){
       console.error("Erreur création persona", err);
     }
   });
-
-  el("personaSystemPrompt").addEventListener("input", e => { activePersona().prompt = e.target.value; schedulePersonaSave(); });
-  el("personaSelect").addEventListener("change", e => setActivePersona(e.target.value));
-  el("personaTone").addEventListener("change", e => { activePersona().tone = e.target.value; schedulePersonaSave(); });
-  el("personaTemp").addEventListener("input", e => { activePersona().temp = parseFloat(e.target.value); el("tempVal").textContent = e.target.value; schedulePersonaSave(); });
-  el("personaLength").addEventListener("change", e => { activePersona().length = e.target.value; schedulePersonaSave(); });
-
-  el("botNameInput").value = state.botName;
-  el("botAvatarInput").value = state.botAvatar;
-  el("botNameInput").addEventListener("input", e => {
-    state.botName = e.target.value.trim() || "Chatbot";
-    saveAppearance();
-    renderHeader();
-  });
-    el("botAvatarInput").addEventListener("input", e => {
-
-    window.AI2AIAppearance.setBotAvatar(
-        e.target.value
-    );
-
-    state.botAvatar =
-        window.AI2AIAppearance.get().botAvatar;
-
-    renderHeader();
-
-});
-  document.querySelectorAll("[data-edit-target]").forEach(button => {
-    button.addEventListener("click", () => editField(button.dataset.editTarget));
-  });
-  document.querySelectorAll("#botNameInput, #botAvatarInput").forEach(field => {
-    field.addEventListener("blur", () => { field.readOnly = true; });
-  });
-  el("aiModelSelect").addEventListener("change", e => { state.modelId = e.target.value; });
-
 el("modelChips").addEventListener("click", (e) => {
   const toggle = e.target.closest(".provider-toggle");
   const item = e.target.closest(".provider-menu-item");
@@ -1046,8 +697,6 @@ el("modelChips").addEventListener("click", (e) => {
   if (item) {
     e.stopPropagation();
     state.modelId = item.dataset.modelId;
-    el("aiModelSelect").value = state.modelId;
-
     item.closest(".provider-menu").querySelectorAll(".provider-menu-item")
       .forEach(i => i.classList.toggle("active", i === item));
 
@@ -1141,42 +790,6 @@ fileInput.addEventListener("change", async () => {
 
   el("voiceBtn").addEventListener("click", () => input.focus());
 
-el("themeLight").addEventListener(
-  "click",
-  () => setTheme("light")
-);
-
-el("themeDark").addEventListener(
-  "click",
-  () => setTheme("dark")
-);
-
-function setTheme(theme){
-
-  window.AI2AIAppearance.setTheme(theme);
-
-  const appearance =
-    window.AI2AIAppearance.get();
-
-  el("themeLight").classList.toggle(
-    "active",
-    appearance.theme === "light"
-  );
-
-  el("themeDark").classList.toggle(
-    "active",
-    appearance.theme === "dark"
-  );
-}
-
-  el("rechargeBtn").addEventListener("click", () => {
-    if(!state.isAuthenticated){
-      ensureCreditAccess();
-      return;
-    }
-    window.location.href = "/recharge/";
-  });
-
   const form = el("composerForm");
   const input = el("composerInput");
   const creditPill = el("creditPill");
@@ -1188,12 +801,12 @@ function setTheme(theme){
     new ResizeObserver(updateComposerHeight).observe(form);
   }
   updateComposerHeight();
-  creditPill.addEventListener("click", ensureCreditAccess);
-  creditPill.addEventListener("keydown", e => {
-    if(e.key === "Enter" || e.key === " "){
-      e.preventDefault();
+  creditPill.addEventListener("click", () => {
+    if(!state.isAuthenticated){
       ensureCreditAccess();
+      return;
     }
+    window.location.href = "/recharge/";
   });
   input.addEventListener("focus", () => {
     if(!state.isAuthenticated) ensureCreditAccess();
@@ -1225,20 +838,38 @@ function setTheme(theme){
   });
 
   // ---------- Init ----------
-  loadAppearance();
-  applyAccent(state.accent);
-  setTheme(state.theme);
-  renderSwatches();
+  // ---------- Init ----------
+
+  const currentAppearance =
+    window.AI2AIAppearance
+      ? window.AI2AIAppearance.get()
+      : null;
+
+  if(currentAppearance){
+
+    state.theme = currentAppearance.theme;
+    state.accent = currentAppearance.accent;
+    state.botName = currentAppearance.botName;
+    state.botAvatar = currentAppearance.botAvatar;
+
+  }
+
   (async () => {
+
     await loadPersonas();
+
     await loadConversations();
+
     if(state.conversations.length === 0){
       await newConversation(state.activePersonaId);
     }
+
     renderAll();
+
   })();
-  if(new URLSearchParams(window.location.search).get("customize") === "1") openCustomization();
+
 })();
+}
 
 
 //recharge
@@ -1247,12 +878,12 @@ function setTheme(theme){
     const operatorChoices = [...document.querySelectorAll(".operator-choice")];
     let waveChosenManually = false;
     function selectOperator(operator, manual = false){
-      operatorInput.value = operator;
+      if(operatorInput) operatorInput.value = operator;
       if(manual) waveChosenManually = operator === "wave";
       operatorChoices.forEach(choice => choice.classList.toggle("active", choice.dataset.operator === operator));
     }
     operatorChoices.forEach(choice => choice.addEventListener("click", () => selectOperator(choice.dataset.operator, true)));
-    phoneInput.addEventListener("input", () => {
+    if(phoneInput) phoneInput.addEventListener("input", () => {
       if(waveChosenManually) return;
       const digits = phoneInput.value.replace(/\D/g, "");
       const prefix = digits.startsWith("225") ? digits.slice(3, 5) : digits.slice(0, 2);
@@ -1270,6 +901,7 @@ const tabLogin = document.getElementById("tabLogin");
   const panelLogin = document.getElementById("panelLogin");
   const panelSignup = document.getElementById("panelSignup");
 
+  if(tabLogin && tabSignup && panelLogin && panelSignup){
   function showLogin(){
     panelLogin.style.display = "block";
     panelSignup.style.display = "none";
@@ -1324,4 +956,5 @@ const tabLogin = document.getElementById("tabLogin");
       body: JSON.stringify({ phone })
     });
   });
+}
   

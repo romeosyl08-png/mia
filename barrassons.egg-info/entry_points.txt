@@ -1,0 +1,2 @@
+[console_scripts]
+barrassons = barrassons.cli:main

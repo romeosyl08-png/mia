@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from .models import CreditAccount
 from chat.models import Persona
 
-DEFAULT_STARTING_BALANCE = 0
+DEFAULT_STARTING_BALANCE = 20000
 DEFAULT_PERSONAS = [
     {"name": "Assistant général", "prompt": "Tu es un assistant poli, clair et utile.", "tone": "neutre", "temperature": 0.7, "length": "moyenne"},
     {"name": "Tuteur de langues", "prompt": "Tu es un tuteur patient qui aide à apprendre une langue étrangère, corrige en douceur et explique la grammaire simplement.", "tone": "pedagogue", "temperature": 0.5, "length": "moyenne"},

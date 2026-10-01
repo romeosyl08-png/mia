@@ -1,13 +1,28 @@
 from django.contrib.auth.models import User
 from django.test import TestCase
 from unittest.mock import MagicMock, patch
+from http.client import RemoteDisconnected
+from bs4 import BeautifulSoup
 import json
 from urllib.error import HTTPError
 
-from .models import AIModel, APIProvider, Conversation, Message, Persona
+from api.models import AIModel, APIProvider
+from .models import Conversation, Message, Persona
 
 
 class ChatHomeTests(TestCase):
+	def test_messages_and_composer_stay_inside_main_chat(self):
+		user = User.objects.create_user(username='chat-layout-user', password='test-password')
+		self.client.force_login(user)
+
+		response = self.client.get('/')
+		soup = BeautifulSoup(response.content, 'html.parser')
+		main = soup.select_one('main.main')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIsNotNone(main.select_one('#messages'))
+		self.assertIsNotNone(main.select_one('#composerForm'))
+
 	def test_new_users_receive_default_personas(self):
 		user = User.objects.create_user(username='persona-user', password='test-password')
 
@@ -106,6 +121,31 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(Message.objects.filter(role='user').count(), 1)
 		self.assertEqual(Message.objects.filter(role='assistant').count(), 1)
 
+	@patch('chat.views.call_llm_provider', return_value=('Réponse locale.', 12, 8))
+	def test_send_message_with_existing_conversation(self, call_llm_provider):
+		user = User.objects.create_user(username='existing-conversation-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		persona = user.personas.first()
+		provider = APIProvider.objects.create(name='Existing conversation provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Existing conversation model', model_id='existing-conversation-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		conversation = Conversation.objects.create(user=user, persona=persona, title='Conversation existante')
+		Message.objects.create(conversation=conversation, role='user', content='Question précédente')
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'conversation_id': conversation.id,
+			'model_id': 'existing-conversation-model',
+			'persona_id': persona.id,
+			'content': 'Nouvelle question',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['reply'], 'Réponse locale.')
+		self.assertEqual(conversation.messages.count(), 3)
+		call_llm_provider.assert_called_once()
+
 	@patch('chat.services.urlopen')
 	def test_send_message_handles_provider_rate_limit(self, urlopen):
 		user = User.objects.create_user(username='rate-limited-user', password='test-password')
@@ -133,6 +173,48 @@ class ChatHomeTests(TestCase):
 
 		self.assertEqual(response.status_code, 502)
 		self.assertEqual(response.json()['error']['message'], 'Trop de requêtes, réessaie dans un instant.')
+
+	@patch('chat.services.urlopen')
+	def test_send_message_handles_upstream_connection_reset(self, urlopen):
+		user = User.objects.create_user(username='disconnected-provider-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Disconnected provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Disconnected model', model_id='disconnected-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		urlopen.side_effect = RemoteDisconnected('connection closed before response')
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'model_id': 'disconnected-model',
+			'content': 'Bonjour',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 502)
+		self.assertEqual(response.json()['error']['type'], 'provider_error')
+		self.assertEqual(response.json()['error']['message'], 'Le fournisseur est temporairement indisponible.')
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
+
+	@patch('chat.views.call_llm_provider', side_effect=RuntimeError('unexpected provider failure'))
+	def test_send_message_handles_unexpected_provider_exception(self, call_llm_provider):
+		user = User.objects.create_user(username='unexpected-provider-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Unexpected provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Unexpected model', model_id='unexpected-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'model_id': 'unexpected-model',
+			'content': 'Bonjour',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 502)
+		self.assertEqual(response.json()['error']['type'], 'provider_error')
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
 
 	@patch('chat.views.estimate_cost', return_value=(1, 1))
 	@patch('chat.services.urlopen')
@@ -180,6 +262,8 @@ class ChatHomeTests(TestCase):
 
 	def test_send_message_rejects_insufficient_credits_before_provider_call(self):
 		user = User.objects.create_user(username='poor-chat-user', password='test-password')
+		user.credit_account.balance = 0
+		user.credit_account.save(update_fields=['balance'])
 		provider = APIProvider.objects.create(name='Poor provider', base_url='https://provider.example.test')
 		AIModel.objects.create(provider=provider, name='Poor model', model_id='poor-model')
 		provider.keys.create(name='server-key', key='secret-not-in-response')
@@ -243,9 +327,9 @@ class ChatHomeTests(TestCase):
 
 		self.assertEqual(response.context['initial_credits'], 25)
 		self.assertTrue(response.context['is_authenticated'])
-		self.assertContains(response, 'id="rechargeBtn"')
-		self.assertNotContains(response, 'id="rechargeBtn" type="button" disabled')
-		self.assertContains(response, 'isAuthenticated: "true" === "true"')
+		self.assertContains(response, 'id="creditPill"')
+		self.assertNotContains(response, 'id="creditPill" type="button" disabled')
+		self.assertContains(response, '"isAuthenticated": true')
 
 	def test_login_returns_to_requested_chat_url(self):
 		User.objects.create_user(username='return-user', password='test-password')

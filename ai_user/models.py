@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+
 from django.conf import settings
 from django.db import models, transaction
 
@@ -130,3 +133,53 @@ class RechargePurchase(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.credits} crédits ({self.get_status_display()})"
+
+
+
+
+class UserAPIKey(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="api_keys")
+    name = models.CharField(max_length=100, default="Clé par défaut")
+    key_prefix = models.CharField(max_length=20)   # partie visible, ex: sk-ai2ai-Ab3d...
+    key_hash = models.CharField(max_length=64, unique=True)  # sha256 hex, jamais réversible
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        db_table = "api_userapikey"
+
+    @staticmethod
+    def generate():
+        raw = secrets.token_urlsafe(32)
+        full_key = f"sk-ai2ai-{raw}"
+        key_hash = hashlib.sha256(full_key.encode()).hexdigest()
+        prefix = full_key[:18] + "..."
+        return full_key, prefix, key_hash
+
+    def __str__(self):
+        return f"{self.user} — {self.name} ({self.key_prefix})"
+
+class ApiCall(models.Model):
+    STATUS_CHOICES = [
+        ("ok", "Réussi"),
+        ("error", "Échec (remboursé)"),
+        ("interrupted", "Interrompu"),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="api_calls")
+    key = models.ForeignKey("UserAPIKey", on_delete=models.SET_NULL, null=True, blank=True, related_name="calls")
+    key_prefix = models.CharField(max_length=30, blank=True)  # copie : l'historique survit à la révocation de la clé
+    model_id = models.CharField(max_length=150)
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    credits = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="ok")
+    streamed = models.BooleanField(default=False)
+    duration_ms = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "-created_at"])]

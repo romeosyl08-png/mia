@@ -30,7 +30,7 @@
 
     <nav class="quick-nav" aria-label="Navigation principale">
       <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
-      <button type="button"  onclick="window.location.href='{% url 'chat:customize' %}'">▣ &nbsp;Personnaliser</button>
+      <button id="customizeBtn" type="button" data-url="{% url 'chat:customize' %}">▣ &nbsp;Personnaliser</button>
       <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
     </nav>
 
@@ -70,12 +70,11 @@
     </button>
 </div>
         </div>
-    </div>
 
     <div class="messages" id="messages">
       <div class="empty-state">
         <div class="display">Choisis un persona, écris un message</div>
-        <div>Chaque échange consomme des jetons de ton solde prépayé — ajustable dans le panneau de droite.</div>
+        <div>Chaque échange consomme des jetons de ton solde prépayé, consultable en haut de la page.</div>
       </div>
     </div>
 
@@ -154,7 +153,6 @@
   </main>
 
 </div>
-<script src="{% static 'app/js/script.js' %}"></script>
 
 {% endblock %}
 

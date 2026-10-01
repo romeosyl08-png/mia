@@ -14,9 +14,6 @@
 {% endblock %}
 </head>
 <body data-theme="light">
-      <div class="credit-pill" id="creditPill">
-    <span id="creditPillText">{{ credits|floatformat:0 }} jetons</span>
-  </div>
 {% block body %}
 {% endblock %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
@@ -24,7 +21,9 @@
 
 
     <!-- APPARENCE GLOBALE -->
+      {% if chat_config %}{{ chat_config|json_script:"chat-config" }}{% endif %}
     <script src="{% static 'app/js/appearance.js' %}"></script>
+    <script src="{% static 'app/js/script.js' %}"></script>
 
     {% block extra_js %}{% endblock %}
 </body>

@@ -1,7 +1,6 @@
 from django.urls import path
 
 from . import views
-from api import views as api_views
 
 urlpatterns = [
     path("auth/", views.auth_page, name="auth-page"),
@@ -18,5 +17,5 @@ urlpatterns = [
     path("recharge/webhook/", views.stripe_webhook, name="stripe-webhook"),
     path('recharge/cinetpay-webhook/', views.cinetpay_webhook, name='cinetpay-webhook'),
 
-    path('api-keys/', api_views.api_keys_page, name='api-keys-page'),
+    path('api-keys/', views.api_keys_page, name='api-keys-page'),
 ]

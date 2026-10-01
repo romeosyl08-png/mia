@@ -52,14 +52,12 @@ body {
   }
   .app{
     display:grid;
-    grid-template-columns: 320px 1fr 300px;
+    grid-template-columns: 320px minmax(0, 1fr);
     height:100vh;
     min-height:560px;
     background:var(--paper);
   }
-  .app.left-collapsed{grid-template-columns:0 1fr 300px;}
-  .app.right-collapsed{grid-template-columns:320px 1fr 0;}
-  .app.left-collapsed.right-collapsed{grid-template-columns:0 1fr 0;}
+  .app.left-collapsed{grid-template-columns:0 minmax(0, 1fr);}
   .app.customize-mode .panel{scroll-behavior:smooth;}
   .app.customize-mode{display:block;overflow:auto;}
   .app.customize-mode .sidebar,.app.customize-mode .main{display:none;}
@@ -1166,4 +1164,157 @@ body {
 
 body:has(.customize-page) {
     overflow: auto;
+}
+
+@media (max-width: 760px) {
+  html,
+  body {
+    min-width: 320px;
+  }
+
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    height: 100dvh;
+    min-height: 480px;
+  }
+
+  .main {
+    grid-column: 1;
+  }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 42;
+    width: min(320px, calc(100vw - 48px));
+    height: 100dvh;
+    transform: translateX(-102%);
+    transition: transform .2s ease;
+    visibility: visible;
+  }
+
+  .app.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .mobile-sidebar-toggle,
+  .mobile-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .mobile-sidebar-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 1;
+    font-size: 20px;
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border: 0;
+    background: #0007;
+  }
+
+  .app.mobile-sidebar-open .mobile-sidebar-backdrop {
+    display: block;
+  }
+
+  .panel-toggle {
+    display: none;
+  }
+
+  .chat-header {
+    padding: 12px 14px;
+    gap: 8px;
+  }
+
+  .chat-header .who {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .chat-header .who > div:last-child {
+    min-width: 0;
+  }
+
+  .chat-header h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .credit-pill {
+    gap: 0;
+    padding: 6px 9px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .credit-pill .bar {
+    display: none;
+  }
+
+  .messages {
+    width: calc(100% - 24px);
+    padding-top: 24px;
+  }
+
+  .msg {
+    max-width: 90%;
+  }
+
+  .composer {
+    bottom: 8px;
+    width: calc(100% - 16px);
+    padding: 10px 9px 8px;
+    border-radius: 18px;
+  }
+
+  .composer-input-row {
+    gap: 4px;
+  }
+
+  .composer-icon,
+  .tool-btn {
+    width: 30px;
+    height: 30px;
+  }
+
+  .composer-tools {
+    justify-content: space-between;
+  }
+
+  .tool-spacer,
+  .composer-hint {
+    display: none;
+  }
+
+  .model-chips {
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .provider-dropdown {
+    flex: none;
+  }
+
+  .team-options {
+    max-height: 38vh;
+    overflow-y: auto;
+  }
 }

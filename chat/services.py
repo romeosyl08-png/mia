@@ -1,7 +1,7 @@
 import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-
+from django.core.cache import cache
 
 class ProviderError(Exception):
     """Erreur contrôlée lors d'un appel au fournisseur IA."""
@@ -12,17 +12,28 @@ def credit_multiplier(model):
     return 2 if any(name in provider_slug for name in ("opus", "gpt-4", "large")) else 1
 
 
+CREDITS_PER_DOLLAR = 10_000
+MARGIN_MULTIPLIER = 1.5
+DEFAULT_OUTPUT_ESTIMATE = 500  # tokens de sortie estimés par défaut
+
+
 def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
-    """Réserve le prix du palier correspondant au modèle choisi."""
+    """Estime le coût réel en $ selon les tarifs du modèle, applique la marge, convertit en crédits."""
     history = history or []
     history_text = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
-    input_bytes = len((content + system_prompt + history_text).encode("utf-8"))
-    message_overhead = 8 * (len(history) + 1)
-    input_tokens = max(1, input_bytes + message_overhead)
+    input_chars = len(content + system_prompt + history_text)
+    input_tokens = max(1, round(input_chars / 4))  # ~4 caractères par token, approximation standard
+    output_tokens_estimate = min(max_output_tokens, DEFAULT_OUTPUT_ESTIMATE)
 
-    tier = get_tier_for_model(model)
-    reserve = tier_price_fcfa(tier)
-    return reserve, input_tokens
+    input_price = float(model.input_price_per_million or 0) / 1_000_000
+    output_price = float(model.output_price_per_million or 0) / 1_000_000
+
+    cost_usd = (input_tokens * input_price) + (output_tokens_estimate * output_price)
+    cost_usd_with_margin = cost_usd * MARGIN_MULTIPLIER
+
+    reserve_credits = max(1, round(cost_usd_with_margin * CREDITS_PER_DOLLAR))
+    return reserve_credits, input_tokens
+
 
 def is_local_provider(provider):
     return provider.slug in {"ollama-local", "mia"}
@@ -62,6 +73,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "balance": True,
         }
         headers = base_headers.copy()
         if not is_local_provider(provider):
@@ -81,7 +93,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
         body = error.read().decode("utf-8", errors="replace")
         raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}): {body[:300]}") from error
-    except (URLError, TimeoutError, ValueError) as error:
+    except (OSError, ValueError) as error:
         raise ProviderError("Le fournisseur est temporairement indisponible.") from error
 
     if is_anthropic:
@@ -177,3 +189,30 @@ def get_tier_for_model(model):
 
 def tier_price_fcfa(tier_slug):
     return PRICING_TIERS.get(tier_slug, PRICING_TIERS["standard"])["price_fcfa"]
+
+
+
+
+def check_user_rate_limit(user_id, max_requests=10, window_seconds=60, key_prefix="chat"):
+    """Retourne (autorisé: bool, retry_after_secondes: int). Limite par utilisateur, indépendante du fournisseur."""
+    cache_key = f"rate-limit:{key_prefix}:{user_id}"
+    if cache.add(cache_key, 1, timeout=window_seconds):
+        return True, 0
+    try:
+        request_count = cache.incr(cache_key)
+    except ValueError:
+        cache.add(cache_key, 1, timeout=window_seconds)
+        return True, 0
+    if request_count > max_requests:
+        ttl = cache.ttl(cache_key) if hasattr(cache, "ttl") else window_seconds
+        return False, ttl or window_seconds
+    return True, 0
+
+
+def credits_for_usage(model, prompt_tokens, completion_tokens):
+    """Coût réel d'un appel en crédits : vrais prix du modèle × marge, converti au taux du portefeuille."""
+    cost_usd = (
+        prompt_tokens * float(model.input_price_per_million or 0)
+        + completion_tokens * float(model.output_price_per_million or 0)
+    ) / 1_000_000
+    return max(1, round(cost_usd * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR))

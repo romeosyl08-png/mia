@@ -18,8 +18,8 @@
         </a>
 
         <div class="customize-brand">
-            <span class="brand-avatar" id="customizeAvatar">🐘</span>
-            <span id="customizeBotName">Le Comptoir</span>
+            <span class="brand-avatar" id="customizeAvatar" data-bot-avatar>🐘</span>
+            <span id="customizeBotName" data-bot-name>Le Comptoir</span>
         </div>
 
     </header>
@@ -29,134 +29,69 @@
 
         <!-- PERSONA -->
 
+        {% if is_authenticated %}
         <section class="settings-section">
 
             <h2>Persona actif</h2>
 
-            <div class="field">
-                <label for="personaSelect">
-                    Choisir un persona
-                </label>
+            {% csrf_token %}
+            <p class="persona-save-status" id="personaSaveStatus" role="status" aria-live="polite"></p>
 
+            <div class="field">
+                <label for="personaSelect">Choisir un persona</label>
                 <select id="personaSelect"></select>
             </div>
 
-
             <div class="field">
-
-                <label for="personaSystemPrompt">
-                    Prompt système
-                </label>
-
+                <label for="personaSystemPrompt">Prompt système</label>
                 <textarea id="personaSystemPrompt"></textarea>
-
             </div>
 
-
             <div class="field">
-
-                <label for="personaTone">
-                    Ton de réponse
-                </label>
-
+                <label for="personaTone">Ton de réponse</label>
                 <select id="personaTone">
-
-                    <option value="neutre">
-                        Neutre
-                    </option>
-
-                    <option value="decontracte">
-                        Décontracté
-                    </option>
-
-                    <option value="formel">
-                        Formel
-                    </option>
-
-                    <option value="pedagogue">
-                        Pédagogue
-                    </option>
-
+                    <option value="neutre">Neutre</option>
+                    <option value="decontracte">Décontracté</option>
+                    <option value="formel">Formel</option>
+                    <option value="pedagogue">Pédagogue</option>
                 </select>
-
             </div>
 
-
             <div class="field">
-
-                <label for="personaTemp">
-                    Créativité (température) —
-                    <span id="tempVal">0.7</span>
-                </label>
-
-                <input
-                    type="range"
-                    id="personaTemp"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value="0.7"
-                >
-
+                <label for="personaTemp">Créativité (température) — <span id="tempVal">0.7</span></label>
+                <input type="range" id="personaTemp" min="0" max="1" step="0.1" value="0.7">
                 <div class="range-row">
                     <span>Précis</span>
                     <span>Créatif</span>
                 </div>
-
             </div>
 
-
             <div class="field">
-
-                <label for="personaLength">
-                    Longueur des réponses
-                </label>
-
+                <label for="personaLength">Longueur des réponses</label>
                 <select id="personaLength">
-
-                    <option value="courte">
-                        Courte
-                    </option>
-
-                    <option value="moyenne" selected>
-                        Moyenne
-                    </option>
-
-                    <option value="longue">
-                        Détaillée
-                    </option>
-
+                    <option value="courte">Courte</option>
+                    <option value="moyenne" selected>Moyenne</option>
+                    <option value="longue">Détaillée</option>
                 </select>
-
             </div>
 
         </section>
-
-
-        <!-- APPARENCE -->
+        {% endif %}
 
         <section class="settings-section">
 
             <h2>Apparence</h2>
 
 
-            <div class="customize-brand">
-
-                    <span
-                        class="brand-avatar"
-                        data-bot-avatar>
-                        🐘
-                    </span>
-
+            <div class="field">
+                <label for="botNameInput">Nom du bot</label>
                 <div class="editable-field">
-
                     <input
                         type="text"
                         id="botNameInput"
                         maxlength="40"
                         readonly
                     >
-
                     <button
                         type="button"
                         class="edit-icon"
@@ -164,37 +99,15 @@
                     >
                         ✎
                     </button>
-
                 </div>
-
             </div>
 
-
             <div class="field">
-
-                    <span data-bot-name>
-                        Le Comptoir
-                    </span>
-
+                <label for="botAvatarInput">Avatar</label>
                 <div class="editable-field">
-
-                    <input
-                        type="text"
-                        id="botAvatarInput"
-                        maxlength="4"
-                        readonly
-                    >
-
-                    <button
-                        type="button"
-                        class="edit-icon"
-                        data-edit-target="botAvatarInput"
-                    >
-                        ✎
-                    </button>
-
+                    <input type="text" id="botAvatarInput" maxlength="4" readonly>
+                    <button type="button" class="edit-icon" data-edit-target="botAvatarInput" aria-label="Modifier l’avatar">✎</button>
                 </div>
-
             </div>
 
 
@@ -254,4 +167,5 @@
 
 {% block extra_js %}
 <script src="{% static 'app/js/customize.js' %}"></script>
+
 {% endblock %}

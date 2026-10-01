@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+barrassons/__init__.py
+barrassons/cli.py
+barrassons/test_cli.py
+barrassons.egg-info/PKG-INFO
+barrassons.egg-info/SOURCES.txt
+barrassons.egg-info/dependency_links.txt
+barrassons.egg-info/entry_points.txt
+barrassons.egg-info/top_level.txt

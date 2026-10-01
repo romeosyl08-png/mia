@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: barrassons
+Version: 0.1.0
+Summary: Assistant de développement AI2AI dans le terminal
+Requires-Python: >=3.10

@@ -1,4 +1,5 @@
 import json
+import logging
 
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
@@ -10,12 +11,16 @@ from django.views import View
 from .models import Conversation, Message, Persona
 from ai_user.models import InsufficientCreditsError
 
-from .services import ProviderError, call_llm_provider, call_llm_team, credit_multiplier, estimate_cost, is_local_provider
+from .services import ProviderError, call_llm_provider, call_llm_team, estimate_cost, is_local_provider
 from api.models import AIModel
-from chat.services import PRICING_TIERS
+from .services import PRICING_TIERS 
 from itertools import groupby
 
-from bara.services import get_workspace_context
+from bara.services import get_workspace_context,actual_cost_credits
+from chat.services import check_user_rate_limit
+
+logger = logging.getLogger(__name__)
+
 
 def chat_home(request):
 	if not request.user.is_authenticated:
@@ -45,12 +50,14 @@ def chat_home(request):
 		'models_by_provider': models_by_provider,
 		'ai_models': models,
 		'chat_config': chat_config,
+		  'initial_credits': credits,
+		  'is_authenticated': request.user.is_authenticated,
 	})
 
 def dap_home(request):
 	if not request.user.is_authenticated:
 		return redirect(f'{reverse("auth-page")}?next=/dap/')
-	return render(request, 'dap.html')
+	return render(request, 'bara/workspace.html')
 
 def customize(request):
     return render(
@@ -69,7 +76,6 @@ def _chat_error(message, error_type, status):
 @method_decorator(login_required(login_url='/auth/?next=/chat/api/send/'), name='dispatch')
 class SendMessageView(View):
 	"""Reçoit un message, appelle le fournisseur et facture le coût côté serveur."""
-
 	def post(self, request):
 		try:
 			payload = json.loads(request.body or '{}')
@@ -79,7 +85,14 @@ class SendMessageView(View):
 		content = payload.get('content', '').strip() if isinstance(payload, dict) else ''
 		if not content:
 			return _chat_error('Le contenu du message est obligatoire.', 'invalid_request', 400)
-
+		
+		allowed, retry_after = check_user_rate_limit(request.user.id, max_requests=10, window_seconds=60, key_prefix="chat")
+		if not allowed:
+			return _chat_error(
+				f"Trop de messages envoyés. Réessaie dans {retry_after} secondes.",
+				"rate_limit_exceeded",
+				429,
+    )
 		model_query = AIModel.objects.filter(is_active=True, provider__is_active=True).select_related('provider')
 		model_id = payload.get('model_id')
 		team_mode = bool(payload.get('team_mode'))
@@ -112,7 +125,7 @@ class SendMessageView(View):
 		messages.append({'role': 'user', 'content': content})
 
 		
-		workspace_context = get_workspace_context(conversation)
+		workspace_context = get_workspace_context(None)
 		full_system_prompt = (system_prompt + "\n\n" + workspace_context).strip() if workspace_context else system_prompt
 		
 		reserve, estimated_input = estimate_cost(content, model, full_system_prompt, messages)
@@ -146,12 +159,22 @@ class SendMessageView(View):
 		except ProviderError as error:
 			account.credit(reserve, reason='adjustment', note='Remboursement appel IA échoué')
 			return _chat_error(str(error), 'provider_error', 502)
+		except Exception:
+			logger.exception(
+				"Unexpected provider failure for chat model %s (user_id=%s)",
+				model.model_id,
+				request.user.pk,
+			)
+			account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
+			return _chat_error(
+				"Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.",
+				'provider_error',
+				502,
+			)
 
 		prompt_tokens = provider_input or estimated_input
 		completion_tokens = provider_output or round(len(reply) / 4)
-		actual_cost = (
-			max(1, prompt_tokens) + max(1, completion_tokens)
-		) * credit_multiplier(model)
+		actual_cost = actual_cost_credits(model, prompt_tokens, completion_tokens)
 		if actual_cost < reserve:
 			account.credit(reserve - actual_cost, reason='adjustment', note=f'Ajustement {model.model_id}')
 
@@ -182,6 +205,8 @@ class SendMessageView(View):
 			'completion_tokens': completion_tokens,
 			'remaining_balance': account.balance,
 		})
+
+
 
 class ConversationListView(View):
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))

@@ -36,7 +36,7 @@ def _next_url(request):
 		value, allowed_hosts={request.get_host()}, require_https=request.is_secure()
 	):
 		return value
-	return reverse("chat-home")
+	return reverse("chat:chat-home")
 
 
 def auth_page(request):
@@ -141,7 +141,7 @@ def create_mobile_money_checkout(request):
     if request.method != "POST":
         return JsonResponse({"error": "Methode non autorisee."}, status=405)
     if not settings.CINETPAY_API_KEY or not settings.CINETPAY_SITE_ID:
-        return JsonResponse({"error": "CinetPay n'est pas configure."}, status=503)
+        return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
 
     try:
         amount = Decimal(request.POST.get("amount", ""))
@@ -186,7 +186,7 @@ def create_mobile_money_checkout(request):
         )
         data = response.json()
     except (requests.RequestException, ValueError):
-        return JsonResponse({"error": "CinetPay est temporairement indisponible."}, status=503)
+        return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
 
     if data.get("code") != "201":
         return JsonResponse({"error": data.get("message", "Erreur CinetPay.")}, status=502)
@@ -432,3 +432,26 @@ def google_callback(request):
     if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         next_url = reverse("chat-home")
     return redirect(next_url)
+
+
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import redirect, render
+
+from .models import UserAPIKey
+
+
+@login_required(login_url="/auth/?next=/api-keys/")
+def api_keys_page(request):
+    new_key = None
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create":
+            name = (request.POST.get("name") or "").strip() or "Clé par défaut"
+            full_key, prefix, key_hash = UserAPIKey.generate()
+            UserAPIKey.objects.create(user=request.user, name=name, key_prefix=prefix, key_hash=key_hash)
+            new_key = full_key
+        elif action == "revoke":
+            UserAPIKey.objects.filter(id=request.POST.get("key_id"), user=request.user).delete()
+            return redirect("api-keys-page")
+
+    return render(request, "api_keys.html", {"keys": request.user.api_keys.all(), "new_key": new_key})

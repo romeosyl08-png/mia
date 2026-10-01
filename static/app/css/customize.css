@@ -125,6 +125,18 @@
 }
 
 
+.persona-save-status {
+
+    min-height: 16px;
+    margin: -12px 0 14px;
+
+    color: var(--accent);
+
+    font-size: 11px;
+
+}
+
+
 /* =========================
    CHAMPS
    ========================= */
