@@ -1,0 +1,164 @@
+.barrassons-guide {
+  width: min(860px, calc(100% - 40px));
+  height: 100vh;
+  margin: 0 auto;
+  padding: 30px 0 64px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  color: var(--ink, #242423);
+}
+
+.guide-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.guide-nav a,
+.barrassons-guide a {
+  color: var(--accent, #3f8e8a);
+  text-underline-offset: 3px;
+}
+
+.guide-nav .guide-workspace-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid var(--line, #e7e5e4);
+  border-radius: 6px;
+  background: var(--panel, #fafaf9);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.guide-nav .guide-workspace-link:hover {
+  border-color: var(--accent, #3f8e8a);
+}
+
+.guide-header {
+  max-width: 720px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line, #e7e5e4);
+}
+
+.guide-eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent, #3f8e8a);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.guide-header h1 {
+  margin: 0 0 12px;
+  font-size: 34px;
+  line-height: 1.15;
+}
+
+.guide-header > p:last-child,
+.guide-section p,
+.guide-section li {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.guide-section {
+  max-width: 760px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line, #e7e5e4);
+}
+
+.guide-section h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.guide-section p {
+  margin: 10px 0;
+}
+
+.guide-section ol,
+.guide-section ul {
+  padding-left: 22px;
+}
+
+.guide-section li + li {
+  margin-top: 7px;
+}
+
+.guide-section code {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.92em;
+}
+
+.guide-section pre {
+  overflow-x: auto;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line, #e7e5e4);
+  border-radius: 6px;
+  background: var(--panel, #fafaf9);
+  color: var(--ink, #242423);
+  line-height: 1.6;
+}
+
+.guide-section pre code {
+  font-size: 13px;
+}
+
+.guide-endpoints {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin: 18px 0;
+}
+
+.guide-endpoints > div {
+  min-width: 0;
+  padding: 14px 0;
+  border-top: 2px solid var(--accent, #3f8e8a);
+}
+
+.guide-endpoints dt {
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.guide-endpoints dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.endpoint-note {
+  margin-top: 6px !important;
+  color: var(--muted, #686864);
+  font-size: 13px !important;
+}
+
+.guide-last-section {
+  border-bottom: 0;
+}
+
+@media (max-width: 620px) {
+  .barrassons-guide {
+    width: min(100% - 32px, 860px);
+    padding-top: 22px;
+  }
+
+  .guide-nav {
+    align-items: flex-start;
+  }
+
+  .guide-header h1 {
+    font-size: 28px;
+  }
+
+  .guide-endpoints {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}

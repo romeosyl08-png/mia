@@ -342,6 +342,13 @@ body {
   .response-action svg{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
   .response-action:hover,.response-action.active{background:var(--hover);color:var(--accent);opacity:1;}
   .response-time{font-size:10.5px;margin-left:4px;white-space:nowrap;}
+  .message-edit-form{display:grid;gap:8px;width:100%;min-width:0;}
+  .message-edit-input{box-sizing:border-box;width:100%;min-height:88px;max-height:36vh;resize:vertical;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:14px/1.5 'Inter',sans-serif;}
+  .message-edit-input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .message-edit-controls{display:flex;justify-content:flex-end;gap:8px;}
+  .message-edit-submit,.message-edit-cancel{min-height:34px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;font:12px 'Inter',sans-serif;cursor:pointer;}
+  .message-edit-submit{border-color:var(--accent);background:var(--accent);color:var(--accent-ink);}
+  .message-edit-cancel{background:var(--panel);color:var(--ink);}
   .msg .meta{
     display:block;
     font-size:10.5px;

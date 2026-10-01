@@ -155,7 +155,7 @@ class UserAPIKey(models.Model):
         raw = secrets.token_urlsafe(32)
         full_key = f"sk-ai2ai-{raw}"
         key_hash = hashlib.sha256(full_key.encode()).hexdigest()
-        prefix = full_key[:18] + "..."
+        prefix = full_key[:17] + "..."
         return full_key, prefix, key_hash
 
     def __str__(self):

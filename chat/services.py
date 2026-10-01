@@ -1,4 +1,5 @@
 import json
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from django.core.cache import cache
@@ -109,6 +110,99 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
     usage = data.get("usage", {})
     return reply or "(réponse vide)", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
+
+def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500):
+    """Yield provider text deltas and one final usage record."""
+    provider_name = f"{provider.slug} {provider.name}".lower()
+    is_anthropic = "anthropic" in provider_name
+    if not provider.base_url:
+        raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
+
+    base_headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    if is_anthropic:
+        url = provider.base_url.rstrip("/") + "/v1/messages"
+        payload = {
+            "model": model_id,
+            "max_tokens": max_tokens,
+            "messages": messages,
+            "stream": True,
+            "temperature": temperature,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        headers = {
+            **base_headers,
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        }
+    else:
+        url = provider.base_url.rstrip("/") + "/v1/chat/completions"
+        payload = {
+            "model": model_id,
+            "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        headers = base_headers.copy()
+        if not is_local_provider(provider):
+            headers["Authorization"] = f"Bearer {api_key}"
+
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    input_tokens = 0
+    output_tokens = 0
+    try:
+        with urlopen(request, timeout=120) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(data)
+                except ValueError:
+                    continue
+
+                if is_anthropic:
+                    event_type = event.get("type")
+                    if event_type == "message_start":
+                        input_tokens = event.get("message", {}).get("usage", {}).get("input_tokens", 0)
+                    elif event_type == "message_delta":
+                        output_tokens = event.get("usage", {}).get("output_tokens", output_tokens)
+                    elif event_type == "content_block_delta":
+                        text = event.get("delta", {}).get("text", "")
+                        if text:
+                            yield {"type": "delta", "content": text}
+                else:
+                    usage = event.get("usage") or {}
+                    input_tokens = usage.get("prompt_tokens", input_tokens)
+                    output_tokens = usage.get("completion_tokens", output_tokens)
+                    choices = event.get("choices") or []
+                    if choices:
+                        text = (choices[0].get("delta") or {}).get("content", "")
+                        if text:
+                            yield {"type": "delta", "content": text}
+    except HTTPError as error:
+        if error.code == 429:
+            raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
+        body = error.read().decode("utf-8", errors="replace")
+        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}): {body[:300]}") from error
+    except (OSError, ValueError) as error:
+        raise ProviderError("Le fournisseur est temporairement indisponible.") from error
+
+    yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
+
 def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500):
     """Fait répondre plusieurs modèles puis demande au premier de synthétiser."""
     opinions = []
@@ -161,6 +255,75 @@ def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_token
         max_tokens,
     )
     return reply, input_tokens + (used_input or 0), output_tokens + (used_output or 0)
+
+
+def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500):
+    """Stream a single team model or the team's final synthesis."""
+    configured_models = []
+    for model in models:
+        api_key = model.provider.keys.filter(is_active=True).order_by("id").first()
+        if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
+            continue
+        configured_models.append((model, api_key.get_key() if api_key else ""))
+
+    if not configured_models:
+        raise ProviderError("Aucun modèle de l'équipe n'est disponible.")
+    if len(configured_models) == 1:
+        model, api_key = configured_models[0]
+        yield from stream_llm_provider(
+            model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens
+        )
+        return
+
+    opinions = []
+    responding_models = []
+    input_tokens = 0
+    output_tokens = 0
+    for model, api_key in configured_models:
+        try:
+            reply, used_input, used_output = call_llm_provider(
+                model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens
+            )
+        except ProviderError:
+            continue
+        opinions.append(f"{model.name}:\n{reply}")
+        responding_models.append((model, api_key))
+        input_tokens += used_input or 0
+        output_tokens += used_output or 0
+
+    if not opinions:
+        raise ProviderError("Aucun modèle de l'équipe n'est disponible.")
+    if len(opinions) == 1:
+        reply = opinions[0].split("\n", 1)[1]
+        for chunk in re.findall(r"\S+\s*", reply):
+            yield {"type": "delta", "content": chunk}
+        yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
+        return
+
+    synthesis_prompt = (
+        "Tu es le coordinateur d'une équipe de modèles IA. Compare leurs avis ci-dessous, "
+        "corrige leurs erreurs et réponds directement à la question de l'utilisateur. "
+        "Ne mentionne pas la coordination ni les modèles.\n\n"
+        + "\n\n--- AVIS SUIVANT ---\n\n".join(opinions)
+    )
+    synthesizer, api_key = responding_models[0]
+    for event in stream_llm_provider(
+        synthesizer.provider,
+        api_key,
+        synthesizer.model_id,
+        [{"role": "user", "content": synthesis_prompt}],
+        "",
+        temperature,
+        max_tokens,
+    ):
+        if event["type"] == "usage":
+            yield {
+                "type": "usage",
+                "input_tokens": input_tokens + event.get("input_tokens", 0),
+                "output_tokens": output_tokens + event.get("output_tokens", 0),
+            }
+        else:
+            yield event
 
 
 PRICING_TIERS = {

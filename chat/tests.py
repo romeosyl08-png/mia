@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from unittest.mock import MagicMock, patch
 from http.client import RemoteDisconnected
@@ -7,10 +8,14 @@ import json
 from urllib.error import HTTPError
 
 from api.models import AIModel, APIProvider
+from chat.services import ProviderError, stream_llm_provider
 from .models import Conversation, Message, Persona
 
 
 class ChatHomeTests(TestCase):
+	def setUp(self):
+		cache.clear()
+
 	def test_messages_and_composer_stay_inside_main_chat(self):
 		user = User.objects.create_user(username='chat-layout-user', password='test-password')
 		self.client.force_login(user)
@@ -147,6 +152,224 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response.json()['reply'], 'Réponse locale.')
 		self.assertEqual(conversation.messages.count(), 3)
 		call_llm_provider.assert_called_once()
+
+	@patch('chat.views.stream_llm_provider')
+	def test_editing_a_sent_prompt_replaces_its_following_history(self, stream_provider):
+		user = User.objects.create_user(username='edit-prompt-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		persona = user.personas.first()
+		provider = APIProvider.objects.create(name='Edit prompt provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Edit prompt model', model_id='edit-prompt-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		conversation = Conversation.objects.create(user=user, persona=persona, title='Ancien titre')
+		prompt = Message.objects.create(conversation=conversation, role='user', content='Ancien prompt')
+		Message.objects.create(conversation=conversation, role='assistant', content='Ancienne réponse')
+		Message.objects.create(conversation=conversation, role='user', content='Question suivante')
+		Message.objects.create(conversation=conversation, role='assistant', content='Réponse suivante')
+		stream_provider.return_value = iter([
+			{'type': 'delta', 'content': 'Réponse'},
+			{'type': 'usage', 'input_tokens': 4, 'output_tokens': 2},
+		])
+		self.client.force_login(user)
+
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({
+				'conversation_id': conversation.id,
+				'edit_message_id': prompt.id,
+				'model_id': 'edit-prompt-model',
+				'persona_id': persona.id,
+				'content': 'Prompt modifié',
+			}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		events = [
+			json.loads(line.removeprefix('data: '))
+			for line in b''.join(response.streaming_content).decode().splitlines()
+			if line.startswith('data: ')
+		]
+
+		self.assertEqual(events[-1]['type'], 'done')
+		self.assertEqual(stream_provider.call_args.args[3], [{'role': 'user', 'content': 'Prompt modifié'}])
+		conversation.refresh_from_db()
+		self.assertEqual(conversation.title, 'Prompt modifié')
+		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), ['Prompt modifié', 'Réponse'])
+		self.assertNotEqual(events[-1]['user_message_id'], prompt.id)
+
+	@patch('chat.views.stream_llm_provider')
+	def test_failed_prompt_edit_preserves_old_history_and_refunds(self, stream_provider):
+		user = User.objects.create_user(username='edit-prompt-failure-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Edit failure provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Edit failure model', model_id='edit-failure-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		conversation = Conversation.objects.create(user=user, title='Original')
+		prompt = Message.objects.create(conversation=conversation, role='user', content='Prompt original')
+		Message.objects.create(conversation=conversation, role='assistant', content='Réponse originale')
+
+		def failing_stream(*args, **kwargs):
+			yield {'type': 'delta', 'content': 'Partiel'}
+			raise ProviderError('Fournisseur indisponible.')
+
+		stream_provider.side_effect = failing_stream
+		self.client.force_login(user)
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({
+				'conversation_id': conversation.id,
+				'edit_message_id': prompt.id,
+				'model_id': 'edit-failure-model',
+				'content': 'Prompt nouveau',
+			}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		body = b''.join(response.streaming_content).decode()
+
+		self.assertIn('"type": "error"', body)
+		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), ['Prompt original', 'Réponse originale'])
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
+
+	@patch('chat.views.stream_llm_provider')
+	def test_send_message_streams_deltas_and_persists_the_completed_turn(self, stream_provider):
+		user = User.objects.create_user(username='streaming-chat-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		persona = user.personas.first()
+		provider = APIProvider.objects.create(name='Streaming provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Streaming model', model_id='streaming-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		stream_provider.return_value = iter([
+			{'type': 'delta', 'content': 'Bon'},
+			{'type': 'delta', 'content': 'jour.'},
+			{'type': 'usage', 'input_tokens': 4, 'output_tokens': 2},
+		])
+		self.client.force_login(user)
+
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({'model_id': 'streaming-model', 'persona_id': persona.id, 'content': 'Salut'}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		events = [
+			json.loads(line.removeprefix('data: '))
+			for line in b''.join(response.streaming_content).decode().splitlines()
+			if line.startswith('data: ')
+		]
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response['Content-Type'], 'text/event-stream')
+		self.assertEqual([event['content'] for event in events if event['type'] == 'delta'], ['Bon', 'jour.'])
+		self.assertEqual(events[-1]['type'], 'done')
+		conversation = Conversation.objects.get(id=events[-1]['conversation_id'])
+		self.assertEqual(conversation.persona_id, persona.id)
+		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), ['Salut', 'Bonjour.'])
+		user.credit_account.refresh_from_db()
+		self.assertLess(user.credit_account.balance, 1000)
+
+	@patch('chat.views.stream_llm_provider')
+	def test_streaming_provider_error_refunds_reserved_credits(self, stream_provider):
+		user = User.objects.create_user(username='streaming-error-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Streaming error provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Streaming error model', model_id='stream-error-model')
+		provider.keys.create(name='server-key', key='server-secret')
+
+		def failing_stream(*args, **kwargs):
+			yield {'type': 'delta', 'content': 'Partiel'}
+			raise ProviderError('Le fournisseur est temporairement indisponible.')
+
+		stream_provider.side_effect = failing_stream
+		self.client.force_login(user)
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({'model_id': 'stream-error-model', 'content': 'Salut'}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		body = b''.join(response.streaming_content).decode()
+
+		self.assertIn('"type": "delta"', body)
+		self.assertIn('"type": "error"', body)
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
+		self.assertFalse(Conversation.objects.filter(user=user).exists())
+
+	@patch('chat.services.urlopen')
+	def test_stream_llm_provider_parses_openai_sse(self, urlopen):
+		provider = APIProvider(name='SSE provider', slug='sse-provider', base_url='https://provider.example.test')
+		response = MagicMock()
+		response.__enter__.return_value.__iter__.return_value = [
+			b'data: {"choices":[{"delta":{"content":"Bonjour"}}]}\n',
+			b'data: {"choices":[{"delta":{"content":"."}}]}\n',
+			b'data: [DONE]\n',
+		]
+		urlopen.return_value = response
+
+		events = list(stream_llm_provider(provider, 'test-key', 'test-model', [{'role': 'user', 'content': 'Salut'}]))
+
+		self.assertEqual(events, [
+			{'type': 'delta', 'content': 'Bonjour'},
+			{'type': 'delta', 'content': '.'},
+			{'type': 'usage', 'input_tokens': 0, 'output_tokens': 0},
+		])
+		request_payload = json.loads(urlopen.call_args.args[0].data)
+		self.assertTrue(request_payload['stream'])
+
+	@patch('chat.services.stream_llm_provider')
+	def test_send_message_streams_team_response(self, stream_provider):
+		user = User.objects.create_user(username='streaming-team-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Streaming team provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Streaming team model', model_id='streaming-team-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		stream_provider.return_value = iter([
+			{'type': 'delta', 'content': 'Réponse'},
+			{'type': 'usage', 'input_tokens': 3, 'output_tokens': 2},
+		])
+		self.client.force_login(user)
+
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({
+				'model_id': 'streaming-team-model',
+				'team_mode': True,
+				'team_model_ids': ['streaming-team-model'],
+				'content': 'Salut',
+			}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		body = b''.join(response.streaming_content).decode()
+
+		self.assertIn('"content": "Réponse"', body)
+		self.assertIn('"type": "done"', body)
+		stream_provider.assert_called_once()
+
+	@patch('chat.services.urlopen')
+	def test_stream_llm_provider_parses_anthropic_sse(self, urlopen):
+		provider = APIProvider(name='Anthropic SSE', slug='anthropic', base_url='https://provider.example.test')
+		response = MagicMock()
+		response.__enter__.return_value.__iter__.return_value = [
+			b'data: {"type":"message_start","message":{"usage":{"input_tokens":7}}}\n',
+			b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Salut"}}\n',
+			b'data: {"type":"message_delta","usage":{"output_tokens":1}}\n',
+		]
+		urlopen.return_value = response
+
+		events = list(stream_llm_provider(provider, 'test-key', 'test-model', [{'role': 'user', 'content': 'Bonjour'}]))
+
+		self.assertEqual(events, [
+			{'type': 'delta', 'content': 'Salut'},
+			{'type': 'usage', 'input_tokens': 7, 'output_tokens': 1},
+		])
 
 	@patch('chat.services.urlopen')
 	def test_send_message_handles_provider_rate_limit(self, urlopen):

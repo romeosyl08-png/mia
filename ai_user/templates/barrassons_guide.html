@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Guide Barrassons{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/barrassons.css' %}">
+{% endblock %}
+
+{% block body %}
+<main class="barrassons-guide">
+  <nav class="guide-nav" aria-label="Navigation du guide">
+    <a href="{% url 'api-keys-page' %}">← Clés API</a>
+    <a class="guide-workspace-link" href="{% url 'chat:dap-home' %}">Retour au workspace</a>
+  </nav>
+
+  <header class="guide-header">
+    <p class="guide-eyebrow">AI2AI · OUTIL DE DÉVELOPPEMENT</p>
+    <h1>Utiliser Barrassons</h1>
+    <p>Barrassons est un assistant en ligne de commande qui lit et recherche dans le projet courant, puis peut proposer des modifications ou exécuter des commandes avec ta confirmation.</p>
+  </header>
+
+  <section class="guide-section">
+    <h2>1. Installer</h2>
+    <p>Ouvre un terminal sur l’ordinateur où se trouve le dépôt, puis installe l’outil depuis le dossier du projet :</p>
+    <pre><code>cd /chemin/vers/ai_2ai
+pipx install .</code></pre>
+    <p>Si <code>pipx</code> n’est pas installé, installe-le avec le gestionnaire Python de ta distribution, puis relance ces commandes. Le dépôt contient le paquet Barrassons et son exécutable.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>2. Créer une clé API</h2>
+    <ol>
+      <li>Reste sur cette page avec ta session AI2AI connectée, puis ouvre <a href="{% url 'api-keys-page' %}">Clés API</a>.</li>
+      <li>Donne un nom reconnaissable, par exemple <strong>Barrassons local</strong>, et clique sur <strong>Créer</strong>.</li>
+      <li>La clé complète n’est affichée qu’une seule fois. Copie-la directement dans l’invite Barrassons du terminal; ne la colle pas dans une conversation, un fichier du dépôt ou une capture d’écran.</li>
+    </ol>
+    <p>Si une clé a déjà été partagée par erreur, révoque-la ici et crée-en une nouvelle.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>3. Se connecter à la bonne API</h2>
+    <p>Lance Barrassons depuis le dossier que tu veux lui faire analyser :</p>
+    <pre><code>cd /chemin/vers/ai_2ai
+barrassons</code></pre>
+    <p>Au premier lancement, choisis <strong>1</strong> pour ouvrir la page des clés API, ou <strong>2</strong> si tu as déjà une clé. À l’invite d’URL, utilise l’adresse correspondant à ton serveur :</p>
+    <dl class="guide-endpoints">
+      <div>
+        <dt>Serveur local</dt>
+        <dd><code>http://127.0.0.1:8000/v1</code></dd>
+        <dd class="endpoint-note">Démarre Django localement avant Barrassons et garde le serveur lancé.</dd>
+      </div>
+      <div>
+        <dt>Serveur Render</dt>
+        <dd><code>https://mia-vkl1.onrender.com/v1</code></dd>
+        <dd class="endpoint-note">Choisis cette URL si la clé a été créée sur l’instance Render.</dd>
+      </div>
+    </dl>
+    <p>Saisis ensuite la clé dans le terminal. Elle est enregistrée dans <code>~/.config/barrassons/config.json</code> avec des permissions privées; elle n’est pas nécessaire dans le dépôt.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>4. Choisir un modèle et travailler</h2>
+    <p>Barrassons demande la liste des modèles disponibles, puis te laisse choisir par numéro ou identifiant. Il filtre les modèles Anthropic, car cette version utilise les appels d’outils OpenAI compatibles.</p>
+    <p>Décris une tâche précise et indique si tu veux seulement une analyse ou une modification. Par exemple :</p>
+    <pre><code>Analyse le flux d’envoi des messages. Explique le problème et ne modifie aucun fichier.
+
+Lis les tests de l’application, identifie ceux qui couvrent les personas,
+puis propose un test manquant sans l’ajouter.</code></pre>
+    <p>Pour quitter, écris <code>/exit</code>. <code>/clear</code> efface le contexte de la session, et <code>/help</code> rappelle les commandes disponibles.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>5. Comprendre les confirmations</h2>
+    <ul>
+      <li>La lecture, la recherche et la liste des fichiers sont disponibles directement.</li>
+      <li>Avant d’écrire ou modifier un fichier, Barrassons affiche le chemin et demande confirmation. Réponds <code>y</code> pour autoriser; la réponse par défaut est non.</li>
+      <li>Avant une commande shell, il affiche la commande et le dossier d’exécution. Vérifie-la avant de répondre.</li>
+      <li>Les commandes shell sont exécutées dans le dossier courant de Barrassons. N’autorise que les commandes que tu comprends et souhaites lancer.</li>
+    </ul>
+  </section>
+
+  <section class="guide-section guide-last-section">
+    <h2>6. Sécurité et crédits</h2>
+    <p>Les appels modèle débitent les crédits du compte associé à la clé. Une clé doit rester privée : ne la versionne pas et ne la colle pas dans les demandes adressées à l’assistant.</p>
+    <p>Pour changer de compte ou d’URL, lance <code>barrassons login</code>. Pour effacer la configuration locale, lance <code>barrassons logout</code>; cela supprime le fichier local, mais ne révoque pas la clé sur le serveur. Révoque-la aussi depuis la page <a href="{% url 'api-keys-page' %}">Clés API</a> si elle n’est plus utilisée.</p>
+  </section>
+</main>
+{% endblock %}

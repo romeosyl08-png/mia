@@ -40,6 +40,17 @@
 
     const personaSaveStatus =
         document.getElementById("personaSaveStatus");
+    let appearanceSaveTimer = null;
+
+    function scheduleAppearanceSave(){
+        window.clearTimeout(appearanceSaveTimer);
+        appearanceSaveTimer = window.setTimeout(() => appearance.save(), 300);
+    }
+
+    function saveAppearance(){
+        window.clearTimeout(appearanceSaveTimer);
+        appearance.save();
+    }
 
 
     /*
@@ -119,11 +130,8 @@
         botNameInput.addEventListener(
             "input",
             () => {
-
-                appearance.setBotName(
-                    botNameInput.value
-                );
-
+                appearance.previewBotName(botNameInput.value);
+                scheduleAppearanceSave();
             }
         );
 
@@ -141,11 +149,8 @@
         botAvatarInput.addEventListener(
             "input",
             () => {
-
-                appearance.setBotAvatar(
-                    botAvatarInput.value
-                );
-
+                appearance.previewBotAvatar(botAvatarInput.value);
+                scheduleAppearanceSave();
             }
         );
 
@@ -191,6 +196,7 @@
         if (input) {
             input.addEventListener("blur", () => {
                 input.readOnly = true;
+                saveAppearance();
             });
         }
     });

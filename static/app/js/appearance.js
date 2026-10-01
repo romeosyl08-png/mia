@@ -116,6 +116,24 @@
 
 
     let appearance = load();
+    const botNameElements = Array.from(document.querySelectorAll("[data-bot-name]"));
+    const botAvatarElements = Array.from(document.querySelectorAll("[data-bot-avatar]"));
+
+    function normalizeValue(value, fallback){
+        return String(value || "").trim() || fallback;
+    }
+
+    function updateBotName(){
+        botNameElements.forEach(element => {
+            element.textContent = appearance.botName;
+        });
+    }
+
+    function updateBotAvatar(){
+        botAvatarElements.forEach(element => {
+            element.textContent = appearance.botAvatar;
+        });
+    }
 
 
     function apply() {
@@ -145,24 +163,8 @@
          * Éléments globaux
          */
 
-        document.querySelectorAll(
-            "[data-bot-name]"
-        ).forEach(element => {
-
-            element.textContent =
-                appearance.botName;
-
-        });
-
-
-        document.querySelectorAll(
-            "[data-bot-avatar]"
-        ).forEach(element => {
-
-            element.textContent =
-                appearance.botAvatar;
-
-        });
+        updateBotName();
+        updateBotAvatar();
 
 
         /*
@@ -223,6 +225,19 @@
 
         },
 
+        previewBotName(name) {
+            appearance.botName = normalizeValue(name, DEFAULTS.botName);
+            updateBotName();
+            if (!document.body.hasAttribute("data-keep-title")) {
+                document.title = appearance.botName;
+            }
+        },
+
+        previewBotAvatar(avatar) {
+            appearance.botAvatar = normalizeValue(avatar, DEFAULTS.botAvatar);
+            updateBotAvatar();
+        },
+
 
         save() {
 
@@ -234,30 +249,16 @@
 
 
         setBotName(name) {
-
-            name = String(name || "").trim();
-
-            appearance.botName =
-                name || DEFAULTS.botName;
-
+            appearance.botName = normalizeValue(name, DEFAULTS.botName);
             save(appearance);
-
             apply();
-
         },
 
 
         setBotAvatar(avatar) {
-
-            avatar = String(avatar || "").trim();
-
-            appearance.botAvatar =
-                avatar || DEFAULTS.botAvatar;
-
+            appearance.botAvatar = normalizeValue(avatar, DEFAULTS.botAvatar);
             save(appearance);
-
             apply();
-
         },
 
 

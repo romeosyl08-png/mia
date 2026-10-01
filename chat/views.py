@@ -2,7 +2,7 @@ import json
 import logging
 
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -11,7 +11,7 @@ from django.views import View
 from .models import Conversation, Message, Persona
 from ai_user.models import InsufficientCreditsError
 
-from .services import ProviderError, call_llm_provider, call_llm_team, estimate_cost, is_local_provider
+from .services import ProviderError, call_llm_provider, call_llm_team, estimate_cost, is_local_provider, stream_llm_provider, stream_llm_team
 from api.models import AIModel
 from .services import PRICING_TIERS 
 from itertools import groupby
@@ -73,6 +73,53 @@ def _chat_error(message, error_type, status):
 	return JsonResponse({'error': {'message': message, 'type': error_type}}, status=status)
 
 
+def _sse_event(data):
+	return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _complete_chat_turn(user, conversation, persona, content, reply, model, account, reserve, estimated_input, provider_input, provider_output, edit_message=None):
+	prompt_tokens = provider_input or estimated_input
+	completion_tokens = provider_output or round(len(reply) / 4)
+	actual_cost = actual_cost_credits(model, prompt_tokens, completion_tokens)
+	if actual_cost < reserve:
+		account.credit(reserve - actual_cost, reason='adjustment', note=f'Ajustement {model.model_id}')
+
+	if edit_message:
+		is_first_message = not conversation.messages.filter(id__lt=edit_message.id).exists()
+		conversation.messages.filter(id__gte=edit_message.id).delete()
+		if is_first_message:
+			conversation.title = content[:200]
+			conversation.save(update_fields=['title', 'updated_at'])
+	if conversation is None:
+		conversation = Conversation.objects.create(
+			user=user,
+			title=content[:200],
+			persona=persona,
+		)
+	user_message = Message.objects.create(
+			conversation=conversation,
+			role='user',
+			content=content,
+			prompt_tokens=prompt_tokens,
+	)
+	assistant_message = Message.objects.create(
+			conversation=conversation,
+			role='assistant',
+			content=reply,
+			completion_tokens=completion_tokens,
+	)
+	return {
+		'conversation_id': conversation.id,
+		'title': conversation.title,
+		'reply': reply,
+		'prompt_tokens': prompt_tokens,
+		'completion_tokens': completion_tokens,
+		'remaining_balance': account.balance,
+		'user_message_id': user_message.id,
+		'assistant_message_id': assistant_message.id,
+	}
+
+
 @method_decorator(login_required(login_url='/auth/?next=/chat/api/send/'), name='dispatch')
 class SendMessageView(View):
 	"""Reçoit un message, appelle le fournisseur et facture le coût côté serveur."""
@@ -112,6 +159,21 @@ class SendMessageView(View):
 		conversation = None
 		if conversation_id:
 			conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+		edit_message = None
+		edit_message_id = payload.get('edit_message_id')
+		if edit_message_id:
+			if not conversation:
+				return _chat_error('Une conversation est obligatoire pour modifier un message.', 'invalid_request', 400)
+			try:
+				edit_message_id = int(edit_message_id)
+			except (TypeError, ValueError):
+				return _chat_error('Identifiant de message invalide.', 'invalid_request', 400)
+			edit_message = get_object_or_404(
+				Message,
+				id=edit_message_id,
+				conversation=conversation,
+				role='user',
+			)
 		persona_id = payload.get('persona_id')
 		persona = get_object_or_404(Persona, id=persona_id, user=request.user) if persona_id else None
 		if conversation and persona and conversation.persona_id != persona.id:
@@ -121,7 +183,10 @@ class SendMessageView(View):
 		system_prompt = str(payload.get('system_prompt', ''))
 		messages = []
 		if conversation:
-			messages = list(conversation.messages.filter(role__in={'user', 'assistant'}).values('role', 'content'))
+			conversation_messages = conversation.messages.filter(role__in={'user', 'assistant'})
+			if edit_message:
+				conversation_messages = conversation_messages.filter(id__lt=edit_message.id)
+			messages = list(conversation_messages.values('role', 'content'))
 		messages.append({'role': 'user', 'content': content})
 
 		
@@ -136,6 +201,17 @@ class SendMessageView(View):
 			account.debit(reserve, reason='usage', note=f'Reservation {model.model_id}')
 		except InsufficientCreditsError:
 			return _chat_error('Crédits insuffisants pour ce message.', 'insufficient_credits', 402)
+
+		if 'text/event-stream' in request.headers.get('Accept', ''):
+			return StreamingHttpResponse(
+				self._stream_reply(
+					request, conversation, persona, content, model, team_models, team_mode,
+					messages, full_system_prompt, float(payload.get('temperature', 0.7)),
+					reserve, estimated_input, account, edit_message,
+				),
+				content_type='text/event-stream',
+				headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+			)
 
 		try:
 			if team_mode:
@@ -172,39 +248,67 @@ class SendMessageView(View):
 				502,
 			)
 
-		prompt_tokens = provider_input or estimated_input
-		completion_tokens = provider_output or round(len(reply) / 4)
-		actual_cost = actual_cost_credits(model, prompt_tokens, completion_tokens)
-		if actual_cost < reserve:
-			account.credit(reserve - actual_cost, reason='adjustment', note=f'Ajustement {model.model_id}')
+		return JsonResponse(_complete_chat_turn(
+			request.user, conversation, persona, content, reply, model, account, reserve,
+			estimated_input, provider_input, provider_output, edit_message,
+		))
 
-		if conversation is None:
-			conversation = Conversation.objects.create(
-				user=request.user,
-				title=content[:200],
-				persona=persona,
-			)
-		Message.objects.create(
-			conversation=conversation,
-			role='user',
-			content=content,
-			prompt_tokens=prompt_tokens,
-		)
-		Message.objects.create(
-			conversation=conversation,
-			role='assistant',
-			content=reply,
-			completion_tokens=completion_tokens,
-		)
+	def _stream_reply(self, request, conversation, persona, content, model, team_models, team_mode, messages, system_prompt, temperature, reserve, estimated_input, account, edit_message=None):
+		def events():
+			reply_parts = []
+			provider_input = 0
+			provider_output = 0
+			settled = False
+			try:
+				if not team_mode:
+					api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
+					if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
+						raise ProviderError('Le fournisseur IA n’est pas configuré.')
+					provider_stream = stream_llm_provider(
+						model.provider,
+						api_key.get_key() if api_key else '',
+						model.model_id,
+						messages,
+						system_prompt,
+						temperature,
+						500,
+					)
+				else:
+					provider_stream = stream_llm_team(team_models, messages, system_prompt, temperature, 500)
 
-		return JsonResponse({
-			'conversation_id': conversation.id,
-			'title': conversation.title,
-			'reply': reply,
-			'prompt_tokens': prompt_tokens,
-			'completion_tokens': completion_tokens,
-			'remaining_balance': account.balance,
-		})
+				for event in provider_stream:
+					if event['type'] == 'delta':
+						reply_parts.append(event['content'])
+						yield _sse_event(event)
+					else:
+						provider_input = event.get('input_tokens', 0)
+						provider_output = event.get('output_tokens', 0)
+
+				reply = ''.join(reply_parts) or '(réponse vide)'
+				result = _complete_chat_turn(
+					request.user, conversation, persona, content, reply, model, account, reserve,
+					estimated_input, provider_input, provider_output, edit_message,
+				)
+				settled = True
+				yield _sse_event({'type': 'done', **result})
+			except ProviderError as error:
+				account.credit(reserve, reason='adjustment', note='Remboursement appel IA échoué')
+				settled = True
+				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': str(error)}})
+			except Exception:
+				logger.exception(
+					"Unexpected streaming provider failure for chat model %s (user_id=%s)",
+					model.model_id,
+					request.user.pk,
+				)
+				account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
+				settled = True
+				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': 'Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.'}})
+			finally:
+				if not settled:
+					account.credit(reserve, reason='adjustment', note='Remboursement flux interrompu')
+
+		return events()
 
 
 
@@ -222,7 +326,7 @@ class ConversationDetailView(View):
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))
 	def get(self, request, pk):
 		conv = get_object_or_404(Conversation, id=pk, user=request.user)
-		messages = list(conv.messages.values("role", "content", "prompt_tokens", "completion_tokens", "created_at"))
+		messages = list(conv.messages.values("id", "role", "content", "prompt_tokens", "completion_tokens", "created_at"))
 		return JsonResponse({"id": conv.id, "title": conv.title, "persona_id": conv.persona_id, "messages": messages})
 
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))

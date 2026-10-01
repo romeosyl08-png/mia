@@ -137,6 +137,7 @@ let state = {
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const data = await res.json();
       convo.messages = data.messages.map(m => ({
+        id: m.id,
         role: m.role === "assistant" ? "bot" : m.role,
         content: m.content,
         tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens,
@@ -224,32 +225,68 @@ let state = {
   }
 
   const personaSwitchTimers = new Map();
+  const personaSaveStates = new Map();
   function saveConversationPersona(convo, personaId, previousPersonaId){
     if(!state.isAuthenticated || !convo.id) return;
-    const existingTimer = personaSwitchTimers.get(convo.id);
-    if(existingTimer) clearTimeout(existingTimer);
     const conversationId = convo.id;
-    const timer = setTimeout(async () => {
+    let saveState = personaSaveStates.get(conversationId);
+    if(!saveState){
+      saveState = {
+        convo,
+        personaId,
+        persistedPersonaId: previousPersonaId,
+        version: 0,
+        saving: false,
+        timer: null
+      };
+      personaSaveStates.set(conversationId, saveState);
+    }
+    saveState.personaId = personaId;
+    saveState.version += 1;
+    if(saveState.timer) clearTimeout(saveState.timer);
+    saveState.timer = setTimeout(() => {
+      saveState.timer = null;
       personaSwitchTimers.delete(conversationId);
-      try{
-        const res = await fetch(`/chat/api/conversations/${conversationId}/`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
-          },
-          body: JSON.stringify({ persona_id: personaId })
-        });
-        if(!res.ok) throw new Error("Erreur sauvegarde persona " + res.status);
-      }catch(err){
-        console.error(err);
-        if(convo.personaId === personaId){
-          convo.personaId = previousPersonaId;
-          if(activeConvo() === convo) renderAll();
-        }
-      }
+      flushConversationPersona(conversationId, saveState);
     }, 150);
-    personaSwitchTimers.set(conversationId, timer);
+    personaSwitchTimers.set(conversationId, saveState.timer);
+  }
+
+  async function flushConversationPersona(conversationId, saveState){
+    if(saveState.saving || saveState.timer) return;
+    saveState.saving = true;
+    const version = saveState.version;
+    const personaId = saveState.personaId;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try{
+      const response = await fetch(`/chat/api/conversations/${conversationId}/`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        },
+        body: JSON.stringify({ persona_id: personaId }),
+        signal: controller.signal
+      });
+      if(!response.ok) throw new Error("Erreur sauvegarde persona " + response.status);
+      saveState.persistedPersonaId = personaId;
+    }catch(err){
+      console.error(err);
+      if(saveState.version === version && saveState.convo.personaId === personaId){
+        saveState.convo.personaId = saveState.persistedPersonaId;
+        if(activeConvo() === saveState.convo) renderAll();
+      }
+    }finally{
+      clearTimeout(timeout);
+      saveState.saving = false;
+      if(saveState.timer) return;
+      if(saveState.version !== version){
+        flushConversationPersona(conversationId, saveState);
+      }else{
+        personaSaveStates.delete(conversationId);
+      }
+    }
   }
 
   function setActivePersona(personaId){
@@ -372,9 +409,11 @@ function renderMessages(){
   convo.messages.forEach((m, messageIndex) => {
     const div = document.createElement("div");
     div.className = "msg " + m.role;
+    div.dataset.messageKey = m.clientId || (m.id ? `message-${m.id}` : `draft-${messageIndex}`);
 
     if(m.role === "bot"){
       div.classList.add("has-actions");
+      if(m.streaming) div.classList.add("streaming");
     }
 
     const contentDiv = document.createElement("div");
@@ -385,6 +424,50 @@ function renderMessages(){
       contentDiv.textContent = m.content;
     }
     div.appendChild(contentDiv);
+
+    if(m.role === "user" && m.id && convo.id){
+      const actions = document.createElement("div");
+      actions.className = "response-actions";
+      const editButton = document.createElement("button");
+      editButton.type = "button";
+      editButton.className = "response-action";
+      editButton.textContent = "✎";
+      editButton.title = "Modifier et régénérer";
+      editButton.setAttribute("aria-label", "Modifier et régénérer ce message");
+      editButton.addEventListener("click", () => {
+        if(state.sending) return;
+        const form = document.createElement("form");
+        form.className = "message-edit-form";
+        const textarea = document.createElement("textarea");
+        textarea.className = "message-edit-input";
+        textarea.value = m.content;
+        textarea.setAttribute("aria-label", "Modifier le prompt");
+        const controls = document.createElement("div");
+        controls.className = "message-edit-controls";
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "message-edit-submit";
+        submit.textContent = "Enregistrer et régénérer";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "message-edit-cancel";
+        cancel.textContent = "Annuler";
+        cancel.addEventListener("click", renderAll);
+        form.addEventListener("submit", event => {
+          event.preventDefault();
+          const updatedText = textarea.value.trim();
+          if(!updatedText || updatedText === m.content) return;
+          sendMessage(updatedText, false, { messageId: m.id, messageIndex });
+        });
+        controls.append(submit, cancel);
+        form.append(textarea, controls);
+        div.replaceChild(form, contentDiv);
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      });
+      actions.appendChild(editButton);
+      div.appendChild(actions);
+    }
 
     if(m.role === "bot"){
       const actions = document.createElement("div");
@@ -504,6 +587,25 @@ function renderMessages(){
     renderCredits();
   }
 
+  function createStreamingRenderer(convo, message){
+    let scheduled = false;
+    return () => {
+      if(scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        if(activeConvo() !== convo) return;
+        const wrap = el("messages");
+        const messageElement = Array.from(wrap.querySelectorAll(".msg.bot"))
+          .find(element => element.dataset.messageKey === message.clientId);
+        const content = messageElement?.querySelector(".msg-content");
+        if(!content) return;
+        content.textContent = message.content;
+        wrap.scrollTop = wrap.scrollHeight;
+      });
+    };
+  }
+
   function editField(id){
     const field = el(id);
     if(field){
@@ -535,15 +637,17 @@ function renderMessages(){
     return sentences.slice(0, n).join(" ");
   }
 
-  async function callBackend(persona, userText, convo){
+  async function callBackend(persona, userText, convo, onDelta, editMessageId){
     const res = await fetch("/chat/api/send/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Accept": "text/event-stream",
         "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
       },
       body: JSON.stringify({
         conversation_id: convo.id,
+        edit_message_id: editMessageId,
         content: userText,
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
@@ -553,12 +657,46 @@ function renderMessages(){
         team_model_ids: Array.from(el("teamModelSelect").selectedOptions).map(option => option.value)
       })
     });
-    const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
-    return data;
+    if(!res.ok){
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+    }
+    if(res.headers.get("Content-Type")?.includes("application/json")){
+      const data = await res.json();
+      if(data.reply) onDelta(data.reply);
+      return data;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result = null;
+    const handleEvent = eventText => {
+      const dataLine = eventText.split("\n").find(line => line.startsWith("data:"));
+      if(!dataLine) return;
+      const event = JSON.parse(dataLine.slice(5).trim());
+      if(event.type === "delta") onDelta(event.content || "");
+      if(event.type === "done") result = event;
+      if(event.type === "error") throw new Error(event.error?.message || "Erreur du fournisseur.");
+    };
+
+    while(true){
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      let boundary = buffer.indexOf("\n\n");
+      while(boundary !== -1){
+        handleEvent(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if(done) break;
+    }
+    if(buffer.trim()) handleEvent(buffer);
+    if(!result) throw new Error("Le flux s’est terminé avant la réponse finale.");
+    return result;
   }
 
-  async function sendMessage(text, reuseLastUser = false){
+  async function sendMessage(text, reuseLastUser = false, editTarget = null){
     if(state.sending || !ensureCreditAccess()) return;
     state.sending = true;
     renderCredits();
@@ -573,27 +711,67 @@ function renderMessages(){
     }
     const persona = state.personas.find(p => p.id === convo.personaId) || state.personas[0];
 
-    if(!reuseLastUser) convo.messages.push({ role: "user", content: text, tokens: 0, createdAt: new Date().toISOString() });
+    let previousMessages = null;
+    let userMessage;
+    if(editTarget){
+      const originalMessage = convo.messages[editTarget.messageIndex];
+      if(!convo.id || !originalMessage || originalMessage.id !== editTarget.messageId || originalMessage.role !== "user"){
+        state.sending = false;
+        renderCredits();
+        return;
+      }
+      previousMessages = convo.messages.slice();
+      convo.messages = convo.messages.slice(0, editTarget.messageIndex);
+      userMessage = { ...originalMessage, content: text, tokens: 0 };
+      convo.messages.push(userMessage);
+    }else if(!reuseLastUser){
+      userMessage = { role: "user", content: text, tokens: 0, createdAt: new Date().toISOString() };
+      convo.messages.push(userMessage);
+    }else{
+      userMessage = convo.messages[convo.messages.length - 1];
+    }
+    const streamingMessage = {
+      role: "bot",
+      content: "",
+      tokens: 0,
+      createdAt: new Date().toISOString(),
+      clientId: uid("stream"),
+      streaming: true
+    };
+    const renderStreamingMessage = createStreamingRenderer(convo, streamingMessage);
+    convo.messages.push(streamingMessage);
     renderAll();
 
     try{
       let data;
       if(state.hasActiveModels){
-        data = await callBackend(persona, text, convo);
+        data = await callBackend(persona, text, convo, chunk => {
+          streamingMessage.content += chunk;
+          renderStreamingMessage();
+        }, editTarget?.messageId);
         if(convo.id === null && data.conversation_id){
           convo.id = data.conversation_id;
           state.activeConvoId = conversationKey(convo);
         }
         if(data.title) convo.title = data.title;
+        if(data.user_message_id) userMessage.id = data.user_message_id;
       } else {
-        await new Promise(resolve => setTimeout(resolve, 350));
-        data = { reply: simulateReply(persona, text), remaining_balance: state.credits };
+        const simulatedReply = simulateReply(persona, text);
+        const chunks = simulatedReply.match(/\S+\s*/g) || [simulatedReply];
+        for(const chunk of chunks){
+          streamingMessage.content += chunk;
+          renderStreamingMessage();
+          await new Promise(resolve => setTimeout(resolve, 35));
+        }
+        data = { reply: simulatedReply, remaining_balance: state.credits };
       }
       const replyText = data.reply || "(réponse vide)";
       const inputTokens = data.prompt_tokens ?? estimateTokens(text);
       const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
-      convo.messages[convo.messages.length - 1].tokens = inputTokens;
-      convo.messages.push({ role: "bot", content: replyText, tokens: replyTokens, createdAt: new Date().toISOString() });
+      userMessage.tokens = inputTokens;
+      streamingMessage.content = replyText;
+      streamingMessage.tokens = replyTokens;
+      streamingMessage.streaming = false;
       const newCredits = Number(data.remaining_balance);
         if (Number.isFinite(newCredits)) {
             state.credits = newCredits;
@@ -602,7 +780,13 @@ function renderMessages(){
       state.usageLog.unshift({ label: "Réponse (" + persona.name + ")", tokens: replyTokens });
       renderAll();
     }catch(err){
-      convo.messages.push({ role: "bot", content: "⚠ " + err.message, tokens: 0 });
+      if(previousMessages){
+        convo.messages = previousMessages;
+        convo.messages.push({ role: "bot", content: "⚠ " + err.message, tokens: 0 });
+      }else{
+        streamingMessage.content = (streamingMessage.content ? streamingMessage.content + "\n\n" : "") + "⚠ " + err.message;
+        streamingMessage.streaming = false;
+      }
       renderAll();
     } finally {
       state.sending = false;

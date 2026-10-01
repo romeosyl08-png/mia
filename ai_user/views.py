@@ -455,3 +455,8 @@ def api_keys_page(request):
             return redirect("api-keys-page")
 
     return render(request, "api_keys.html", {"keys": request.user.api_keys.all(), "new_key": new_key})
+
+
+@login_required(login_url="/auth/?next=/api-keys/barrassons/")
+def barrassons_guide(request):
+	return render(request, "barrassons_guide.html")

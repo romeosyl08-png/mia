@@ -18,4 +18,5 @@ urlpatterns = [
     path('recharge/cinetpay-webhook/', views.cinetpay_webhook, name='cinetpay-webhook'),
 
     path('api-keys/', views.api_keys_page, name='api-keys-page'),
+    path('api-keys/barrassons/', views.barrassons_guide, name='barrassons-guide'),
 ]
