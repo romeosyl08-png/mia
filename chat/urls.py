@@ -15,6 +15,7 @@ urlpatterns = [
 	path('api/conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
 	path('api/conversations/<int:pk>/delete/', views.ConversationDeleteView.as_view(), name='conversation-delete'),
 	path('chat/api/conversations/', views.ConversationListView.as_view(), name='chat-conversation-list'),
+	path('chat/api/workspaces/', views.WorkspaceListView.as_view(), name='chat-workspace-list'),
 	path('chat/api/conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='chat-conversation-detail'),
 	path('chat/api/conversations/<int:pk>/delete/', views.ConversationDeleteView.as_view(), name='chat-conversation-delete'),
 	path('api/personas/', views.PersonaListView.as_view(), name='persona-list'),

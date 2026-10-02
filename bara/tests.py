@@ -5,11 +5,14 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
+from api.models import APIProvider
 from bara.models import ToolExecution, WorkConversation, WorkFile, Workspace, WorkspaceMCPServer
 from bara.mcp_client import validate_mcp_endpoint
+from bara.services import call_llm_with_tools_stream
 from bara.tools.definitions import run_command, search_code
 from bara.tools.sandbox import run_sandbox_command
 from bara.views import _tools_schema
+from chat.services import ProviderError
 
 
 class WorkspaceToolTests(TestCase):
@@ -71,6 +74,22 @@ class WorkspaceMCPTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="mcp-user", password="pw")
         self.workspace = Workspace.objects.create(user=self.user, title="MCP test")
+
+    def test_provider_key_cannot_be_used_as_base_url(self):
+        provider = APIProvider(name="Groq", slug="groq", base_url="sk-test-key")
+
+        with patch("bara.services.urlopen") as urlopen:
+            with self.assertRaisesRegex(ProviderError, "URL de base du fournisseur"):
+                list(call_llm_with_tools_stream(provider, "sk-test-key", "model", []))
+
+        urlopen.assert_not_called()
+
+    def test_stream_provider_connection_reset_is_controlled(self):
+        provider = APIProvider(name="Groq", slug="groq", base_url="https://api.example.test")
+
+        with patch("bara.services.urlopen", side_effect=ConnectionResetError("connection reset")):
+            with self.assertRaisesRegex(ProviderError, "temporairement indisponible"):
+                list(call_llm_with_tools_stream(provider, "test-key", "model", []))
 
     def test_non_https_endpoint_is_rejected(self):
         self.assertIn("HTTPS", validate_mcp_endpoint("http://127.0.0.1/mcp"))

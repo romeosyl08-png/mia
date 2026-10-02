@@ -401,6 +401,12 @@ body {
   .composer-tools .tool-btn{font-size:18px;}
   .tool-spacer{flex:1;}
   .composer-hint{font-size:10px;opacity:.42;white-space:nowrap;padding-right:3px;}
+  .workspace-controls{display:flex;align-items:center;gap:7px;margin-top:8px;min-width:0;}
+  .workspace-controls label{flex:none;font-size:11px;opacity:.55;}
+  .workspace-controls select{flex:1;min-width:0;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:12px;}
+  .workspace-controls button,.workspace-open{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;flex:none;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);text-decoration:none;font-size:17px;cursor:pointer;}
+  .workspace-controls button:hover,.workspace-open:hover{border-color:var(--accent);color:var(--accent);}
+  .workspace-controls button:disabled{opacity:.45;cursor:not-allowed;}
 
 .provider-dropdown{
   position:relative;
@@ -1302,6 +1308,18 @@ body:has(.customize-page) {
 
   .composer-tools {
     justify-content: space-between;
+  }
+
+  .workspace-controls {
+    gap: 6px;
+  }
+
+  .workspace-controls label {
+    font-size: 10px;
+  }
+
+  .workspace-controls select {
+    font-size: 11px;
   }
 
   .tool-spacer,

@@ -1,11 +1,31 @@
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 from django.db.models.aggregates import Sum
 from chat.services import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, ProviderError, is_local_provider
 from django.conf import settings
 
 import json as json_module
+
+def _chat_completions_url(provider):
+    base_url = (provider.base_url or "").strip().rstrip("/")
+    try:
+        parsed = urlsplit(base_url)
+        parsed.port
+    except ValueError as error:
+        raise ProviderError("L’URL de base du fournisseur est invalide.") from error
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ProviderError("L’URL de base du fournisseur doit être une URL HTTP(S) valide.")
+    return base_url + "/v1/chat/completions"
+
 
 def actual_cost_credits(model, prompt_tokens, completion_tokens):
 		input_price = float(model.input_price_per_million or 0) / 1_000_000
@@ -23,7 +43,7 @@ def call_llm_with_tools(provider, api_key, model_id, messages, system_prompt="",
     if is_anthropic:
         raise ProviderError("Le mode outils n'est pas encore supporté pour Anthropic.")
 
-    url = provider.base_url.rstrip("/") + "/v1/chat/completions"
+    url = _chat_completions_url(provider)
     payload = {
         "model": model_id,
         "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
@@ -44,7 +64,7 @@ def call_llm_with_tools(provider, api_key, model_id, messages, system_prompt="",
             data = json_module.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
-    except (URLError, TimeoutError, ValueError) as error:
+    except (OSError, ValueError) as error:
         raise ProviderError("Le fournisseur est temporairement indisponible.") from error
 
     choice = (data.get("choices") or [{}])[0]
@@ -67,7 +87,7 @@ def call_llm_with_tools_stream(provider, api_key, model_id, messages, system_pro
     if not provider.base_url:
         raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
 
-    url = provider.base_url.rstrip("/") + "/v1/chat/completions"
+    url = _chat_completions_url(provider)
     payload = {
         "model": model_id,
         "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
@@ -89,7 +109,7 @@ def call_llm_with_tools_stream(provider, api_key, model_id, messages, system_pro
         response = urlopen(request, timeout=120)
     except HTTPError as error:
         raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
-    except (URLError, TimeoutError) as error:
+    except (OSError, ValueError) as error:
         raise ProviderError("Le fournisseur est temporairement indisponible.") from error
 
     usage = {}

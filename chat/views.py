@@ -16,10 +16,16 @@ from api.models import AIModel
 from .services import PRICING_TIERS 
 from itertools import groupby
 
-from bara.services import get_workspace_context,actual_cost_credits
+from bara.models import Workspace
+from bara.services import call_llm_with_tools, get_workspace_context, actual_cost_credits
+from bara.tools.executor import execute_tool
+from bara.tools.registry import get_tools as get_bara_tools
+from bara.tools import definitions as bara_tool_definitions  # noqa: F401
 from chat.services import check_user_rate_limit
 
 logger = logging.getLogger(__name__)
+FILE_TOOL_NAMES = {"list_files", "read_file", "write_file", "edit_file", "rename_file"}
+MAX_FILE_TOOL_ITERATIONS = 4
 
 
 def chat_home(request):
@@ -77,12 +83,17 @@ def _sse_event(data):
 	return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _complete_chat_turn(user, conversation, persona, content, reply, model, account, reserve, estimated_input, provider_input, provider_output, edit_message=None):
+def _complete_chat_turn(user, conversation, persona, content, reply, model, account, reserve, estimated_input, provider_input, provider_output, edit_message=None, workspace=None):
 	prompt_tokens = provider_input or estimated_input
 	completion_tokens = provider_output or round(len(reply) / 4)
 	actual_cost = actual_cost_credits(model, prompt_tokens, completion_tokens)
 	if actual_cost < reserve:
 		account.credit(reserve - actual_cost, reason='adjustment', note=f'Ajustement {model.model_id}')
+	elif actual_cost > reserve:
+		try:
+			account.debit(actual_cost - reserve, reason='usage', note=f'Complément {model.model_id}')
+		except InsufficientCreditsError:
+			pass
 
 	if edit_message:
 		is_first_message = not conversation.messages.filter(id__lt=edit_message.id).exists()
@@ -95,6 +106,7 @@ def _complete_chat_turn(user, conversation, persona, content, reply, model, acco
 			user=user,
 			title=content[:200],
 			persona=persona,
+			workspace=workspace,
 		)
 	user_message = Message.objects.create(
 			conversation=conversation,
@@ -118,6 +130,82 @@ def _complete_chat_turn(user, conversation, persona, content, reply, model, acco
 		'user_message_id': user_message.id,
 		'assistant_message_id': assistant_message.id,
 	}
+
+
+def _file_tool_schemas():
+	return [
+		{
+			"type": "function",
+			"function": {
+				"name": tool["name"],
+				"description": tool["description"],
+				"parameters": tool["parameters"],
+			},
+		}
+		for tool in get_bara_tools()
+		if tool["name"] in FILE_TOOL_NAMES
+	]
+
+
+def _run_file_tools(workspace, provider, api_key, model_id, messages, system_prompt, temperature):
+	tool_messages = list(messages)
+	tool_schemas = _file_tool_schemas()
+	input_tokens = 0
+	output_tokens = 0
+	for _ in range(MAX_FILE_TOOL_ITERATIONS):
+		assistant_message, used_input, used_output = call_llm_with_tools(
+			provider,
+			api_key,
+			model_id,
+			tool_messages,
+			system_prompt,
+			temperature,
+			500,
+			tool_schemas,
+		)
+		input_tokens += used_input or 0
+		output_tokens += used_output or 0
+		tool_calls = assistant_message.get("tool_calls") or []
+		if not tool_calls:
+			return assistant_message.get("content") or "(réponse vide)", input_tokens, output_tokens
+
+		tool_messages.append({
+			"role": "assistant",
+			"content": assistant_message.get("content"),
+			"tool_calls": tool_calls,
+		})
+		for index, tool_call in enumerate(tool_calls):
+			function = tool_call.get("function") or {}
+			tool_name = function.get("name", "")
+			try:
+				arguments = json.loads(function.get("arguments") or "{}")
+			except (TypeError, ValueError):
+				arguments = {}
+			if not isinstance(arguments, dict):
+				arguments = {}
+			if tool_name in FILE_TOOL_NAMES:
+				result = execute_tool(tool_name, workspace, arguments)
+			else:
+				result = {"error": "Cet outil n’est pas autorisé dans le chat."}
+			tool_messages.append({
+				"role": "tool",
+				"tool_call_id": tool_call.get("id") or f"file-tool-{index}",
+				"name": tool_name,
+				"content": json.dumps(result, ensure_ascii=False),
+			})
+
+	final_message, used_input, used_output = call_llm_with_tools(
+		provider,
+		api_key,
+		model_id,
+		tool_messages,
+		system_prompt,
+		temperature,
+		500,
+	)
+	input_tokens += used_input or 0
+	output_tokens += used_output or 0
+	return final_message.get("content") or "J’ai terminé les opérations de fichiers disponibles.", input_tokens, output_tokens
 
 
 @method_decorator(login_required(login_url='/auth/?next=/chat/api/send/'), name='dispatch')
@@ -179,6 +267,17 @@ class SendMessageView(View):
 		if conversation and persona and conversation.persona_id != persona.id:
 			conversation.persona = persona
 			conversation.save(update_fields=['persona', 'updated_at'])
+		workspace_id = payload.get('workspace_id') if isinstance(payload, dict) else None
+		if workspace_id is None and conversation:
+			workspace_id = conversation.workspace_id
+		workspace = get_object_or_404(Workspace, id=workspace_id, user=request.user) if workspace_id else None
+		if conversation and conversation.workspace_id != getattr(workspace, 'id', None):
+			conversation.workspace = workspace
+			conversation.save(update_fields=['workspace', 'updated_at'])
+		if workspace and team_mode:
+			return _chat_error('Désactive le mode Équipe IA pour utiliser les fichiers Bara.', 'invalid_request', 400)
+		if workspace and 'anthropic' in f"{model.provider.slug} {model.provider.name}".lower():
+			return _chat_error('Les outils de fichiers ne sont pas disponibles avec Anthropic. Choisis Mia, Groq, OpenAI ou Together.', 'unsupported_tools', 400)
 
 		system_prompt = str(payload.get('system_prompt', ''))
 		messages = []
@@ -190,11 +289,20 @@ class SendMessageView(View):
 		messages.append({'role': 'user', 'content': content})
 
 		
-		workspace_context = get_workspace_context(None)
+		workspace_context = get_workspace_context(workspace)
 		full_system_prompt = (system_prompt + "\n\n" + workspace_context).strip() if workspace_context else system_prompt
+		if workspace:
+			full_system_prompt += (
+				"\n\nTu peux gérer les fichiers du workspace sélectionné avec les outils disponibles. "
+				"Utilise list_files/read_file avant une modification si nécessaire, puis write_file pour créer "
+				"ou remplacer un fichier, edit_file pour une petite modification et rename_file pour le renommer. "
+				"N’invente jamais le contenu d’un fichier que tu n’as pas lu."
+			)
 		
 		reserve, estimated_input = estimate_cost(content, model, full_system_prompt, messages)
-		if team_mode:
+		if workspace:
+			reserve *= MAX_FILE_TOOL_ITERATIONS + 1
+		elif team_mode:
 			reserve *= max(1, len(team_models) + 1)
 		account = request.user.credit_account
 		try:
@@ -214,7 +322,21 @@ class SendMessageView(View):
 			)
 
 		try:
-			if team_mode:
+			if workspace:
+				api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
+				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
+					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
+					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
+				reply, provider_input, provider_output = _run_file_tools(
+					workspace,
+					model.provider,
+					api_key.get_key() if api_key else '',
+					model.model_id,
+					messages,
+					full_system_prompt,
+					float(payload.get('temperature', 0.7)),
+				)
+			elif team_mode:
 				reply, provider_input, provider_output = call_llm_team(
 					team_models, messages, full_system_prompt, float(payload.get('temperature', 0.7)), 500
 				)
@@ -250,7 +372,7 @@ class SendMessageView(View):
 
 		return JsonResponse(_complete_chat_turn(
 			request.user, conversation, persona, content, reply, model, account, reserve,
-			estimated_input, provider_input, provider_output, edit_message,
+			estimated_input, provider_input, provider_output, edit_message, workspace,
 		))
 
 	def _stream_reply(self, request, conversation, persona, content, model, team_models, team_mode, messages, system_prompt, temperature, reserve, estimated_input, account, edit_message=None):
@@ -317,9 +439,31 @@ class ConversationListView(View):
 	def get(self, request):
 		convos = request.user.conversations.all()
 		return JsonResponse([
-			{"id": c.id, "title": c.title, "persona_id": c.persona_id}
+			{"id": c.id, "title": c.title, "persona_id": c.persona_id, "workspace_id": c.workspace_id}
 			for c in convos
 		], safe=False)
+
+
+class WorkspaceListView(View):
+	@method_decorator(login_required(login_url='/auth/?next=/chat/api/workspaces/'))
+	def get(self, request):
+		workspaces = Workspace.objects.filter(user=request.user).order_by('-updated_at')
+		return JsonResponse([
+			{"id": workspace.id, "title": workspace.title}
+			for workspace in workspaces
+		], safe=False)
+
+	@method_decorator(login_required(login_url='/auth/?next=/chat/api/workspaces/'))
+	def post(self, request):
+		try:
+			payload = json.loads(request.body or '{}')
+		except (TypeError, ValueError):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		if not isinstance(payload, dict):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		title = str(payload.get('title') or 'Espace du chat').strip()[:200] or 'Espace du chat'
+		workspace = Workspace.objects.create(user=request.user, title=title)
+		return JsonResponse({"id": workspace.id, "title": workspace.title}, status=201)
 
 
 class ConversationDetailView(View):
@@ -327,7 +471,7 @@ class ConversationDetailView(View):
 	def get(self, request, pk):
 		conv = get_object_or_404(Conversation, id=pk, user=request.user)
 		messages = list(conv.messages.values("id", "role", "content", "prompt_tokens", "completion_tokens", "created_at"))
-		return JsonResponse({"id": conv.id, "title": conv.title, "persona_id": conv.persona_id, "messages": messages})
+		return JsonResponse({"id": conv.id, "title": conv.title, "persona_id": conv.persona_id, "workspace_id": conv.workspace_id, "messages": messages})
 
 	@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/'))
 	def patch(self, request, pk):
@@ -336,11 +480,19 @@ class ConversationDetailView(View):
 			payload = json.loads(request.body or '{}')
 		except (TypeError, ValueError):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
-		persona_id = payload.get('persona_id') if isinstance(payload, dict) else None
-		persona = get_object_or_404(Persona, id=persona_id, user=request.user) if persona_id else None
-		conv.persona = persona
-		conv.save(update_fields=['persona', 'updated_at'])
-		return JsonResponse({'id': conv.id, 'persona_id': conv.persona_id})
+		if not isinstance(payload, dict):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		update_fields = ['updated_at']
+		if 'persona_id' in payload:
+			persona_id = payload.get('persona_id')
+			conv.persona = get_object_or_404(Persona, id=persona_id, user=request.user) if persona_id else None
+			update_fields.append('persona')
+		if 'workspace_id' in payload:
+			workspace_id = payload.get('workspace_id')
+			conv.workspace = get_object_or_404(Workspace, id=workspace_id, user=request.user) if workspace_id else None
+			update_fields.append('workspace')
+		conv.save(update_fields=update_fields)
+		return JsonResponse({'id': conv.id, 'persona_id': conv.persona_id, 'workspace_id': conv.workspace_id})
 
 
 class ConversationDeleteView(View):

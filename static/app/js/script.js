@@ -79,6 +79,10 @@ let state = {
 
     activeConvoId: null,
 
+    workspaces: [],
+
+    selectedWorkspaceId: null,
+
     usageLog: []
 
 };
@@ -90,7 +94,7 @@ let state = {
   async function newConversation(personaId){
     const persona = state.personas.find(p => p.id === personaId) || state.personas[0];
     if(!persona) return null;
-    const convo = { id: null, draftId: uid("draft"), title: "Nouvelle conversation", personaId: persona.id, messages: [] };
+    const convo = { id: null, draftId: uid("draft"), title: "Nouvelle conversation", personaId: persona.id, workspaceId: state.selectedWorkspaceId, messages: [] };
     state.conversations.unshift(convo);
     state.activeConvoId = conversationKey(convo);
     return convo;
@@ -102,13 +106,25 @@ let state = {
       const res = await fetch("/chat/api/conversations/");
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const list = await res.json();
-      state.conversations = list.map(c => ({ id: c.id, title: c.title, personaId: c.persona_id || state.activePersonaId, messages: null }));
+      state.conversations = list.map(c => ({ id: c.id, title: c.title, personaId: c.persona_id || state.activePersonaId, workspaceId: c.workspace_id || null, messages: null }));
       if(state.conversations.length > 0){
         state.activeConvoId = conversationKey(state.conversations[0]);
+        state.selectedWorkspaceId = state.conversations[0].workspaceId;
         await loadConversationMessages(state.activeConvoId);
       }
     }catch(err){
       console.error("Erreur chargement conversations", err);
+    }
+  }
+
+  async function loadWorkspaces(){
+    if(!state.isAuthenticated) return;
+    try{
+      const res = await fetch("/chat/api/workspaces/");
+      if(!res.ok) throw new Error("Erreur serveur " + res.status);
+      state.workspaces = await res.json();
+    }catch(err){
+      console.error("Erreur chargement des espaces de fichiers", err);
     }
   }
 
@@ -145,6 +161,8 @@ let state = {
       }));
       convo.title = data.title;
       convo.personaId = data.persona_id || convo.personaId;
+      convo.workspaceId = data.workspace_id || null;
+      if(activeConvo() === convo) state.selectedWorkspaceId = convo.workspaceId;
     }catch(err){
       console.error("Erreur chargement messages", err);
       convo.messages = [];  // évite de rester bloqué à "null" indéfiniment
@@ -583,8 +601,26 @@ function renderMessages(){
     renderPersonaList();
     renderPersonaEditor();
     renderHeader();
+    renderWorkspaceSelector();
     renderMessages();
     renderCredits();
+  }
+
+  function renderWorkspaceSelector(){
+    const select = el("workspaceSelect");
+    if(!select) return;
+    const convo = activeConvo();
+    const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
+    select.replaceChildren(new Option("Désactivés", ""));
+    state.workspaces.forEach(workspace => {
+      select.add(new Option(workspace.title, String(workspace.id)));
+    });
+    select.value = workspaceId ? String(workspaceId) : "";
+    const openLink = el("workspaceOpen");
+    if(openLink){
+      openLink.href = workspaceId ? `/bara/${workspaceId}/` : "/dap/";
+      openLink.title = workspaceId ? "Ouvrir les fichiers dans Bara" : "Ouvrir Bara";
+    }
   }
 
   function createStreamingRenderer(convo, message){
@@ -647,6 +683,7 @@ function renderMessages(){
       },
       body: JSON.stringify({
         conversation_id: convo.id,
+        workspace_id: convo.workspaceId || null,
         edit_message_id: editMessageId,
         content: userText,
         model_id: state.modelId,

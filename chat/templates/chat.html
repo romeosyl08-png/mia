@@ -94,6 +94,14 @@
         <span class="tool-spacer"></span>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
+      <div class="workspace-controls">
+        <label for="workspaceSelect">Fichiers</label>
+        <select id="workspaceSelect" aria-label="Workspace Bara pour les fichiers">
+          <option value="">Désactivés</option>
+        </select>
+        <button type="button" id="createWorkspaceBtn" title="Créer un espace de fichiers" aria-label="Créer un espace de fichiers">＋</button>
+        <a class="workspace-open" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
+      </div>
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
   <button type="button" class="model-chip team-chip" id="teamModeBtn" data-team="true">
     <span class="model-dot" aria-hidden="true">✦</span>Équipe IA

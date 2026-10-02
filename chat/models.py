@@ -19,6 +19,7 @@ class Persona(models.Model):
 class Conversation(models.Model):
     user = models.ForeignKey(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
     persona = models.ForeignKey(Persona, on_delete=models.SET_NULL, null=True, blank=True)
+    workspace = models.ForeignKey("bara.Workspace", on_delete=models.SET_NULL, null=True, blank=True, related_name="chat_conversations")
     title = models.CharField(max_length=200, default="Nouvelle conversation")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
