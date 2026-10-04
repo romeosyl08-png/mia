@@ -5,10 +5,10 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from api.models import APIProvider
+from api.models import AIModel, APIProvider
 from bara.models import ToolExecution, WorkConversation, WorkFile, Workspace, WorkspaceMCPServer
 from bara.mcp_client import validate_mcp_endpoint
-from bara.services import call_llm_with_tools_stream
+from bara.services import call_llm_with_tools_stream, get_workspace_context
 from bara.tools.definitions import run_command, search_code
 from bara.tools.sandbox import run_sandbox_command
 from bara.views import _tools_schema
@@ -19,6 +19,25 @@ class WorkspaceToolTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="workspace-user", password="pw")
         self.workspace = Workspace.objects.create(user=self.user, title="Workspace test")
+
+    def test_workspace_home_lists_active_models_and_creation_saves_selection(self):
+        provider = APIProvider.objects.create(name="Workspace provider", base_url="https://provider.example.test")
+        model = AIModel.objects.create(provider=provider, name="Workspace model", model_id="workspace-model")
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("bara:home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Workspace model")
+        self.assertContains(response, "Workspace model ·")
+        self.assertNotContains(response, "Aucun modèle disponible")
+
+        response = self.client.post(reverse("bara:create"), {
+            "title": "Workspace choisi",
+            "active_model_id": model.id,
+        })
+        self.assertEqual(response.status_code, 302)
+        created = Workspace.objects.get(user=self.user, title="Workspace choisi")
+        self.assertEqual(created.active_model_id, model.id)
 
     def test_search_code_finds_matching_lines(self):
         WorkFile.objects.create(
@@ -35,6 +54,22 @@ class WorkspaceToolTests(TestCase):
         self.assertEqual(len(result["results"]), 1)
         self.assertEqual(result["results"][0]["line"], 2)
         self.assertEqual(result["results"][0]["file"], "app.py")
+
+    def test_workspace_context_selects_only_relevant_passages(self):
+        WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="notes.txt",
+            content_type="text/plain",
+            extracted_text=(
+                "Quasar spectroscopy measures distant galaxy redshift and emission lines.\n\n"
+                "The bakery schedule lists bread delivery and oven maintenance."
+            ),
+        )
+
+        context = get_workspace_context(self.workspace, "quasar spectroscopy emission")
+
+        self.assertIn("Quasar spectroscopy", context)
+        self.assertNotIn("bakery schedule", context)
 
     def test_run_command_preserves_environment_home(self):
         old_home = os.environ.get("HOME")

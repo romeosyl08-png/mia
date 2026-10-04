@@ -151,7 +151,7 @@
       {% for model in available_models %}
         <option value="{{ model.id }}">{{ model.name }} — {{ model.provider.name }}</option>
       {% empty %}
-        <option value="">Aucun modèle odisponible</option>
+        <option value="">Aucun modèle disponible</option>
       {% endfor %}
     </select>
     <button type="submit">Créer</button>
@@ -161,7 +161,7 @@
     {% for item in workspaces %}
       <a class="ws-card" href="{% url 'bara:detail' item.id %}">
         <strong>{{ item.title }}</strong>
-        <span>{{ item.active_model.name|default:"Aucun modèle" }} · {{ item.updated_at|date:"d/m/Y" }}</span>
+        <span>{{ item.active_model.name|default:default_model_name|default:"Aucun modèle disponible" }} · {{ item.updated_at|date:"d/m/Y" }}</span>
       </a>
     {% empty %}
       <div class="ws-empty">Aucun espace de travail pour l'instant — crée le premier ci-dessus.</div>

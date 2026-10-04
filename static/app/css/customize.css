@@ -136,6 +136,23 @@
 
 }
 
+.settings-description {
+    margin: -10px 0 16px;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.5;
+    opacity: .62;
+}
+
+.field-hint {
+    display: block;
+    margin-top: 6px;
+    color: var(--ink);
+    font-size: 11px;
+    line-height: 1.4;
+    opacity: .55;
+}
+
 
 /* =========================
    CHAMPS
@@ -168,6 +185,7 @@
 
 
 .field input[type="text"],
+.field input[type="number"],
 .field select,
 .field textarea {
 
@@ -188,6 +206,11 @@
     font-size: 13px;
 
     outline: none;
+}
+
+.field input[type="number"] {
+    background: var(--paper);
+    color: var(--ink);
 }
 
 

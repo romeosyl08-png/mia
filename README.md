@@ -11,6 +11,18 @@ DATABASE_URL=postgresql://postgres:mot_de_passe@127.0.0.1:5432/ai_2ai
 
 Crée d'abord la base `ai_2ai` dans PostgreSQL, puis applique les migrations avec `python manage.py migrate`. Si `DATABASE_URL` est absent, le projet utilise SQLite (`db.sqlite3`).
 
+## Génération de médias
+
+Les images, vidéos et audios utilisent les clés serveur des fournisseurs. Configure une ou plusieurs clés dans l'environnement, puis lance `python manage.py seed_providers` et `python manage.py sync_provider_keys` :
+
+```dotenv
+FAL_API_KEY=
+REPLICATE_API_TOKEN=
+APIFRAME_API_KEY=
+```
+
+Les modèles par défaut sont configurables avec `FAL_IMAGE_MODEL`, `FAL_VIDEO_MODEL`, `FAL_AUDIO_MODEL`, `REPLICATE_IMAGE_MODEL`, `REPLICATE_VIDEO_MODEL`, `REPLICATE_AUDIO_MODEL`, `APIFRAME_IMAGE_MODEL`, `APIFRAME_VIDEO_MODEL` et `APIFRAME_AUDIO_MODEL`. Les crédits internes par génération se règlent avec `MEDIA_IMAGE_CREDITS` (630), `MEDIA_VIDEO_CREDITS` (10000) et `MEDIA_AUDIO_CREDITS` (2000). Ajuste ces montants aux modèles et aux coûts réels des comptes fournisseurs avant d’activer la génération en production.
+
 ## Barrassons CLI
 
 Barrassons is an AI2AI coding assistant that runs in the current project directory.

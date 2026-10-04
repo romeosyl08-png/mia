@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Personnaliser — Le Comptoir{% endblock %}
+{% block title %}Paramètres — Le Comptoir{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'app/css/customize.css' %}">
@@ -27,6 +27,34 @@
 
     <main class="customize-content">
 
+        {% if is_authenticated %}
+        <section class="settings-section">
+            <h2>Génération par défaut</h2>
+            <p class="settings-description">Ces valeurs s’appliquent aux nouvelles demandes. Les contrôles du chat peuvent les remplacer pour une conversation.</p>
+            <p class="persona-save-status" id="preferencesSaveStatus" role="status" aria-live="polite"></p>
+
+            <div class="field">
+                <label for="defaultModelSelect">Modèle par défaut</label>
+                <select id="defaultModelSelect">
+                    <option value="">Premier modèle disponible</option>
+                    {% for model in ai_models %}
+                    <option value="{{ model.model_id|escape }}">{{ model.name }} — {{ model.provider.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="defaultTopP">Top P — <span id="defaultTopPValue">1,00</span></label>
+                <input type="range" id="defaultTopP" min="0" max="1" step="0.05" value="1">
+            </div>
+
+            <div class="field">
+                <label for="defaultMaxTokens">Tokens maximum par réponse</label>
+                <input type="number" id="defaultMaxTokens" min="1" max="8192" step="1" value="500" inputmode="numeric">
+            </div>
+        </section>
+        {% endif %}
+
         <!-- PERSONA -->
 
         {% if is_authenticated %}
@@ -48,6 +76,12 @@
             </div>
 
             <div class="field">
+                <label for="personaMemory">Mémoire et préférences</label>
+                <textarea id="personaMemory" maxlength="8000" placeholder="Ex. : préfère les réponses courtes, donne des exemples en Python, utilise le système métrique."></textarea>
+                <small class="field-hint">Cette mémoire est privée et ne s’applique qu’à ce persona.</small>
+            </div>
+
+            <div class="field">
                 <label for="personaTone">Ton de réponse</label>
                 <select id="personaTone">
                     <option value="neutre">Neutre</option>
@@ -59,7 +93,7 @@
 
             <div class="field">
                 <label for="personaTemp">Créativité (température) — <span id="tempVal">0.7</span></label>
-                <input type="range" id="personaTemp" min="0" max="1" step="0.1" value="0.7">
+                <input type="range" id="personaTemp" min="0" max="2" step="0.1" value="0.7">
                 <div class="range-row">
                     <span>Précis</span>
                     <span>Créatif</span>
@@ -80,7 +114,10 @@
 
         <section class="settings-section">
 
-            <h2>Apparence</h2>
+            <h2>{% if is_authenticated %}Apparence du persona{% else %}Apparence{% endif %}</h2>
+            {% if is_authenticated %}
+            <p class="settings-description">Ces réglages appartiennent au persona sélectionné ci-dessus.</p>
+            {% endif %}
 
 
             <div class="field">
@@ -166,6 +203,6 @@
 
 
 {% block extra_js %}
-<script src="{% static 'app/js/customize.js' %}"></script>
+<script src="{% static 'app/js/customize.js' %}?v=persona-memory-1"></script>
 
 {% endblock %}

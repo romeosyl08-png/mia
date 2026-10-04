@@ -33,6 +33,28 @@ STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_CURRENCY = 'usd'
 CINETPAY_API_KEY = env('CINETPAY_API_KEY', default='')
 CINETPAY_SITE_ID = env('CINETPAY_SITE_ID', default='')
+MEDIA_GENERATION_CREDITS = {
+    'image': env.int('MEDIA_IMAGE_CREDITS', default=630),
+    'video': env.int('MEDIA_VIDEO_CREDITS', default=10_000),
+    'audio': env.int('MEDIA_AUDIO_CREDITS', default=2_000),
+}
+MEDIA_GENERATION_MODELS = {
+    'fal': {
+        'image': env('FAL_IMAGE_MODEL', default='fal-ai/flux/schnell'),
+        'video': env('FAL_VIDEO_MODEL', default='fal-ai/veo3.1'),
+        'audio': env('FAL_AUDIO_MODEL', default='fal-ai/musicgen'),
+    },
+    'replicate': {
+        'image': env('REPLICATE_IMAGE_MODEL', default='black-forest-labs/flux-schnell'),
+        'video': env('REPLICATE_VIDEO_MODEL', default='minimax/video-01'),
+        'audio': env('REPLICATE_AUDIO_MODEL', default='meta/musicgen'),
+    },
+    'apiframe': {
+        'image': env('APIFRAME_IMAGE_MODEL', default='flux-2-pro'),
+        'video': env('APIFRAME_VIDEO_MODEL', default='seedance-2.5'),
+        'audio': env('APIFRAME_AUDIO_MODEL', default='suno'),
+    },
+}
 API_RATE_LIMIT_REQUESTS = env.int('API_RATE_LIMIT_REQUESTS', default=60)
 API_RATE_LIMIT_WINDOW_SECONDS = env.int('API_RATE_LIMIT_WINDOW_SECONDS', default=60)
 

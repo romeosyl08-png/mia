@@ -10,6 +10,9 @@ KEY_ENV_VARS = {
     "together": "TOGETHER_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "fal": "FAL_API_KEY",
+    "replicate": "REPLICATE_API_TOKEN",
+    "apiframe": "APIFRAME_API_KEY",
 }
 
 

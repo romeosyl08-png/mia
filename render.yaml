@@ -39,6 +39,12 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: FAL_API_KEY
+        sync: false
+      - key: REPLICATE_API_TOKEN
+        sync: false
+      - key: APIFRAME_API_KEY
+        sync: false
 databases:
   - name: ai-2ai-db
     databaseName: ai_2ai

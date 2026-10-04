@@ -7,6 +7,17 @@
         return;
     }
 
+    function applyPersonaAppearance(persona) {
+        if (typeof appearance.applyPersona === "function") {
+            appearance.applyPersona(persona);
+            return;
+        }
+        appearance.previewBotName(persona.appearance_name || appearance.get().botName);
+        appearance.previewBotAvatar(persona.appearance_avatar || appearance.get().botAvatar);
+        if (persona.appearance_accent) appearance.setAccent(persona.appearance_accent);
+        if (persona.appearance_theme) appearance.setTheme(persona.appearance_theme);
+    }
+
 
     const botNameInput =
         document.getElementById("botNameInput");
@@ -29,6 +40,9 @@
     const personaPrompt =
         document.getElementById("personaSystemPrompt");
 
+    const personaMemory =
+        document.getElementById("personaMemory");
+
     const personaTone =
         document.getElementById("personaTone");
 
@@ -41,6 +55,8 @@
     const personaSaveStatus =
         document.getElementById("personaSaveStatus");
     let appearanceSaveTimer = null;
+    let activePersona = null;
+    let schedulePersonaSave = () => {};
 
     function scheduleAppearanceSave(){
         window.clearTimeout(appearanceSaveTimer);
@@ -131,7 +147,12 @@
             "input",
             () => {
                 appearance.previewBotName(botNameInput.value);
-                scheduleAppearanceSave();
+                if (activePersona) {
+                    activePersona.appearance_name = botNameInput.value;
+                    schedulePersonaSave();
+                } else {
+                    scheduleAppearanceSave();
+                }
             }
         );
 
@@ -150,7 +171,12 @@
             "input",
             () => {
                 appearance.previewBotAvatar(botAvatarInput.value);
-                scheduleAppearanceSave();
+                if (activePersona) {
+                    activePersona.appearance_avatar = botAvatarInput.value;
+                    schedulePersonaSave();
+                } else {
+                    scheduleAppearanceSave();
+                }
             }
         );
 
@@ -196,7 +222,8 @@
         if (input) {
             input.addEventListener("blur", () => {
                 input.readOnly = true;
-                saveAppearance();
+                if (activePersona) schedulePersonaSave();
+                else saveAppearance();
             });
         }
     });
@@ -232,7 +259,13 @@
                     "click",
                     () => {
 
-                        appearance.setAccent(color);
+                        if (activePersona) {
+                            activePersona.appearance_accent = color;
+                            applyPersonaAppearance(activePersona);
+                            schedulePersonaSave();
+                        } else {
+                            appearance.setAccent(color);
+                        }
 
                         render();
 
@@ -259,7 +292,13 @@
             "click",
             () => {
 
-                appearance.setTheme("light");
+                if (activePersona) {
+                    activePersona.appearance_theme = "light";
+                    applyPersonaAppearance(activePersona);
+                    schedulePersonaSave();
+                } else {
+                    appearance.setTheme("light");
+                }
 
                 render();
 
@@ -275,7 +314,13 @@
             "click",
             () => {
 
-                appearance.setTheme("dark");
+                if (activePersona) {
+                    activePersona.appearance_theme = "dark";
+                    applyPersonaAppearance(activePersona);
+                    schedulePersonaSave();
+                } else {
+                    appearance.setTheme("dark");
+                }
 
                 render();
 
@@ -284,11 +329,82 @@
 
     }
 
+    const defaultModelSelect = document.getElementById("defaultModelSelect");
+    const defaultTopP = document.getElementById("defaultTopP");
+    const defaultTopPValue = document.getElementById("defaultTopPValue");
+    const defaultMaxTokens = document.getElementById("defaultMaxTokens");
+    const preferencesSaveStatus = document.getElementById("preferencesSaveStatus");
 
-    if (personaSelect && personaPrompt && personaTone && personaTemp && personaLength) {
+    if (defaultModelSelect && defaultTopP && defaultMaxTokens) {
+        const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
+        let preferencesSaveTimer = null;
+
+        function updateTopPLabel() {
+            if (defaultTopPValue) {
+                defaultTopPValue.textContent = Number(defaultTopP.value).toFixed(2).replace(".", ",");
+            }
+        }
+
+        async function loadPreferences() {
+            try {
+                const response = await fetch("/chat/api/preferences/");
+                if (!response.ok) throw new Error("Chargement des paramètres impossible.");
+                const data = await response.json();
+                defaultModelSelect.value = data.default_model_id || "";
+                defaultTopP.value = String(data.top_p ?? 1);
+                defaultMaxTokens.value = String(data.max_tokens ?? 500);
+                updateTopPLabel();
+            } catch (error) {
+                if (preferencesSaveStatus) preferencesSaveStatus.textContent = error.message;
+            }
+        }
+
+        async function savePreferences() {
+            const tokenLimit = Number(defaultMaxTokens.value);
+            if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 8192) {
+                if (preferencesSaveStatus) preferencesSaveStatus.textContent = "Choisis une limite entre 1 et 8192 tokens.";
+                return;
+            }
+            try {
+                const response = await fetch("/chat/api/preferences/", {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": csrfToken
+                    },
+                    body: JSON.stringify({
+                        default_model_id: defaultModelSelect.value,
+                        top_p: Number(defaultTopP.value),
+                        max_tokens: tokenLimit
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error?.message || "Enregistrement impossible.");
+                if (preferencesSaveStatus) preferencesSaveStatus.textContent = "Paramètres enregistrés.";
+            } catch (error) {
+                if (preferencesSaveStatus) preferencesSaveStatus.textContent = error.message;
+            }
+        }
+
+        function schedulePreferencesSave() {
+            if (preferencesSaveStatus) preferencesSaveStatus.textContent = "Enregistrement…";
+            window.clearTimeout(preferencesSaveTimer);
+            preferencesSaveTimer = window.setTimeout(savePreferences, 350);
+        }
+
+        defaultModelSelect.addEventListener("change", schedulePreferencesSave);
+        defaultTopP.addEventListener("input", () => {
+            updateTopPLabel();
+            schedulePreferencesSave();
+        });
+        defaultMaxTokens.addEventListener("change", schedulePreferencesSave);
+        loadPreferences();
+    }
+
+
+    if (personaSelect && personaPrompt && personaMemory && personaTone && personaTemp && personaLength) {
 
         let personas = [];
-        let activePersona = null;
         let saveTimer = null;
 
         const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
@@ -296,9 +412,15 @@
         function renderPersona(persona) {
             activePersona = persona;
             personaPrompt.value = persona.prompt || "";
+            personaMemory.value = persona.memory || "";
             personaTone.value = persona.tone || "neutre";
             personaTemp.value = persona.temp ?? 0.7;
             personaLength.value = persona.length || "moyenne";
+            applyPersonaAppearance(persona);
+            const fallback = appearance.get();
+            if (botNameInput) botNameInput.value = persona.appearance_name || fallback.botName;
+            if (botAvatarInput) botAvatarInput.value = persona.appearance_avatar || fallback.botAvatar;
+            render();
             const temperatureLabel = document.getElementById("tempVal");
             if (temperatureLabel) temperatureLabel.textContent = personaTemp.value;
             if (personaSaveStatus) personaSaveStatus.textContent = "";
@@ -322,6 +444,7 @@
                 } else {
                     personaSelect.disabled = true;
                     personaPrompt.disabled = true;
+                    personaMemory.disabled = true;
                     personaTone.disabled = true;
                     personaTemp.disabled = true;
                     personaLength.disabled = true;
@@ -333,16 +456,21 @@
             }
         }
 
-        async function savePersona() {
-            if (!activePersona) return;
+        async function savePersona(persona = activePersona) {
+            if (!persona) return;
             const payload = {
                 prompt: personaPrompt.value,
+                memory: personaMemory.value,
                 tone: personaTone.value,
                 temp: Number(personaTemp.value),
-                length: personaLength.value
+                length: personaLength.value,
+                appearance_name: botNameInput?.value || "",
+                appearance_avatar: botAvatarInput?.value || "",
+                appearance_accent: persona.appearance_accent || "",
+                appearance_theme: persona.appearance_theme || ""
             };
             try {
-                const response = await fetch(`/chat/api/personas/${activePersona.id}/`, {
+                const response = await fetch(`/chat/api/personas/${persona.id}/`, {
                     method: "PATCH",
                     headers: {
                         "Content-Type": "application/json",
@@ -351,7 +479,7 @@
                     body: JSON.stringify(payload)
                 });
                 if (!response.ok) throw new Error("Enregistrement impossible.");
-                activePersona = await response.json();
+                Object.assign(persona, await response.json());
                 if (personaSaveStatus) personaSaveStatus.textContent = "Modifications enregistrées.";
             } catch (error) {
                 if (personaSaveStatus) personaSaveStatus.textContent = error.message;
@@ -359,18 +487,21 @@
             }
         }
 
-        function schedulePersonaSave() {
+        schedulePersonaSave = function () {
             if (personaSaveStatus) personaSaveStatus.textContent = "Enregistrement…";
             window.clearTimeout(saveTimer);
-            saveTimer = window.setTimeout(savePersona, 500);
-        }
+            const persona = activePersona;
+            saveTimer = window.setTimeout(() => savePersona(persona), 500);
+        };
 
         personaSelect.addEventListener("change", () => {
+            window.clearTimeout(saveTimer);
             const selectedPersona = personas.find(persona => String(persona.id) === personaSelect.value);
             if (selectedPersona) renderPersona(selectedPersona);
         });
 
         personaPrompt.addEventListener("input", schedulePersonaSave);
+        personaMemory.addEventListener("input", schedulePersonaSave);
         personaTone.addEventListener("change", schedulePersonaSave);
         personaTemp.addEventListener("input", () => {
             const temperatureLabel = document.getElementById("tempVal");

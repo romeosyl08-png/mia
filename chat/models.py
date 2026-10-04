@@ -1,11 +1,18 @@
 from django.conf import settings as django_settings
 from django.db import models
 
+from .storage import PrivateGeneratedMediaStorage
+
 
 class Persona(models.Model):
     user = models.ForeignKey(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="personas")
     name = models.CharField(max_length=100)
+    appearance_name = models.CharField(max_length=40, blank=True)
+    appearance_avatar = models.CharField(max_length=16, blank=True)
+    appearance_accent = models.CharField(max_length=7, blank=True)
+    appearance_theme = models.CharField(max_length=10, blank=True, choices=[("light", "Clair"), ("dark", "Sombre")])
     prompt = models.TextField(blank=True)
+    memory = models.TextField(blank=True)
     tone = models.CharField(max_length=50, blank=True)
     temperature = models.FloatField(default=0.7)
     length = models.CharField(max_length=20, default="medium")
@@ -16,11 +23,28 @@ class Persona(models.Model):
         return f"{self.name} ({self.user})"
 
 
+class ChatPreferences(models.Model):
+    user = models.OneToOneField(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="chat_preferences",
+    )
+    default_model_id = models.CharField(max_length=150, blank=True)
+    top_p = models.FloatField(default=1.0)
+    max_tokens = models.PositiveIntegerField(default=500)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Chat preferences ({self.user})"
+
+
 class Conversation(models.Model):
     user = models.ForeignKey(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
     persona = models.ForeignKey(Persona, on_delete=models.SET_NULL, null=True, blank=True)
     workspace = models.ForeignKey("bara.Workspace", on_delete=models.SET_NULL, null=True, blank=True, related_name="chat_conversations")
     title = models.CharField(max_length=200, default="Nouvelle conversation")
+    folder = models.CharField(max_length=80, blank=True)
+    is_archived = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -39,6 +63,7 @@ class Message(models.Model):
     content = models.TextField()
     prompt_tokens = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
+    sources = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -46,6 +71,39 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:40]}"
+
+
+class GeneratedMedia(models.Model):
+    KIND_CHOICES = [("image", "Image"), ("video", "Vidéo"), ("audio", "Audio")]
+
+    owner = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="generated_media",
+    )
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name="generated_media",
+    )
+    message = models.OneToOneField(
+        Message,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="generated_media",
+    )
+    image = models.FileField(
+        storage=PrivateGeneratedMediaStorage(),
+        upload_to="generated/media/%Y/%m/",
+    )
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default="image", db_index=True)
+    prompt = models.TextField()
+    content_type = models.CharField(max_length=40, default="image/png")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Generated {self.get_kind_display().lower()} {self.pk} ({self.owner})"
 
 
 

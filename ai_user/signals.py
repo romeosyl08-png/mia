@@ -7,9 +7,9 @@ from chat.models import Persona
 
 DEFAULT_STARTING_BALANCE = 20000
 DEFAULT_PERSONAS = [
-    {"name": "Assistant général", "prompt": "Tu es un assistant poli, clair et utile.", "tone": "neutre", "temperature": 0.7, "length": "moyenne"},
-    {"name": "Tuteur de langues", "prompt": "Tu es un tuteur patient qui aide à apprendre une langue étrangère, corrige en douceur et explique la grammaire simplement.", "tone": "pedagogue", "temperature": 0.5, "length": "moyenne"},
-    {"name": "Coach code", "prompt": "Tu es un mentor en développement logiciel, tu donnes des explications concrètes avec des exemples de code.", "tone": "decontracte", "temperature": 0.4, "length": "longue"},
+    {"name": "Assistant général", "appearance_name": "Le Comptoir", "appearance_avatar": "🐘", "appearance_accent": "#E8A33D", "appearance_theme": "light", "prompt": "Tu es un assistant poli, clair et utile.", "tone": "neutre", "temperature": 0.7, "length": "moyenne"},
+    {"name": "Tuteur de langues", "appearance_name": "Tuteur de langues", "appearance_avatar": "📚", "appearance_accent": "#3F8E8A", "appearance_theme": "light", "prompt": "Tu es un tuteur patient qui aide à apprendre une langue étrangère, corrige en douceur et explique la grammaire simplement.", "tone": "pedagogue", "temperature": 0.5, "length": "moyenne"},
+    {"name": "Coach code", "appearance_name": "Coach code", "appearance_avatar": "⌘", "appearance_accent": "#4E9F3D", "appearance_theme": "dark", "prompt": "Tu es un mentor en développement logiciel, tu donnes des explications concrètes avec des exemples de code.", "tone": "decontracte", "temperature": 0.4, "length": "longue"},
 ]
 
 

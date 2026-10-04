@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}À propos de 2AI — Le Comptoir{% endblock %}
+{% block extra_head %}
+<style>
+  html,body{height:auto!important;min-height:100%;overflow-x:hidden;overflow-y:auto!important;}
+  .about-page{max-width:1080px;margin:0 auto;padding:24px clamp(20px,5vw,64px) 44px;}
+  .about-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line);}
+  .about-brand{display:flex;align-items:center;gap:10px;color:var(--ink);font-weight:700;text-decoration:none;}
+  .about-mark{display:grid;width:34px;height:34px;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-ink);font:600 15px 'Space Grotesk',sans-serif;}
+  .about-nav{display:flex;align-items:center;gap:18px;}
+  .about-nav a{color:var(--ink);font-size:13px;text-decoration:none;}
+  .about-nav a:hover{color:var(--accent);}
+  .about-intro{max-width:760px;padding:56px 0 38px;}
+  .about-kicker{margin:0 0 12px;color:var(--teal);font-size:12px;font-weight:700;text-transform:uppercase;}
+  .about-intro h1{margin:0;font:600 42px/1.08 'Space Grotesk',sans-serif;}
+  .about-intro p{max-width:650px;margin:16px 0 0;color:color-mix(in srgb,var(--ink) 75%,transparent);font-size:16px;line-height:1.65;}
+  .about-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 8px;padding-top:20px;}
+  .about-section-heading h2{margin:0;font:600 21px/1.25 'Space Grotesk',sans-serif;}
+  .about-section-heading span{color:var(--teal);font:500 12px 'Roboto Mono',monospace;}
+  .about-capabilities{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:44px;}
+  .about-capability{display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding:20px 0;border-bottom:1px solid var(--line);}
+  .about-number{padding-top:2px;color:var(--teal);font:500 12px 'Roboto Mono',monospace;}
+  .about-capability h3{margin:0 0 6px;font:600 16px/1.3 'Space Grotesk',sans-serif;}
+  .about-capability p{margin:0;color:color-mix(in srgb,var(--ink) 72%,transparent);font-size:13px;line-height:1.6;}
+  .about-note{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:26px;margin-top:30px;padding:20px 0;border-top:2px solid var(--accent);border-bottom:1px solid var(--line);}
+  .about-note h2{margin:0 0 6px;font:600 17px 'Space Grotesk',sans-serif;}
+  .about-note p{max-width:700px;margin:0;color:color-mix(in srgb,var(--ink) 72%,transparent);font-size:13px;line-height:1.6;}
+  .about-actions{display:flex;align-items:center;gap:10px;}
+  .about-action{display:inline-flex;min-height:40px;align-items:center;justify-content:center;padding:0 14px;border:1px solid var(--line);border-radius:7px;color:var(--ink);font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;}
+  .about-action.primary{border-color:var(--accent);background:var(--accent);color:var(--accent-ink);}
+  .about-action:hover{border-color:var(--accent);}
+  .about-footer{display:flex;justify-content:space-between;gap:16px;margin-top:20px;color:color-mix(in srgb,var(--ink) 58%,transparent);font-size:11px;line-height:1.5;}
+  .about-footer a{color:inherit;text-decoration:underline;text-underline-offset:2px;}
+  @media(max-width:680px){
+    .about-page{padding-top:16px;}
+    .about-intro{padding:42px 0 30px;}
+    .about-intro h1{font-size:34px;}
+    .about-intro p{font-size:14px;}
+    .about-capabilities{grid-template-columns:minmax(0,1fr);}
+    .about-note{grid-template-columns:minmax(0,1fr);}
+    .about-actions{flex-wrap:wrap;}
+    .about-footer{flex-direction:column;}
+  }
+  @media(max-width:420px){.about-nav{gap:10px}.about-nav a{font-size:12px}.about-nav a:last-child{display:none;}}
+</style>
+{% endblock %}
+{% block extra_js %}<script>document.title = "À propos de 2AI — Le Comptoir";</script>{% endblock %}
+{% block body %}
+<div class="about-page">
+  <header class="about-topbar">
+    <a class="about-brand" href="/" aria-label="2AI, accueil">
+      <span class="about-mark" aria-hidden="true">2AI</span>
+      <span>Le Comptoir</span>
+    </a>
+    <nav class="about-nav" aria-label="Navigation">
+      <a href="/">Le chat</a>
+      <a href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
+      <a href="/api/">API</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="about-intro" aria-labelledby="aboutTitle">
+      <p class="about-kicker">À propos de 2AI</p>
+      <h1 id="aboutTitle">Un espace pour faire avancer tes idées avec l’IA.</h1>
+      <p>2AI, c’est un comptoir de travail où tu peux choisir un modèle, créer des assistants adaptés à tes besoins et retrouver tes outils au même endroit.</p>
+    </section>
+
+    <section aria-labelledby="capabilitiesTitle">
+      <div class="about-section-heading">
+        <h2 id="capabilitiesTitle">Ce que tu peux faire</h2>
+        <span>01 — 06</span>
+      </div>
+      <div class="about-capabilities">
+        <article class="about-capability">
+          <span class="about-number">01</span>
+          <div><h3>Discuter avec plusieurs modèles</h3><p>Choisis parmi les modèles proposés sur ton compte pour rédiger, apprendre, réfléchir ou coder. Le choix dépend des fournisseurs activés.</p></div>
+        </article>
+        <article class="about-capability">
+          <span class="about-number">02</span>
+          <div><h3>Créer tes assistants</h3><p>Configure des personas avec leur nom, leur style, leurs consignes et leurs préférences pour les adapter à tes projets.</p></div>
+        </article>
+        <article class="about-capability">
+          <span class="about-number">03</span>
+          <div><h3>Recherche web et réponses approfondies</h3><p>Utilise la recherche web et le mode approfondi pour enrichir certaines réponses avec des sources consultables, lorsque le service est configuré.</p></div>
+        </article>
+        <article class="about-capability">
+          <span class="about-number">04</span>
+          <div><h3>Travailler avec tes fichiers</h3><p>Relie un espace Bara pour permettre à l’assistant d’explorer et de modifier les fichiers pris en charge dans le cadre de ton projet.</p></div>
+        </article>
+        <article class="about-capability">
+          <span class="about-number">05</span>
+          <div><h3>Générer et retrouver des images</h3><p>Crée des images avec le fournisseur compatible configuré, puis retrouve les créations dans la galerie associée à ton compte.</p></div>
+        </article>
+        <article class="about-capability">
+          <span class="about-number">06</span>
+          <div><h3>Garder le fil de ton travail</h3><p>Retrouve, recherche, classe ou archive tes conversations. Le mode temporaire garde l’échange en mémoire pendant la session sans l’enregistrer comme conversation.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="about-note" aria-labelledby="aboutNoteTitle">
+      <div>
+        <h2 id="aboutNoteTitle">Des outils selon ta configuration</h2>
+        <p>Les modèles et la génération d’images, de vidéos ou d’audio dépendent des services activés et consomment des jetons. Les échanges temporaires restent facturés selon le modèle utilisé, comme les autres échanges.</p>
+      </div>
+      <div class="about-actions">
+        <a class="about-action" href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
+        <a class="about-action primary" href="{% if is_authenticated %}/{% else %}/auth/?next=/{% endif %}">Ouvrir le Comptoir</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="about-footer">
+    <span>2AI · Le Comptoir</span>
+    <span>Un espace de travail avec des outils d’intelligence artificielle. <a href="{% url 'chat:legal' %}">Informations juridiques</a></span>
+  </footer>
+</div>
+{% endblock %}

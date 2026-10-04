@@ -24,7 +24,7 @@ def estimate_cost(content, model, system_prompt="", history=None, max_output_tok
     history_text = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
     input_chars = len(content + system_prompt + history_text)
     input_tokens = max(1, round(input_chars / 4))  # ~4 caractères par token, approximation standard
-    output_tokens_estimate = min(max_output_tokens, DEFAULT_OUTPUT_ESTIMATE)
+    output_tokens_estimate = max_output_tokens
 
     input_price = float(model.input_price_per_million or 0) / 1_000_000
     output_price = float(model.output_price_per_million or 0) / 1_000_000
@@ -40,7 +40,43 @@ def is_local_provider(provider):
     return provider.slug in {"ollama-local", "mia"}
 
 
-def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500):
+def generate_openai_image(provider, api_key, prompt):
+    if provider.slug != "openai" or not provider.base_url:
+        raise ProviderError("La génération d’images nécessite un fournisseur OpenAI configuré.")
+    url = provider.base_url.rstrip("/") + "/v1/images/generations"
+    payload = {
+        "model": "gpt-image-1",
+        "prompt": prompt,
+        "n": 1,
+        "size": "1024x1024",
+        "quality": "medium",
+    }
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=180) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        if error.code == 429:
+            raise ProviderError("Trop de requêtes image; réessaie dans un instant.") from error
+        raise ProviderError(f"OpenAI Images a renvoyé une erreur ({error.code}).") from error
+    except (OSError, ValueError) as error:
+        raise ProviderError("Le service OpenAI Images est temporairement indisponible.") from error
+
+    image = (result.get("data") or [{}])[0].get("b64_json")
+    if not image:
+        raise ProviderError("OpenAI Images n’a renvoyé aucune image.")
+    return image, result.get("usage") or {}
+
+
+def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
     """Appelle Anthropic ou un fournisseur compatible OpenAI sans exposer la clé."""
     provider_name = f"{provider.slug} {provider.name}".lower()
     is_anthropic = "anthropic" in provider_name
@@ -62,6 +98,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
         if system_prompt:
             payload["system"] = system_prompt
         payload["temperature"] = temperature
+        payload["top_p"] = top_p
         headers = {
             **base_headers,
             "x-api-key": api_key,
@@ -74,6 +111,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             "messages": ([{"role": "system", "content": system_prompt}] if system_prompt else []) + messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "top_p": top_p,
         }
         headers = base_headers.copy()
         if not is_local_provider(provider):
@@ -111,7 +149,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
     return reply or "(réponse vide)", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
-def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500):
+def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
     """Yield provider text deltas and one final usage record."""
     provider_name = f"{provider.slug} {provider.name}".lower()
     is_anthropic = "anthropic" in provider_name
@@ -131,6 +169,7 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
             "messages": messages,
             "stream": True,
             "temperature": temperature,
+            "top_p": top_p,
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -147,6 +186,7 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
             "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": True,
+            "top_p": top_p,
         }
         headers = base_headers.copy()
         if not is_local_provider(provider):
@@ -203,7 +243,7 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
 
     yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
 
-def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500):
+def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
     """Fait répondre plusieurs modèles puis demande au premier de synthétiser."""
     opinions = []
     responding_models = []
@@ -222,6 +262,7 @@ def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_token
                 system_prompt,
                 temperature,
                 max_tokens,
+                top_p,
             )
         except ProviderError:
             continue
@@ -253,11 +294,12 @@ def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_token
         "",
         temperature,
         max_tokens,
+        top_p,
     )
     return reply, input_tokens + (used_input or 0), output_tokens + (used_output or 0)
 
 
-def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500):
+def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
     """Stream a single team model or the team's final synthesis."""
     configured_models = []
     for model in models:
@@ -271,7 +313,7 @@ def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tok
     if len(configured_models) == 1:
         model, api_key = configured_models[0]
         yield from stream_llm_provider(
-            model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens
+            model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens, top_p
         )
         return
 
@@ -282,7 +324,7 @@ def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tok
     for model, api_key in configured_models:
         try:
             reply, used_input, used_output = call_llm_provider(
-                model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens
+                model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens, top_p
             )
         except ProviderError:
             continue
@@ -315,6 +357,7 @@ def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tok
         "",
         temperature,
         max_tokens,
+        top_p,
     ):
         if event["type"] == "usage":
             yield {

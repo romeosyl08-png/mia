@@ -71,6 +71,27 @@ PROVIDERS = [
             {"model_id": "gpt-6-astra", "name": "GPT-6 Astra", "input_price": 10.00, "output_price": 50.00},
         ],
     },
+    {
+        "slug": "fal",
+        "name": "fal.ai",
+        "base_url": "https://queue.fal.run",
+        "docs_url": "https://fal.ai/docs",
+        "models": [],
+    },
+    {
+        "slug": "replicate",
+        "name": "Replicate",
+        "base_url": "https://api.replicate.com",
+        "docs_url": "https://replicate.com/docs/reference/http",
+        "models": [],
+    },
+    {
+        "slug": "apiframe",
+        "name": "Apiframe",
+        "base_url": "https://api.apiframe.ai",
+        "docs_url": "https://apiframe.ai/docs",
+        "models": [],
+    },
 ]
 
 

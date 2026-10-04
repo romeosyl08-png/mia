@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Informations juridiques — 2AI{% endblock %}
+{% block extra_head %}
+<style>
+  html,body{height:auto!important;min-height:100%;overflow-x:hidden;overflow-y:auto!important;}
+  .legal-page{max-width:900px;margin:0 auto;padding:24px clamp(20px,5vw,64px) 56px;}
+  .legal-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line);}
+  .legal-brand{color:var(--ink);font:700 14px 'Space Grotesk',sans-serif;text-decoration:none;}
+  .legal-nav{display:flex;gap:18px;}
+  .legal-nav a,.legal-footer a{color:var(--ink);font-size:13px;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;}
+  .legal-nav a:hover,.legal-footer a:hover{color:var(--accent);}
+  .legal-header{padding:46px 0 24px;border-bottom:1px solid var(--line);}
+  .legal-eyebrow{margin:0 0 10px;color:var(--teal);font-size:12px;font-weight:700;text-transform:uppercase;}
+  .legal-header h1{margin:0;font:600 36px/1.12 'Space Grotesk',sans-serif;}
+  .legal-header p:last-child{max-width:680px;margin:14px 0 0;color:color-mix(in srgb,var(--ink) 72%,transparent);font-size:14px;line-height:1.65;}
+  .legal-warning{margin:22px 0;padding:14px 16px;border-left:3px solid var(--accent);background:var(--panel);font-size:13px;line-height:1.6;}
+  .legal-section{padding:22px 0;border-bottom:1px solid var(--line);}
+  .legal-section h2{margin:0 0 10px;font:600 18px 'Space Grotesk',sans-serif;}
+  .legal-section p,.legal-section li{max-width:760px;color:color-mix(in srgb,var(--ink) 78%,transparent);font-size:13px;line-height:1.7;}
+  .legal-section p{margin:7px 0;}
+  .legal-section ul{margin:8px 0;padding-left:20px;}
+  .legal-details{display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px 18px;margin:14px 0 0;font-size:13px;line-height:1.55;}
+  .legal-details dt{font-weight:600;}
+  .legal-details dd{margin:0;color:color-mix(in srgb,var(--ink) 78%,transparent);}
+  .legal-footer{display:flex;justify-content:space-between;gap:16px;padding-top:20px;color:color-mix(in srgb,var(--ink) 58%,transparent);font-size:12px;}
+  @media(max-width:560px){
+    .legal-page{padding-top:16px;}
+    .legal-header{padding-top:36px;}
+    .legal-header h1{font-size:30px;}
+    .legal-details{grid-template-columns:minmax(0,1fr);gap:2px;}
+    .legal-details dd{margin-bottom:10px;}
+    .legal-footer{flex-direction:column;}
+  }
+</style>
+{% endblock %}
+{% block extra_js %}<script>document.title = "Informations juridiques — 2AI";</script>{% endblock %}
+{% block body %}
+<div class="legal-page">
+  <header class="legal-topbar">
+    <a class="legal-brand" href="/">2AI · Le Comptoir</a>
+    <nav class="legal-nav" aria-label="Navigation">
+      <a href="/">Le chat</a>
+      <a href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
+    </nav>
+  </header>
+
+  <main>
+    <header class="legal-header">
+      <p class="legal-eyebrow">2AI · Le Comptoir</p>
+      <h1>Informations juridiques</h1>
+      <p>Informations sur l’éditeur, l’hébergement, les données utilisées et les services de paiement de la plateforme.</p>
+    </header>
+
+    <p class="legal-warning"><strong>À compléter avant mise en production.</strong> Le dépôt ne contient pas l’identité juridique de l’éditeur, son adresse, son contact officiel ni les coordonnées légales de l’hébergeur effectivement utilisé. Ces informations doivent être renseignées et vérifiées par l’éditeur avant publication.</p>
+
+    <section class="legal-section" aria-labelledby="publisherTitle">
+      <h2 id="publisherTitle">Éditeur du service</h2>
+      <dl class="legal-details">
+        <dt>Nom ou raison sociale</dt><dd>À compléter par l’éditeur</dd>
+        <dt>Adresse du siège</dt><dd>À compléter par l’éditeur</dd>
+        <dt>Contact</dt><dd>Adresse électronique de contact à compléter</dd>
+        <dt>Responsable de publication</dt><dd>À compléter par l’éditeur</dd>
+        <dt>Immatriculation</dt><dd>Numéro applicable (ex. SIREN/SIRET) à compléter, le cas échéant</dd>
+      </dl>
+    </section>
+
+    <section class="legal-section" aria-labelledby="hostingTitle">
+      <h2 id="hostingTitle">Hébergement</h2>
+      <p>Le dépôt contient une configuration de déploiement pour Render. L’hébergeur réellement utilisé pour cette instance, sa dénomination légale et ses coordonnées doivent être confirmés par l’éditeur avant publication.</p>
+    </section>
+
+    <section class="legal-section" aria-labelledby="dataTitle">
+      <h2 id="dataTitle">Données et fonctionnement</h2>
+      <p>Le service traite les informations nécessaires au compte et à son fonctionnement, notamment les identifiants de compte, les conversations enregistrées, les réglages de persona, les espaces de fichiers utilisés et l’historique des opérations de jetons.</p>
+      <p>Les conversations ordinaires sont conservées dans l’historique du compte. Le mode temporaire évite leur enregistrement comme conversation dans la base 2AI; les requêtes restent transmises au fournisseur d’IA sélectionné et l’utilisation reste débitée. Le fournisseur tiers applique ses propres règles de traitement et de conservation.</p>
+      <p>Les contenus nécessaires à une demande (par exemple le message, le contexte fourni et, selon l’outil choisi, des extraits de fichiers) sont transmis au fournisseur d’IA concerné pour produire la réponse. Les fournisseurs actifs et les durées exactes de conservation doivent être précisés par l’éditeur selon la configuration de chaque déploiement.</p>
+      <p>Les cookies de session, de sécurité et de protection contre les requêtes falsifiées sont utilisés pour le fonctionnement du site. Le navigateur peut aussi conserver localement des préférences d’apparence.</p>
+    </section>
+
+    <section class="legal-section" aria-labelledby="paymentsTitle">
+      <h2 id="paymentsTitle">Jetons et paiements</h2>
+      <p>Les jetons sont un crédit d’usage interne au service : le solde est crédité après confirmation du paiement puis débité lors de l’utilisation des modèles ou outils concernés. Les règles de validité, de remboursement et, le cas échéant, de rétractation doivent être précisées par l’éditeur dans les conditions applicables.</p>
+      <p>Selon les options activées, le paiement peut passer par Stripe pour les cartes ou CinetPay pour Mobile Money. Les données de paiement et de transaction nécessaires sont transmises au prestataire choisi; 2AI conserve notamment les montants, crédits, statuts et références nécessaires au suivi des achats.</p>
+    </section>
+
+    <section class="legal-section" aria-labelledby="rightsTitle">
+      <h2 id="rightsTitle">Demandes relatives aux données</h2>
+      <p>Pour toute demande concernant les données personnelles, contacte l’éditeur à l’adresse officielle qui doit être indiquée dans la section « Éditeur du service ». Le responsable doit compléter les durées de conservation, les modalités d’exercice des droits applicables et les éventuels transferts hors de la juridiction concernée.</p>
+    </section>
+
+    <section class="legal-section" aria-labelledby="lawTitle">
+      <h2 id="lawTitle">Droit applicable</h2>
+      <p>Le droit applicable et les coordonnées de l’autorité ou du médiateur compétent doivent être ajoutés par l’éditeur selon le pays d’établissement et les règles applicables au service.</p>
+    </section>
+  </main>
+
+  <footer class="legal-footer">
+    <span>2AI · Le Comptoir</span>
+    <a href="{% url 'chat:about' %}">À propos de 2AI</a>
+  </footer>
+</div>
+{% endblock %}

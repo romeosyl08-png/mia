@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 {% load static %}
 
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=media-modalities-1">
 {% block extra_head %}
 {% endblock %}
 </head>
@@ -22,8 +22,8 @@
 
     <!-- APPARENCE GLOBALE -->
       {% if chat_config %}{{ chat_config|json_script:"chat-config" }}{% endif %}
-    <script src="{% static 'app/js/appearance.js' %}"></script>
-    <script src="{% static 'app/js/script.js' %}"></script>
+    <script src="{% static 'app/js/appearance.js' %}?v=persona-appearance-1"></script>
+    <script src="{% static 'app/js/script.js' %}?v=media-modalities-1"></script>
 
     {% block extra_js %}{% endblock %}
 </body>

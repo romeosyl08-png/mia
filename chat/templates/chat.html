@@ -12,38 +12,53 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <button type="button" class="mobile-sidebar-close" id="closeMobileSidebar" title="Fermer le menu" aria-label="Fermer le menu">×</button>
-    <div class="brand">
-      <div
-          class="mark"
-          id="brandMark"
-          data-bot-avatar>
-          🐘
+    <div class="persona-switcher">
+      <div class="persona-switcher-top">
+        <div class="mark" id="brandMark" data-bot-avatar aria-hidden="true">🐘</div>
+        <div class="persona-switcher-copy">
+          <span class="persona-switcher-label">Persona actif</span>
+          <strong id="activePersonaName">Assistant général</strong>
+        </div>
+        <button type="button" class="persona-action" id="renamePersonaBtn" title="Renommer le persona sélectionné" aria-label="Renommer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg></button>
       </div>
-
-      <div
-          class="name"
-          id="brandName"
-          data-bot-name>
-          Le Comptoir
+      <div class="persona-switcher-controls">
+        <label class="sr-only" for="personaTopSelect">Choisir un persona</label>
+        <select id="personaTopSelect" aria-label="Changer de persona"></select>
+        <button type="button" class="persona-action" id="newPersonaBtn" title="Créer un persona" aria-label="Créer un persona"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+        <button type="button" class="persona-action danger-action" id="deletePersonaBtn" title="Supprimer le persona sélectionné" aria-label="Supprimer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"></path></svg></button>
       </div>
+      <form class="persona-rename-form" id="personaRenameForm" hidden>
+        <label class="sr-only" for="personaRenameInput">Nouveau nom du persona</label>
+        <input id="personaRenameInput" type="text" maxlength="100" autocomplete="off" placeholder="Nom du persona">
+        <button type="submit" class="persona-action" title="Enregistrer le nom" aria-label="Enregistrer le nom"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg></button>
+        <button type="button" class="persona-action" id="cancelPersonaRename" title="Annuler" aria-label="Annuler"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg></button>
+      </form>
     </div>
 
-    <nav class="quick-nav" aria-label="Navigation principale">
-      <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
-      <button id="customizeBtn" type="button" data-url="{% url 'chat:customize' %}">▣ &nbsp;Personnaliser</button>
-      <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
-    </nav>
-
-    <div class="section-label">Conversations
+    <div class="section-label" id="conversationsSectionTitle">Conversations
       <button id="newConvoBtn" title="Nouvelle conversation">＋</button>
+    </div>
+    <div class="history-tools">
+      <label class="sr-only" for="conversationSearch">Rechercher dans les conversations</label>
+      <input id="conversationSearch" type="search" placeholder="Rechercher" autocomplete="off">
+      <button type="button" class="history-archive-toggle" id="archiveFilterBtn" aria-pressed="false" title="Afficher les archives" aria-label="Afficher les archives"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v4H3zM5 8v12h14V8M9 12h6"></path></svg></button>
+    </div>
+    <div class="folder-filter-row">
+      <label class="sr-only" for="folderFilter">Filtrer par dossier</label>
+      <select id="folderFilter"><option value="">Tous les dossiers</option></select>
     </div>
     <div class="list" id="convoList"></div>
 
-    <div class="section-label">Personas
-      <button id="newPersonaBtn" title="Nouveau persona">＋</button>
-    </div>
-    <div class="list" id="personaList" style="flex:0 0 auto; max-height:180px;"></div>
-
+    <nav class="quick-nav" aria-label="Navigation principale">
+      <button type="button" id="openImageGalleryBtn">▧ &nbsp;Images</button>
+      <button type="button" id="openVideoGalleryBtn">▷ &nbsp;Vidéos</button>
+      <button type="button" id="openAudioGalleryBtn">♫ &nbsp;Audio</button>
+      <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
+      <button id="customizeBtn" type="button" data-url="{% url 'chat:customize' %}">⚙ &nbsp;Paramètres</button>
+      <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
+      <a href="{% url 'chat:about' %}">ⓘ &nbsp;À propos de 2AI</a>
+      <a href="{% url 'chat:legal' %}">§ &nbsp;Informations juridiques</a>
+    </nav>
     <div class="sidebar-footer">Session locale — rien n'est envoyé à un serveur sans clé API renseignée.</div>
   </aside>
 
@@ -56,10 +71,15 @@
         <div>
           <h2 id="chatTitle">Nouvelle conversation</h2>
           <div class="persona-name" id="chatPersonaName">Assistant général</div>
+          {% if is_authenticated %}
+          <button type="button" class="memory-suggest-button" id="memorySuggestBtn" title="Analyser cette conversation pour proposer des préférences au persona">✦ Proposer des préférences</button>
+          {% endif %}
+          <span class="temporary-badge" id="temporaryBadge" hidden>Session temporaire</span>
         </div>
       </div>
       <div class="header-actions">
     <button type="button" class="panel-toggle" id="toggleLeftPanel" title="Masquer le panneau gauche" aria-label="Masquer le panneau gauche">‹</button>
+    <button type="button" class="temporary-toggle" id="temporaryChatBtn" aria-pressed="false" title="Conversation temporaire" aria-label="Conversation temporaire"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></button>
     
     <!-- Remplacement par une balise <button> -->
     <button type="button" class="credit-pill recharge-btn" id="creditPill" title="Voir les jetons" {% if not is_authenticated %}disabled{% endif %}>
@@ -81,18 +101,61 @@
     <form class="composer" id="composerForm">
       {% csrf_token %}
       <div class="composer-input-row">
-        <button type="button" class="composer-icon" id="attachBtn" title="Ajouter un fichier" aria-label="Ajouter un fichier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg></button>
+        <div class="composer-plus-wrap" id="composerPlusWrap">
+          <button type="button" class="composer-icon composer-plus" id="attachBtn" title="Ajouter au message" aria-label="Ajouter au message" aria-controls="composerPlusMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+          <div class="composer-plus-menu" id="composerPlusMenu" hidden>
+            <button type="button" class="plus-menu-item" id="plusFilesBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg><span>Joindre un fichier</span></button>
+            {% if chat_config.imageProviderAvailable %}
+            <button type="button" class="plus-menu-item" id="plusImageBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Générer une image</span></button>
+            {% else %}
+            <button type="button" class="plus-menu-item" id="plusImageBtn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Génération d’image indisponible</span></button>
+            {% endif %}
+            <button type="button" class="plus-menu-item" id="voiceBtn" title="Dicter un message"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg><span>Dicter un message</span></button>
+          </div>
+        </div>
         <textarea id="composerInput" placeholder="Merry Christmas" rows="1"></textarea>
-        <button type="button" class="composer-icon" id="voiceBtn" title="Utiliser le microphone" aria-label="Utiliser le microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg></button>
         <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button>
       </div>
       <div class="composer-tools" aria-label="Outils du message">
-        <button type="button" class="tool-btn" id="chatModeBtn" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
-        <button type="button" class="tool-btn" id="imageModeBtn" title="Générer une image" aria-label="Générer une image"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
-        <button type="button" class="tool-btn" id="webModeBtn" title="Recherche web" aria-label="Recherche web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button>
-        <button type="button" class="tool-btn" id="deepModeBtn" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
+        <button type="button" class="tool-btn active" id="chatModeBtn" data-mode="chat" aria-pressed="true" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
+        {% if chat_config.imageProviderAvailable %}
+        <button type="button" class="tool-btn" id="imageModeBtn" data-mode="image" title="Générer une image" aria-label="Générer une image" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
+        {% else %}
+        <button type="button" class="tool-btn unavailable-tool" id="imageModeBtn" title="Génération d’images non configurée" aria-label="Génération d’images non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
+        {% endif %}
+        {% if chat_config.videoProviderAvailable %}
+        <button type="button" class="tool-btn" id="videoModeBtn" data-mode="video" aria-pressed="false" title="Générer une vidéo" aria-label="Générer une vidéo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
+        {% else %}
+        <button type="button" class="tool-btn unavailable-tool" id="videoModeBtn" title="Génération vidéo non configurée" aria-label="Génération vidéo non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
+        {% endif %}
+        {% if chat_config.audioProviderAvailable %}
+        <button type="button" class="tool-btn" id="audioModeBtn" data-mode="audio" aria-pressed="false" title="Générer un audio" aria-label="Générer un audio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></button>
+        {% else %}
+        <button type="button" class="tool-btn unavailable-tool" id="audioModeBtn" title="Génération audio non configurée" aria-label="Génération audio non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></button>
+        {% endif %}
+        <button type="button" class="tool-btn" id="webModeBtn" data-mode="web" aria-pressed="false" title="Recherche web" aria-label="Recherche web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button>
+        <button type="button" class="tool-btn" id="deepModeBtn" data-mode="deep" aria-pressed="false" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
+        <button type="button" class="tool-btn" id="generationControlsBtn" title="Contrôles de génération" aria-label="Contrôles de génération" aria-controls="generationControlsPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="8" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="10" cy="18" r="2"></circle></svg></button>
         <span class="tool-spacer"></span>
+        <label class="sr-only" for="mediaProviderSelect">Fournisseur média</label>
+        <select id="mediaProviderSelect" hidden aria-label="Fournisseur média">
+          {% for provider in media_providers %}<option value="{{ provider.slug }}" data-modalities="{{ provider.modalities|join:',' }}">{{ provider.name }}</option>{% endfor %}
+        </select>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
+      </div>
+      <div class="generation-controls" id="generationControlsPanel" hidden>
+        <label class="generation-control">
+          <span>Température <output id="temperatureValue">0,7</output></span>
+          <input id="temperatureControl" type="range" min="0" max="2" step="0.1" value="0.7">
+        </label>
+        <label class="generation-control">
+          <span>Top P <output id="topPValue">1,00</output></span>
+          <input id="topPControl" type="range" min="0" max="1" step="0.05" value="1">
+        </label>
+        <label class="generation-control generation-token-control">
+          <span>Tokens max.</span>
+          <input id="maxTokensControl" type="number" min="1" max="8192" step="1" value="500" inputmode="numeric">
+        </label>
       </div>
       <div class="workspace-controls">
         <label for="workspaceSelect">Fichiers</label>
@@ -100,7 +163,7 @@
           <option value="">Désactivés</option>
         </select>
         <button type="button" id="createWorkspaceBtn" title="Créer un espace de fichiers" aria-label="Créer un espace de fichiers">＋</button>
-        <a class="workspace-open" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
+        <a class="workspace-open" id="workspaceOpen" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
       </div>
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
   <button type="button" class="model-chip team-chip" id="teamModeBtn" data-team="true">
@@ -159,6 +222,48 @@
       </div>
     </form>
   </main>
+
+  <div class="image-gallery-overlay" id="imageGallery" hidden>
+    <section class="image-gallery-dialog" role="dialog" aria-modal="true" aria-labelledby="imageGalleryTitle">
+      <header class="image-gallery-header">
+        <div>
+          <h2 id="imageGalleryTitle">Images générées</h2>
+          <p id="imageGalleryDescription">Les images enregistrées dans tes conversations</p>
+        </div>
+        <button type="button" class="image-gallery-close" id="closeImageGallery" aria-label="Fermer la galerie">×</button>
+      </header>
+      <div class="image-gallery-tabs" role="tablist" aria-label="Type de média">
+        <button type="button" class="active" id="imageGalleryImagesTab" data-gallery-kind="image" role="tab" aria-selected="true">Images</button>
+        <button type="button" id="imageGalleryVideosTab" data-gallery-kind="video" role="tab" aria-selected="false">Vidéos</button>
+        <button type="button" id="imageGalleryAudioTab" data-gallery-kind="audio" role="tab" aria-selected="false">Audio</button>
+      </div>
+      <p class="image-gallery-status" id="imageGalleryStatus" role="status" aria-live="polite"></p>
+      <div class="image-gallery-grid" id="imageGalleryGrid"></div>
+    </section>
+  </div>
+
+  {% if is_authenticated %}
+  <div class="memory-suggestion-overlay" id="memorySuggestionDialog" hidden>
+    <section class="memory-suggestion-dialog" role="dialog" aria-modal="true" aria-labelledby="memorySuggestionTitle">
+      <header class="memory-suggestion-header">
+        <div>
+          <h2 id="memorySuggestionTitle">Préférences du persona</h2>
+          <p>Une analyse IA peut consommer des crédits. Rien ne sera enregistré avant ta confirmation.</p>
+        </div>
+        <button type="button" class="memory-dialog-close" id="closeMemorySuggestion" aria-label="Fermer">×</button>
+      </header>
+      <p class="memory-suggestion-status" id="memorySuggestionStatus" role="status" aria-live="polite"></p>
+      <label class="sr-only" for="memorySuggestionText">Mémoire proposée</label>
+      <textarea id="memorySuggestionText" maxlength="8000" placeholder="La proposition apparaîtra ici. Tu pourras la modifier avant de l’enregistrer."></textarea>
+      <footer class="memory-suggestion-actions">
+        <button type="button" class="memory-regenerate" id="regenerateMemorySuggestion">Analyser à nouveau</button>
+        <span></span>
+        <button type="button" class="memory-cancel" id="cancelMemorySuggestion">Annuler</button>
+        <button type="button" class="memory-save" id="saveMemorySuggestion" disabled>Enregistrer</button>
+      </footer>
+    </section>
+  </div>
+  {% endif %}
 
 </div>
 

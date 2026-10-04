@@ -77,7 +77,21 @@ let state = {
 
     conversations: [],
 
+    sidebarConversations: [],
+
+    conversationSearch: "",
+
+    selectedFolder: "",
+
+    showArchived: false,
+
+    conversationFolders: [],
+
     activeConvoId: null,
+
+    temporaryChat: false,
+
+    temperatureOverride: null,
 
     workspaces: [],
 
@@ -91,10 +105,10 @@ let state = {
 
   function conversationKey(convo){ return convo.id ?? convo.draftId; }
 
-  async function newConversation(personaId){
+  async function newConversation(personaId, temporary = state.temporaryChat){
     const persona = state.personas.find(p => p.id === personaId) || state.personas[0];
     if(!persona) return null;
-    const convo = { id: null, draftId: uid("draft"), title: "Nouvelle conversation", personaId: persona.id, workspaceId: state.selectedWorkspaceId, messages: [] };
+    const convo = { id: null, draftId: uid("draft"), title: "Nouvelle conversation", personaId: persona.id, workspaceId: state.selectedWorkspaceId, messages: [], temporary };
     state.conversations.unshift(convo);
     state.activeConvoId = conversationKey(convo);
     return convo;
@@ -106,14 +120,75 @@ let state = {
       const res = await fetch("/chat/api/conversations/");
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const list = await res.json();
-      state.conversations = list.map(c => ({ id: c.id, title: c.title, personaId: c.persona_id || state.activePersonaId, workspaceId: c.workspace_id || null, messages: null }));
+      state.conversations = list.map(c => ({
+        id: c.id,
+        title: c.title,
+        personaId: c.persona_id || state.activePersonaId,
+        workspaceId: c.workspace_id || null,
+        folder: c.folder || "",
+        isArchived: Boolean(c.is_archived),
+        messages: null
+      }));
       if(state.conversations.length > 0){
         state.activeConvoId = conversationKey(state.conversations[0]);
+        state.activePersonaId = state.conversations[0].personaId;
         state.selectedWorkspaceId = state.conversations[0].workspaceId;
         await loadConversationMessages(state.activeConvoId);
       }
+      await loadConversationFolders();
+      await loadConversationHistory();
     }catch(err){
       console.error("Erreur chargement conversations", err);
+    }
+  }
+
+  async function loadConversationFolders(){
+    if(!state.isAuthenticated) return;
+    try{
+      const response = await fetch("/chat/api/folders/");
+      if(!response.ok) throw new Error("Erreur chargement des dossiers");
+      state.conversationFolders = await response.json();
+    }catch(error){
+      console.error("Erreur chargement des dossiers de conversations", error);
+    }
+  }
+
+  async function loadConversationHistory(){
+    if(!state.isAuthenticated) return;
+    const params = new URLSearchParams({ archived: state.showArchived ? "1" : "0" });
+    const persona = activePersona();
+    if(persona && typeof persona.id === "number") params.set("persona_id", String(persona.id));
+    if(state.conversationSearch) params.set("q", state.conversationSearch);
+    if(state.selectedFolder) params.set("folder", state.selectedFolder);
+    try{
+      const response = await fetch(`/chat/api/conversations/?${params.toString()}`);
+      if(!response.ok) throw new Error("Erreur recherche des conversations " + response.status);
+      const rows = await response.json();
+      state.sidebarConversations = rows.map(row => {
+        let conversation = state.conversations.find(item => item.id === row.id);
+        if(!conversation){
+          conversation = {
+            id: row.id,
+            title: row.title,
+            personaId: row.persona_id || state.activePersonaId,
+            workspaceId: row.workspace_id || null,
+            folder: row.folder || "",
+            isArchived: Boolean(row.is_archived),
+            messages: null
+          };
+          state.conversations.push(conversation);
+        }else{
+          conversation.title = row.title;
+          conversation.personaId = row.persona_id || conversation.personaId;
+          conversation.workspaceId = row.workspace_id || null;
+          conversation.folder = row.folder || "";
+          conversation.isArchived = Boolean(row.is_archived);
+        }
+        return conversation;
+      });
+    }catch(error){
+      console.error("Erreur recherche des conversations", error);
+      state.sidebarConversations = [];
     }
   }
 
@@ -156,6 +231,9 @@ let state = {
         id: m.id,
         role: m.role === "assistant" ? "bot" : m.role,
         content: m.content,
+        mediaUrl: m.media_url || null,
+        mediaKind: m.media_kind || "image",
+        sources: Array.isArray(m.sources) ? m.sources : [],
         tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens,
         createdAt: m.created_at
       }));
@@ -203,43 +281,143 @@ let state = {
   // ---------- Rendering ----------
   const el = id => document.getElementById(id);
 
+  const initialTopP = Number(chatConfig.defaultTopP ?? 1);
+  el("topPControl").value = String(initialTopP);
+  el("topPValue").value = initialTopP.toFixed(2).replace(".", ",");
+  el("maxTokensControl").value = String(chatConfig.defaultMaxTokens ?? 500);
+  document.querySelectorAll(".provider-menu-item").forEach(item => {
+    const selected = item.dataset.modelId === state.modelId;
+    item.classList.toggle("active", selected);
+    if(selected){
+      const toggle = item.closest(".provider-dropdown").querySelector(".provider-toggle");
+      toggle.classList.add("has-selection");
+      toggle.querySelector(".provider-toggle-label").textContent = item.dataset.modelName;
+    }
+  });
+
   function renderConvoList(){
     const list = el("convoList");
     list.innerHTML = "";
-    if(state.conversations.length === 0){
-      list.innerHTML = '<div style="padding:8px 18px;font-size:12px;opacity:.5;">Aucune conversation</div>';
+    const persona = activePersona();
+    const title = el("conversationsSectionTitle");
+    if(title) title.firstChild.textContent = state.showArchived ? "Archives" : (persona ? `Conversations · ${persona.name}` : "Conversations");
+    const savedConversations = state.sidebarConversations;
+    const folderSelect = el("folderFilter");
+    const selectedFolder = state.selectedFolder;
+    folderSelect.replaceChildren(new Option("Tous les dossiers", ""));
+    state.conversationFolders.forEach(folder => folderSelect.add(new Option(folder, folder)));
+    folderSelect.value = selectedFolder;
+    if(savedConversations.length === 0){
+      list.innerHTML = `<div class="history-empty">${state.conversationSearch ? "Aucun résultat" : state.showArchived ? "Aucune conversation archivée" : "Aucune conversation pour ce persona"}</div>`;
       return;
     }
-    state.conversations.forEach(c => {
+    savedConversations.forEach(c => {
       const convoKey = conversationKey(c);
       const div = document.createElement("div");
       div.className = "item" + (convoKey === state.activeConvoId ? " active" : "");
-      div.innerHTML = `<span class="it-label"><span class="txt">${escapeHtml(c.title)}</span></span><button class="del" data-id="${convoKey}">✕</button>`;
-      
-      div.querySelector(".it-label").addEventListener("click", async () => {
+      const copy = document.createElement("div");
+      copy.className = "conversation-copy";
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "conversation-open";
+      label.textContent = c.title;
+      copy.appendChild(label);
+      if(c.folder){
+        const folderLabel = document.createElement("span");
+        folderLabel.className = "conversation-folder-label";
+        folderLabel.textContent = c.folder;
+        copy.appendChild(folderLabel);
+      }
+      div.appendChild(copy);
+
+      const actions = document.createElement("div");
+      actions.className = "conversation-actions";
+      const archiveButton = document.createElement("button");
+      archiveButton.type = "button";
+      archiveButton.className = "conversation-action";
+      archiveButton.title = c.isArchived ? "Désarchiver" : "Archiver";
+      archiveButton.setAttribute("aria-label", archiveButton.title);
+      archiveButton.innerHTML = c.isArchived
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v4H3zM5 8v12h14V8M12 12v5m-3-3 3 3 3-3"></path></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v4H3zM5 8v12h14V8M9 12h6"></path></svg>';
+      archiveButton.addEventListener("click", event => {
+        event.stopPropagation();
+        updateConversation(c, { is_archived: !c.isArchived });
+      });
+      const folderButton = document.createElement("button");
+      folderButton.type = "button";
+      folderButton.className = "conversation-action";
+      folderButton.title = "Classer dans un dossier";
+      folderButton.setAttribute("aria-label", folderButton.title);
+      folderButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z"></path></svg>';
+      folderButton.addEventListener("click", event => {
+        event.stopPropagation();
+        const folder = window.prompt("Nom du dossier (vide pour retirer)", c.folder || "");
+        if(folder === null) return;
+        updateConversation(c, { folder: folder.trim().slice(0, 80) });
+      });
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.className = "conversation-action conversation-delete";
+      deleteButton.title = "Supprimer";
+      deleteButton.setAttribute("aria-label", `Supprimer ${c.title}`);
+      deleteButton.textContent = "×";
+      deleteButton.addEventListener("click", event => deleteConversation(c, event));
+      actions.append(archiveButton, folderButton, deleteButton);
+      div.appendChild(actions);
+
+      label.addEventListener("click", async () => {
+        state.temporaryChat = false;
+        state.activePersonaId = c.personaId;
         state.activeConvoId = convoKey;
         renderAll();  // affichage immédiat de la sélection, même avant le chargement
         if(c.id && c.messages === null){
           await loadConversationMessages(c.id);
         }
       });
-      div.querySelector(".del").addEventListener("click", async (e) => {
-        e.stopPropagation();
-        if(c.id){
-          const response = await fetch(`/chat/api/conversations/${c.id}/delete/`, {
-            method: "DELETE",
-            headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
-          });
-          if(!response.ok) return;
-        }
-        state.conversations = state.conversations.filter(x => conversationKey(x) !== convoKey);
-        if(state.activeConvoId === convoKey){
-          state.activeConvoId = state.conversations.length ? conversationKey(state.conversations[0]) : null;
-        }
-        renderAll();
-      });
       list.appendChild(div);
     });
+  }
+
+  async function updateConversation(conversation, changes){
+    if(!conversation.id) return;
+    try{
+      const response = await fetch(`/chat/api/conversations/${conversation.id}/`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        },
+        body: JSON.stringify(changes)
+      });
+      const data = await response.json();
+      if(!response.ok) throw new Error(data.error?.message || "Modification impossible.");
+      conversation.folder = data.folder || "";
+      conversation.isArchived = Boolean(data.is_archived);
+      await loadConversationFolders();
+      await loadConversationHistory();
+      renderAll();
+    }catch(error){
+      console.error("Erreur mise à jour conversation", error);
+    }
+  }
+
+  async function deleteConversation(conversation, event){
+    event.stopPropagation();
+    if(!conversation.id || !window.confirm(`Supprimer « ${conversation.title} » ?`)) return;
+    const response = await fetch(`/chat/api/conversations/${conversation.id}/delete/`, {
+      method: "DELETE",
+      headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
+    });
+    if(!response.ok) return;
+    state.conversations = state.conversations.filter(item => item.id !== conversation.id);
+    if(state.activeConvoId === conversation.id){
+      state.activeConvoId = null;
+      await newConversation(state.activePersonaId, state.temporaryChat);
+    }
+    await loadConversationFolders();
+    await loadConversationHistory();
+    renderAll();
   }
 
   const personaSwitchTimers = new Map();
@@ -307,57 +485,47 @@ let state = {
     }
   }
 
-  function setActivePersona(personaId){
+  async function setActivePersona(personaId){
     const persona = state.personas.find(p => String(p.id) === String(personaId));
     if(!persona) return;
     const convo = activeConvo();
-    const previousPersonaId = convo ? convo.personaId : state.activePersonaId;
-    if(previousPersonaId === persona.id) return;
-    if(convo){
-      convo.personaId = persona.id;
-    } else {
-      state.activePersonaId = persona.id;
+    if(convo && String(convo.personaId) === String(persona.id)) return;
+    state.activePersonaId = persona.id;
+    const existing = state.temporaryChat ? null : state.conversations.find(item =>
+      !item.temporary && String(item.personaId) === String(persona.id)
+    );
+    if(existing){
+      state.activeConvoId = conversationKey(existing);
+      state.selectedWorkspaceId = existing.workspaceId;
+      if(existing.id && existing.messages === null){
+        await loadConversationMessages(existing.id);
+      }
+    }else{
+      await newConversation(persona.id, state.temporaryChat);
     }
+    await loadConversationHistory();
     renderAll();
-    if(convo) saveConversationPersona(convo, persona.id, previousPersonaId);
   }
 
   function renderPersonaList(){
-    const list = el("personaList");
-    list.innerHTML = "";
+    const select = el("personaTopSelect");
+    if(!select) return;
+    select.replaceChildren();
     const selectedPersona = activePersona();
     state.personas.forEach(p => {
-      const div = document.createElement("div");
-      const isActive = selectedPersona && selectedPersona.id === p.id;
-      div.className = "item" + (isActive ? " active" : "");
-      div.innerHTML = `<span class="it-label"><span class="persona-dot"></span><span class="txt">${escapeHtml(p.name)}</span></span><button class="del" data-id="${p.id}">✕</button>`;
-      div.querySelector(".it-label").addEventListener("click", () => setActivePersona(p.id));
-      div.querySelector(".del").addEventListener("click", async (e) => {
-        e.stopPropagation();
-        if(state.personas.length <= 1) return;
-        const convo = activeConvo();
-        const wasConversationPersona = convo && convo.personaId === p.id;
-        if(wasConversationPersona && convo.id){
-          const timer = personaSwitchTimers.get(convo.id);
-          if(timer) clearTimeout(timer);
-          personaSwitchTimers.delete(convo.id);
-        }
-        if(state.isAuthenticated && typeof p.id === "number"){
-          const res = await fetch(`/chat/api/personas/${p.id}/`, {
-            method: "DELETE",
-            headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
-          });
-          if(!res.ok) return;
-        }
-        state.personas = state.personas.filter(x => x.id !== p.id);
-        if(state.activePersonaId === p.id){
-          state.activePersonaId = state.personas.length ? state.personas[0].id : null;
-        }
-        if(wasConversationPersona) setActivePersona(state.personas[0].id);
-        else renderAll();
-      });
-      list.appendChild(div);
+      select.add(new Option(p.name, String(p.id)));
     });
+    if(selectedPersona) select.value = String(selectedPersona.id);
+    const activeName = el("activePersonaName");
+    if(activeName) activeName.textContent = selectedPersona?.name || "Choisir un persona";
+    const renameButton = el("renamePersonaBtn");
+    if(renameButton){
+      renameButton.disabled = !state.isAuthenticated || typeof selectedPersona?.id !== "number";
+    }
+    const deleteButton = el("deletePersonaBtn");
+    if(deleteButton){
+      deleteButton.disabled = !state.isAuthenticated || state.personas.length <= 1 || typeof selectedPersona?.id !== "number";
+    }
   }
 
   function renderPersonaEditor(){
@@ -368,6 +536,14 @@ let state = {
     }
     if(!p) return;
     if(select) select.value = String(p.id);
+    if(typeof window.AI2AIAppearance?.applyPersona === "function"){
+      window.AI2AIAppearance.applyPersona(p);
+    }
+    if(state.temperatureOverride === null){
+      const temperature = Number(p.temp ?? 0.7);
+      el("temperatureControl").value = String(temperature);
+      el("temperatureValue").value = temperature.toFixed(1).replace(".", ",");
+    }
     const personaName = el("chatPersonaName");
     if(personaName) personaName.textContent = p.name;
   }
@@ -375,6 +551,14 @@ let state = {
 function renderHeader(){
 
   const convo = activeConvo();
+  const temporaryButton = el("temporaryChatBtn");
+  temporaryButton.classList.toggle("active", Boolean(convo?.temporary));
+  temporaryButton.setAttribute("aria-pressed", String(Boolean(convo?.temporary)));
+  el("temporaryBadge").hidden = !convo?.temporary;
+  const memoryButton = el("memorySuggestBtn");
+  if(memoryButton){
+    memoryButton.disabled = !convo || !convo.messages?.some(message => message.role === "user") || state.sending;
+  }
 
   const appearance =
     window.AI2AIAppearance
@@ -397,11 +581,6 @@ function renderHeader(){
 
   el("brandMark").textContent =
     appearance.botAvatar;
-
-
-  el("brandName").textContent =
-    appearance.botName;
-
 
   document.title =
     appearance.botName;
@@ -442,6 +621,52 @@ function renderMessages(){
       contentDiv.textContent = m.content;
     }
     div.appendChild(contentDiv);
+    if(m.mediaUrl){
+      const media = document.createElement("div");
+      media.className = "msg-media";
+      const mediaElement = document.createElement(m.mediaKind === "video" ? "video" : m.mediaKind === "audio" ? "audio" : "img");
+      mediaElement.src = m.mediaUrl;
+      if(m.mediaKind === "video" || m.mediaKind === "audio"){
+        mediaElement.controls = true;
+        mediaElement.preload = "metadata";
+      }else{
+        mediaElement.alt = "Image générée";
+        mediaElement.loading = "lazy";
+      }
+      media.appendChild(mediaElement);
+      div.appendChild(media);
+    }
+    if(m.role === "bot" && Array.isArray(m.sources) && m.sources.length){
+      const sources = document.createElement("div");
+      sources.className = "message-sources";
+      const label = document.createElement("span");
+      label.textContent = "Sources";
+      sources.appendChild(label);
+      const list = document.createElement("ul");
+      m.sources.slice(0, 5).forEach(source => {
+        try{
+          const url = new URL(source.link, window.location.origin);
+          if(!["http:", "https:"].includes(url.protocol)) return;
+          const item = document.createElement("li");
+          const link = document.createElement("a");
+          link.href = url.href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = source.title || url.hostname;
+          item.appendChild(link);
+          if(source.snippet){
+            const snippet = document.createElement("span");
+            snippet.textContent = source.snippet;
+            item.appendChild(snippet);
+          }
+          list.appendChild(item);
+        }catch(_error){}
+      });
+      if(list.childElementCount){
+        sources.appendChild(list);
+        div.appendChild(sources);
+      }
+    }
 
     if(m.role === "user" && m.id && convo.id){
       const actions = document.createElement("div");
@@ -611,7 +836,12 @@ function renderMessages(){
     if(!select) return;
     const convo = activeConvo();
     const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
-    select.replaceChildren(new Option("Désactivés", ""));
+    const emptyOption = new Option(
+      state.workspaces.length ? "Désactivés" : "Aucun espace disponible",
+      ""
+    );
+    emptyOption.disabled = state.workspaces.length === 0;
+    select.replaceChildren(emptyOption);
     state.workspaces.forEach(workspace => {
       select.add(new Option(workspace.title, String(workspace.id)));
     });
@@ -674,7 +904,10 @@ function renderMessages(){
   }
 
   async function callBackend(persona, userText, convo, onDelta, editMessageId){
-    const res = await fetch("/chat/api/send/", {
+    const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    const isMediaMode = ["image", "video", "audio"].includes(mode);
+    const endpoint = isMediaMode ? "/chat/api/media/generate/" : "/chat/api/send/";
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -685,11 +918,21 @@ function renderMessages(){
         conversation_id: convo.id,
         workspace_id: convo.workspaceId || null,
         edit_message_id: editMessageId,
+        temporary: Boolean(convo.temporary),
+        history: convo.temporary ? convo.messages
+          .filter(message => !message.streaming)
+          .slice(0, -1)
+          .map(message => ({ role: message.role === "bot" ? "assistant" : message.role, content: message.content })) : [],
         content: userText,
+        kind: isMediaMode ? mode : null,
+        provider_slug: isMediaMode ? el("mediaProviderSelect").value : null,
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
         system_prompt: persona.prompt,
-        temperature: persona.temp,
+        temperature: state.temperatureOverride ?? Number(el("temperatureControl").value),
+        top_p: Number(el("topPControl").value),
+        max_tokens: Number(el("maxTokensControl").value),
+        mode: document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat",
         team_mode: el("teamModeBtn").classList.contains("active"),
         team_model_ids: Array.from(el("teamModelSelect").selectedOptions).map(option => option.value)
       })
@@ -739,7 +982,7 @@ function renderMessages(){
     renderCredits();
     let convo = activeConvo();
     if(!convo){
-      convo = await newConversation(state.activePersonaId);
+      convo = await newConversation(state.activePersonaId, state.temporaryChat);
     }
     if(!convo){
       state.sending = false;
@@ -781,7 +1024,8 @@ function renderMessages(){
 
     try{
       let data;
-      if(state.hasActiveModels){
+      const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+      if(state.hasActiveModels || ["image", "video", "audio"].includes(selectedMode)){
         data = await callBackend(persona, text, convo, chunk => {
           streamingMessage.content += chunk;
           renderStreamingMessage();
@@ -803,6 +1047,9 @@ function renderMessages(){
         data = { reply: simulatedReply, remaining_balance: state.credits };
       }
       const replyText = data.reply || "(réponse vide)";
+      streamingMessage.mediaUrl = data.media_url || null;
+      streamingMessage.mediaKind = data.media_kind || "image";
+      streamingMessage.sources = Array.isArray(data.sources) ? data.sources : [];
       const inputTokens = data.prompt_tokens ?? estimateTokens(text);
       const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
       userMessage.tokens = inputTokens;
@@ -844,11 +1091,224 @@ function renderMessages(){
   el("newConvoBtn").addEventListener("click", () => {
     const persona = activePersona();
     if(!persona) return;
-    newConversation(persona.id);
+    newConversation(persona.id, state.temporaryChat);
     renderAll();
+  });
+  let conversationSearchTimer = null;
+  el("conversationSearch").addEventListener("input", event => {
+    state.conversationSearch = event.currentTarget.value.trim();
+    window.clearTimeout(conversationSearchTimer);
+    conversationSearchTimer = window.setTimeout(async () => {
+      await loadConversationHistory();
+      renderAll();
+    }, 250);
+  });
+  el("folderFilter").addEventListener("change", async event => {
+    state.selectedFolder = event.currentTarget.value;
+    await loadConversationHistory();
+    renderAll();
+  });
+  el("archiveFilterBtn").addEventListener("click", async () => {
+    state.showArchived = !state.showArchived;
+    el("archiveFilterBtn").classList.toggle("active", state.showArchived);
+    el("archiveFilterBtn").setAttribute("aria-pressed", String(state.showArchived));
+    await loadConversationHistory();
+    renderAll();
+  });
+  el("temporaryChatBtn").addEventListener("click", () => {
+    state.temporaryChat = !state.temporaryChat;
+    if(!state.temporaryChat){
+      state.conversations = state.conversations.filter(convo => !convo.temporary);
+    }
+    const persona = activePersona();
+    newConversation(persona?.id, state.temporaryChat);
+    renderAll();
+  });
+  el("generationControlsBtn").addEventListener("click", () => {
+    const panel = el("generationControlsPanel");
+    panel.hidden = !panel.hidden;
+    el("generationControlsBtn").setAttribute("aria-expanded", String(!panel.hidden));
+  });
+  el("temperatureControl").addEventListener("input", event => {
+    state.temperatureOverride = Number(event.currentTarget.value);
+    el("temperatureValue").value = state.temperatureOverride.toFixed(1).replace(".", ",");
+  });
+  el("topPControl").addEventListener("input", event => {
+    el("topPValue").value = Number(event.currentTarget.value).toFixed(2).replace(".", ",");
   });
   el("customizeBtn").addEventListener("click", () => {
     window.location.href = el("customizeBtn").dataset.url;
+  });
+  const memoryDialog = el("memorySuggestionDialog");
+  if(memoryDialog){
+    const memoryText = el("memorySuggestionText");
+    const memoryStatus = el("memorySuggestionStatus");
+    const memorySave = el("saveMemorySuggestion");
+
+    async function proposePersonaMemory(){
+      const convo = activeConvo();
+      const persona = activePersona();
+      if(!convo || !persona || !convo.messages?.some(message => message.role === "user")) return;
+      memoryDialog.hidden = false;
+      memoryText.value = "";
+      memoryText.disabled = true;
+      memorySave.disabled = true;
+      el("regenerateMemorySuggestion").disabled = true;
+      memoryStatus.textContent = "Analyse de la conversation…";
+      const history = convo.messages
+        .filter(message => !message.streaming && (message.role === "user" || message.role === "bot"))
+        .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content }));
+      const requestBody = {
+        model_id: state.modelId,
+        history: convo.id && !convo.temporary ? undefined : history
+      };
+      if(convo.id && !convo.temporary) requestBody.conversation_id = convo.id;
+      try{
+        const response = await fetch(`/chat/api/personas/${persona.id}/suggest-memory/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+          },
+          body: JSON.stringify(requestBody)
+        });
+        const data = await response.json();
+        if(!response.ok) throw new Error(data.error?.message || "Proposition de mémoire impossible.");
+        const balance = Number(data.remaining_balance);
+        if(Number.isFinite(balance)) state.credits = balance;
+        memoryText.value = data.suggestion || "";
+        memoryText.disabled = false;
+        memorySave.disabled = !memoryText.value.trim();
+        memoryStatus.textContent = memoryText.value.trim()
+          ? `Proposition prête avec ${data.model_id}. Modifie-la puis confirme pour enregistrer.`
+          : "Aucune préférence durable explicite n’a été trouvée. Tu peux saisir la mémoire manuellement.";
+        renderCredits();
+        memoryText.focus();
+      }catch(error){
+        memoryText.disabled = false;
+        memoryStatus.textContent = error.message;
+      }finally{
+        el("regenerateMemorySuggestion").disabled = false;
+      }
+    }
+
+    el("memorySuggestBtn").addEventListener("click", proposePersonaMemory);
+    el("regenerateMemorySuggestion").addEventListener("click", proposePersonaMemory);
+    el("cancelMemorySuggestion").addEventListener("click", () => {
+      memoryDialog.hidden = true;
+    });
+    el("closeMemorySuggestion").addEventListener("click", () => {
+      memoryDialog.hidden = true;
+    });
+    memoryDialog.addEventListener("click", event => {
+      if(event.target === memoryDialog) memoryDialog.hidden = true;
+    });
+    memoryText.addEventListener("input", () => {
+      memorySave.disabled = !memoryText.value.trim();
+    });
+    memorySave.addEventListener("click", async () => {
+      const persona = activePersona();
+      if(!persona || !memoryText.value.trim()) return;
+      memorySave.disabled = true;
+      memoryStatus.textContent = "Enregistrement…";
+      try{
+        const response = await fetch(`/chat/api/personas/${persona.id}/`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+          },
+          body: JSON.stringify({ memory: memoryText.value.trim() })
+        });
+        const data = await response.json();
+        if(!response.ok) throw new Error(data.error?.message || "Enregistrement impossible.");
+        Object.assign(persona, data);
+        memoryStatus.textContent = "Mémoire enregistrée pour ce persona.";
+        window.setTimeout(() => { memoryDialog.hidden = true; }, 700);
+      }catch(error){
+        memoryStatus.textContent = error.message;
+        memorySave.disabled = false;
+      }
+    });
+  }
+  const imageGallery = el("imageGallery");
+  const imageGalleryStatus = el("imageGalleryStatus");
+  const imageGalleryGrid = el("imageGalleryGrid");
+  let imageGalleryKind = "image";
+  async function openImageGallery(kind = "image"){
+    imageGalleryKind = kind;
+    const isVideo = kind === "video";
+    const isAudio = kind === "audio";
+    el("imageGalleryTitle").textContent = isVideo ? "Vidéos" : isAudio ? "Audio généré" : "Images générées";
+    el("imageGalleryDescription").textContent = isVideo
+      ? "Les vidéos enregistrées dans tes conversations"
+      : isAudio ? "Les fichiers audio enregistrés dans tes conversations" : "Les images enregistrées dans tes conversations";
+    document.querySelectorAll("[data-gallery-kind]").forEach(button => {
+      const selected = button.dataset.galleryKind === kind;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+    });
+    imageGallery.hidden = false;
+    imageGalleryStatus.textContent = "Chargement…";
+    imageGalleryGrid.replaceChildren();
+    try{
+      const response = await fetch(`/chat/api/media/gallery/?kind=${encodeURIComponent(kind)}`);
+      if(!response.ok || !response.headers.get("Content-Type")?.includes("application/json")){
+        throw new Error("Connecte-toi pour voir tes images générées.");
+      }
+      const images = await response.json();
+      if(!images.length){
+        imageGalleryStatus.textContent = isVideo
+          ? "Aucune vidéo générée pour l’instant."
+          : isAudio ? "Aucun audio généré pour l’instant." : "Aucune image générée pour l’instant.";
+        return;
+      }
+      imageGalleryStatus.textContent = "";
+      images.forEach(item => {
+        const link = document.createElement("a");
+        link.className = isVideo ? "image-gallery-item video-gallery-item" : isAudio ? "image-gallery-item audio-gallery-item" : "image-gallery-item";
+        link.href = item.media_url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        const media = document.createElement(isVideo ? "video" : isAudio ? "audio" : "img");
+        media.src = item.media_url;
+        if(isVideo || isAudio){
+          media.controls = true;
+          media.preload = "metadata";
+          media.setAttribute("aria-label", item.prompt || (isVideo ? "Vidéo générée" : "Audio généré"));
+          media.addEventListener("click", event => event.stopPropagation());
+        }else{
+          media.alt = item.prompt || "Image générée";
+          media.loading = "lazy";
+        }
+        const prompt = document.createElement("strong");
+        prompt.textContent = item.prompt || "Image générée";
+        const conversation = document.createElement("span");
+        conversation.textContent = item.conversation_title || "Conversation";
+        link.append(media, prompt, conversation);
+        imageGalleryGrid.appendChild(link);
+      });
+    }catch(error){
+      imageGalleryStatus.textContent = error.message || "Chargement de la galerie impossible.";
+    }
+  }
+  el("openImageGalleryBtn").addEventListener("click", () => openImageGallery("image"));
+  el("openVideoGalleryBtn").addEventListener("click", () => openImageGallery("video"));
+  el("openAudioGalleryBtn").addEventListener("click", () => openImageGallery("audio"));
+  document.querySelectorAll("[data-gallery-kind]").forEach(button => {
+    button.addEventListener("click", () => openImageGallery(button.dataset.galleryKind));
+  });
+  el("closeImageGallery").addEventListener("click", () => {
+    imageGallery.hidden = true;
+  });
+  imageGallery.addEventListener("click", event => {
+    if(event.target === imageGallery) imageGallery.hidden = true;
+  });
+  document.addEventListener("keydown", event => {
+    if(event.key === "Escape" && !imageGallery.hidden) imageGallery.hidden = true;
+  });
+  el("createWorkspaceBtn").addEventListener("click", () => {
+    window.location.href = "/dap/";
   });
   function togglePanel(side){
     const app = document.querySelector(".app");
@@ -896,6 +1356,101 @@ function renderMessages(){
       setActivePersona(p.id);
     }catch(err){
       console.error("Erreur création persona", err);
+    }
+  });
+  el("personaTopSelect").addEventListener("change", event => {
+    setActivePersona(event.currentTarget.value);
+  });
+  el("workspaceSelect").addEventListener("change", async event => {
+    const workspaceId = event.currentTarget.value || null;
+    const convo = activeConvo();
+    const previousWorkspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
+    if(String(workspaceId || "") === String(previousWorkspaceId || "")) return;
+
+    state.selectedWorkspaceId = workspaceId;
+    if(convo) convo.workspaceId = workspaceId;
+    renderWorkspaceSelector();
+
+    if(convo?.id && !convo.temporary){
+      try{
+        const response = await fetch(`/chat/api/conversations/${convo.id}/`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+          },
+          body: JSON.stringify({ workspace_id: workspaceId })
+        });
+        if(!response.ok) throw new Error("Enregistrement du workspace impossible.");
+      }catch(error){
+        convo.workspaceId = previousWorkspaceId;
+        state.selectedWorkspaceId = previousWorkspaceId;
+        renderWorkspaceSelector();
+        const notice = el("creditNotice");
+        notice.textContent = error.message;
+        notice.classList.add("show");
+        window.setTimeout(() => notice.classList.remove("show"), 3000);
+      }
+    }
+  });
+  el("deletePersonaBtn").addEventListener("click", async () => {
+    const persona = activePersona();
+    if(!persona || state.personas.length <= 1 || typeof persona.id !== "number") return;
+    const confirmed = window.confirm(
+      `Supprimer le persona « ${persona.name} » ? Les conversations associées resteront dans l’historique, sans ce persona.`
+    );
+    if(!confirmed) return;
+    try{
+      const response = await fetch(`/chat/api/personas/${persona.id}/`, {
+        method: "DELETE",
+        headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
+      });
+      if(!response.ok) throw new Error("Suppression du persona impossible.");
+      state.personas = state.personas.filter(item => item.id !== persona.id);
+      const nextPersona = state.personas[0];
+      state.activePersonaId = nextPersona.id;
+      await setActivePersona(nextPersona.id);
+    }catch(error){
+      console.error("Erreur suppression persona", error);
+    }
+  });
+  el("renamePersonaBtn").addEventListener("click", () => {
+    const persona = activePersona();
+    if(!persona || !state.isAuthenticated || typeof persona.id !== "number") return;
+    const form = el("personaRenameForm");
+    const input = el("personaRenameInput");
+    input.value = persona.name;
+    form.hidden = false;
+    input.focus();
+    input.select();
+  });
+  el("cancelPersonaRename").addEventListener("click", () => {
+    el("personaRenameForm").hidden = true;
+  });
+  el("personaRenameForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const persona = activePersona();
+    const name = el("personaRenameInput").value.trim();
+    if(!persona || !name || typeof persona.id !== "number") return;
+    try{
+      const response = await fetch(`/chat/api/personas/${persona.id}/`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        },
+        body: JSON.stringify({ name })
+      });
+      const data = await response.json();
+      if(!response.ok) throw new Error(data.error?.message || "Renommage du persona impossible.");
+      Object.assign(persona, data);
+      el("personaRenameForm").hidden = true;
+      renderAll();
+    }catch(error){
+      const notice = el("creditNotice");
+      notice.textContent = error.message;
+      notice.classList.add("show");
+      window.setTimeout(() => notice.classList.remove("show"), 3000);
     }
   });
 el("modelChips").addEventListener("click", (e) => {
@@ -959,10 +1514,32 @@ document.addEventListener("click", () => {
     button.classList.toggle("selected", option.selected);
     el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
   });
-  document.querySelectorAll(".tool-btn").forEach(button => {
+  const mediaProviderSelect = el("mediaProviderSelect");
+  function updateMediaProviderSelection(mode){
+    const isMediaMode = ["image", "video", "audio"].includes(mode);
+    const options = Array.from(mediaProviderSelect.options);
+    options.forEach(option => {
+      const modalities = (option.dataset.modalities || "").split(",");
+      option.hidden = isMediaMode && !modalities.includes(mode);
+      option.disabled = option.hidden;
+    });
+    const firstAvailable = options.find(option => isMediaMode && (option.dataset.modalities || "").split(",").includes(mode));
+    if(firstAvailable && !options.find(option => option.value === mediaProviderSelect.value && !option.disabled)){
+      mediaProviderSelect.value = firstAvailable.value;
+    }
+    mediaProviderSelect.hidden = !isMediaMode;
+    mediaProviderSelect.disabled = isMediaMode && !firstAvailable;
+  }
+  updateMediaProviderSelection("chat");
+  document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".tool-btn").forEach(item => item.classList.remove("active"));
+      document.querySelectorAll(".tool-btn[data-mode]").forEach(item => {
+        item.classList.remove("active");
+        item.setAttribute("aria-pressed", "false");
+      });
       button.classList.add("active");
+      button.setAttribute("aria-pressed", "true");
+      updateMediaProviderSelection(button.dataset.mode);
     });
   });
 const fileInput = document.createElement("input");
@@ -970,7 +1547,32 @@ fileInput.type = "file";
 fileInput.hidden = true;
 document.body.appendChild(fileInput);
 
-el("attachBtn").addEventListener("click", () => fileInput.click());
+const composerPlusMenu = el("composerPlusMenu");
+function closeComposerPlusMenu(){
+  composerPlusMenu.hidden = true;
+  el("attachBtn").setAttribute("aria-expanded", "false");
+}
+el("attachBtn").addEventListener("click", () => {
+  composerPlusMenu.hidden = !composerPlusMenu.hidden;
+  el("attachBtn").setAttribute("aria-expanded", String(!composerPlusMenu.hidden));
+});
+el("plusFilesBtn").addEventListener("click", () => {
+  closeComposerPlusMenu();
+  fileInput.click();
+});
+el("plusImageBtn").addEventListener("click", () => {
+  if(el("plusImageBtn").disabled) return;
+  document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
+    const selected = button.dataset.mode === "image";
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  });
+  closeComposerPlusMenu();
+  el("composerInput").focus();
+});
+document.addEventListener("click", event => {
+  if(!el("composerPlusWrap").contains(event.target)) closeComposerPlusMenu();
+});
 
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files[0];
@@ -995,6 +1597,7 @@ fileInput.addEventListener("change", async () => {
       headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value },
       body: formData
     });
+    updateMediaProviderSelection("image");
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || "Erreur d'upload");
 
@@ -1009,10 +1612,39 @@ fileInput.addEventListener("change", async () => {
   fileInput.value = "";
 });
 
-  el("voiceBtn").addEventListener("click", () => input.focus());
-
   const form = el("composerForm");
   const input = el("composerInput");
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  el("voiceBtn").addEventListener("click", () => {
+    closeComposerPlusMenu();
+    if (!SpeechRecognition) {
+      el("creditNotice").textContent = "La dictée vocale n’est pas prise en charge par ce navigateur.";
+      el("creditNotice").classList.add("show");
+      window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = document.documentElement.lang || "fr-FR";
+    recognition.interimResults = false;
+    el("voiceBtn").disabled = true;
+    recognition.addEventListener("result", event => {
+      const transcript = event.results?.[0]?.[0]?.transcript || "";
+      input.setRangeText(transcript, input.selectionStart, input.selectionEnd, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.focus();
+    });
+    recognition.addEventListener("error", () => {
+      el("creditNotice").textContent = "La dictée vocale n’a pas pu démarrer. Vérifie l’autorisation du microphone.";
+      el("creditNotice").classList.add("show");
+      window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
+    });
+    recognition.addEventListener("end", () => {
+      el("voiceBtn").disabled = false;
+    });
+    recognition.start();
+  });
+
   const creditPill = el("creditPill");
   const main = document.querySelector(".main");
   const updateComposerHeight = () => {
@@ -1053,6 +1685,14 @@ fileInput.addEventListener("change", async () => {
       el("teamModelGrid").querySelector(".team-model-option")?.focus();
       return;
     }
+    const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    const activeConversation = activeConvo();
+    if(["video", "audio"].includes(selectedMode) && (state.temporaryChat || activeConversation?.temporary)){
+      el("creditNotice").textContent = "Les vidéos et audios doivent être générés dans une conversation enregistrée.";
+      el("creditNotice").classList.add("show");
+      window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
+      return;
+    }
     input.value = "";
     input.style.height = "auto";
     sendMessage(text);
@@ -1078,6 +1718,7 @@ fileInput.addEventListener("change", async () => {
   (async () => {
 
     await loadPersonas();
+    await loadWorkspaces();
 
     await loadConversations();
 

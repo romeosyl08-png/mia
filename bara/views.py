@@ -29,14 +29,29 @@ MAX_AGENT_ITERATIONS = 5
 @login_required
 def workspace_home(request):
     workspaces = Workspace.objects.filter(user=request.user)
-    return render(request, "bara/workspace.html", {"workspaces": workspaces})
+    available_models = AIModel.objects.filter(
+        is_active=True,
+        provider__is_active=True,
+    ).select_related("provider").order_by("provider__name", "name")
+    default_model = available_models.first()
+    return render(request, "bara/workspace.html", {
+        "workspaces": workspaces,
+        "available_models": available_models,
+        "default_model_name": default_model.name if default_model else "",
+    })
 
 
 @login_required
 @require_POST
 def create_workspace(request):
     title = (request.POST.get("title") or "").strip() or "Nouvel espace de travail"
-    workspace = Workspace.objects.create(user=request.user, title=title)
+    model_id = request.POST.get("active_model_id")
+    active_model = AIModel.objects.filter(
+        id=model_id,
+        is_active=True,
+        provider__is_active=True,
+    ).first() if model_id else None
+    workspace = Workspace.objects.create(user=request.user, title=title, active_model=active_model)
     return redirect("bara:detail", workspace_id=workspace.id)
 
 
@@ -144,7 +159,7 @@ def send_message(request, workspace_id):
     messages_payload = list(past_messages)
     messages_payload.append({"role": "user", "content": content})
 
-    workspace_context = get_workspace_context(workspace)
+    workspace_context = get_workspace_context(workspace, content)
     system_prompt = (
         "Tu es un assistant intégré à un espace de travail nommé Bara, qui sert aussi d'atelier de développement. "
         "Tes outils : `list_files`, `read_file`, `write_file`, `edit_file`, `create_folder`, `rename_file`, "
@@ -382,7 +397,7 @@ BASE_PROMPT = (
 )
 
 
-def _build_system_prompt(workspace):
+def _build_system_prompt(workspace, query=""):
     prompt = BASE_PROMPT
     if workspace.instructions.strip():
         prompt += (
@@ -390,7 +405,7 @@ def _build_system_prompt(workspace):
             "(à suivre tant qu'elles ne contredisent pas les règles ci-dessus) :\n"
             + workspace.instructions.strip()
         )
-    context = get_workspace_context(workspace)
+    context = get_workspace_context(workspace, query)
     if context:
         prompt += "\n\n" + context
     return prompt
@@ -588,7 +603,7 @@ def send_message(request, workspace_id, conversation_id):
         conversation.messages.filter(role__in=("user", "assistant")).order_by("created_at").values("role", "content")
     )
     messages_payload = list(past_messages) + [{"role": "user", "content": content}]
-    system_prompt = _build_system_prompt(workspace)
+    system_prompt = _build_system_prompt(workspace, content)
     tool_schemas, mcp_tool_map = _tools_schema(workspace)
     active_tool_names = [tool["function"]["name"] for tool in tool_schemas]
     system_prompt += "\n\nOutils réellement activés pour cette demande : " + ", ".join(active_tool_names)

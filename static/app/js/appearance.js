@@ -116,6 +116,7 @@
 
 
     let appearance = load();
+    const defaultAppearance = { ...appearance };
     const botNameElements = Array.from(document.querySelectorAll("[data-bot-name]"));
     const botAvatarElements = Array.from(document.querySelectorAll("[data-bot-avatar]"));
 
@@ -292,6 +293,19 @@
 
             apply();
 
+        },
+
+        applyPersona(persona) {
+            if (!persona) return;
+            appearance.botName = normalizeValue(persona.appearance_name, defaultAppearance.botName);
+            appearance.botAvatar = normalizeValue(persona.appearance_avatar, defaultAppearance.botAvatar);
+            appearance.accent = ACCENTS.includes(persona.appearance_accent)
+                ? persona.appearance_accent
+                : defaultAppearance.accent;
+            appearance.theme = persona.appearance_theme === "dark" || persona.appearance_theme === "light"
+                ? persona.appearance_theme
+                : defaultAppearance.theme;
+            apply();
         },
 
 
