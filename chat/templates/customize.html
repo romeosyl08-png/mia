@@ -37,6 +37,7 @@
                 <label for="defaultModelSelect">Modèle par défaut</label>
                 <select id="defaultModelSelect">
                     <option value="">Premier modèle disponible</option>
+                    {% if ai_models %}<option value="auto">Auto 2AI</option>{% endif %}
                     {% for model in ai_models %}
                     <option value="{{ model.model_id|escape }}">{{ model.name }} — {{ model.provider.name }}</option>
                     {% endfor %}

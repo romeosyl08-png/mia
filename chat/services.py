@@ -40,7 +40,7 @@ def is_local_provider(provider):
     return provider.slug in {"ollama-local", "mia"}
 
 
-def generate_openai_image(provider, api_key, prompt):
+def generate_openai_image(provider, api_key, prompt, size="1024x1024"):
     if provider.slug != "openai" or not provider.base_url:
         raise ProviderError("La génération d’images nécessite un fournisseur OpenAI configuré.")
     url = provider.base_url.rstrip("/") + "/v1/images/generations"
@@ -48,7 +48,7 @@ def generate_openai_image(provider, api_key, prompt):
         "model": "gpt-image-1",
         "prompt": prompt,
         "n": 1,
-        "size": "1024x1024",
+        "size": size,
         "quality": "medium",
     }
     request = Request(
@@ -243,8 +243,47 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
 
     yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
 
-def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
+def _configured_team_models(models):
+    configured = []
+    for model in models:
+        api_key = model.provider.keys.filter(is_active=True).order_by("id").first()
+        if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
+            continue
+        configured.append((model, api_key.get_key() if api_key else ""))
+    return configured
+
+
+def _plan_execute_verify(configured_models, messages, system_prompt, temperature, max_tokens, top_p):
+    if len(configured_models) < 2:
+        raise ProviderError("La stratégie Planifier/Réaliser/Vérifier nécessite au moins deux modèles configurés.")
+    planner, planner_key = configured_models[0]
+    executor, executor_key = configured_models[1]
+    verifier, verifier_key = configured_models[2] if len(configured_models) > 2 else configured_models[0]
+    plan_prompt = (system_prompt + "\n\nPrépare un plan d'exécution bref, avec des étapes vérifiables. Ne fournis pas la réponse finale et ne révèle aucun raisonnement privé.").strip()
+    plan, plan_input, plan_output = call_llm_provider(
+        planner.provider, planner_key, planner.model_id, messages, plan_prompt, temperature, max_tokens, top_p
+    )
+    execute_prompt = (
+        (system_prompt + "\n\nRéalise la demande en suivant le plan ci-dessous. Donne une proposition complète mais n'affirme pas qu'elle a été vérifiée.\n\nPlan:\n" + plan).strip()
+    )
+    draft, execute_input, execute_output = call_llm_provider(
+        executor.provider, executor_key, executor.model_id, messages, execute_prompt, temperature, max_tokens, top_p
+    )
+    verify_prompt = (
+        (system_prompt + "\n\nVérifie la proposition par rapport à la demande et au plan. Corrige les erreurs puis rends uniquement la réponse finale, sans détailler de raisonnement privé.\n\nPlan:\n" + plan + "\n\nProposition à vérifier:\n" + draft).strip()
+    )
+    final, verify_input, verify_output = call_llm_provider(
+        verifier.provider, verifier_key, verifier.model_id, messages, verify_prompt, temperature, max_tokens, top_p
+    )
+    return final, (plan_input or 0) + (execute_input or 0) + (verify_input or 0), (plan_output or 0) + (execute_output or 0) + (verify_output or 0)
+
+
+def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus"):
     """Fait répondre plusieurs modèles puis demande au premier de synthétiser."""
+    if strategy == "plan_execute_verify":
+        return _plan_execute_verify(
+            _configured_team_models(models), messages, system_prompt, temperature, max_tokens, top_p
+        )
     opinions = []
     responding_models = []
     input_tokens = 0
@@ -299,8 +338,36 @@ def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_token
     return reply, input_tokens + (used_input or 0), output_tokens + (used_output or 0)
 
 
-def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):
+def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus"):
     """Stream a single team model or the team's final synthesis."""
+    if strategy == "plan_execute_verify":
+        configured = _configured_team_models(models)
+        if len(configured) < 2:
+            raise ProviderError("La stratégie Planifier/Réaliser/Vérifier nécessite au moins deux modèles configurés.")
+        planner, planner_key = configured[0]
+        executor, executor_key = configured[1]
+        verifier, verifier_key = configured[2] if len(configured) > 2 else configured[0]
+        plan_prompt = (system_prompt + "\n\nPrépare un plan d'exécution bref, avec des étapes vérifiables. Ne fournis pas la réponse finale et ne révèle aucun raisonnement privé.").strip()
+        plan, plan_input, plan_output = call_llm_provider(
+            planner.provider, planner_key, planner.model_id, messages, plan_prompt, temperature, max_tokens, top_p
+        )
+        execute_prompt = (system_prompt + "\n\nRéalise la demande en suivant le plan ci-dessous. Donne une proposition complète mais n'affirme pas qu'elle a été vérifiée.\n\nPlan:\n" + plan).strip()
+        draft, execute_input, execute_output = call_llm_provider(
+            executor.provider, executor_key, executor.model_id, messages, execute_prompt, temperature, max_tokens, top_p
+        )
+        verify_prompt = (system_prompt + "\n\nVérifie la proposition par rapport à la demande et au plan. Corrige les erreurs puis rends uniquement la réponse finale, sans détailler de raisonnement privé.\n\nPlan:\n" + plan + "\n\nProposition à vérifier:\n" + draft).strip()
+        for event in stream_llm_provider(
+            verifier.provider, verifier_key, verifier.model_id, messages, verify_prompt, temperature, max_tokens, top_p
+        ):
+            if event["type"] == "usage":
+                yield {
+                    "type": "usage",
+                    "input_tokens": (plan_input or 0) + (execute_input or 0) + event.get("input_tokens", 0),
+                    "output_tokens": (plan_output or 0) + (execute_output or 0) + event.get("output_tokens", 0),
+                }
+            else:
+                yield event
+        return
     configured_models = []
     for model in models:
         api_key = model.provider.keys.filter(is_active=True).order_by("id").first()

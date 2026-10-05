@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from ai_user.models import UserAPIKey
 from api.models import AIModel, APIKey, APIProvider
+from chat.models import RoutingObservation
 
 UPSTREAM_OK = {
     "id": "x",
@@ -61,6 +62,17 @@ class ChatCompletionsTests(TestCase):
     def test_invalid_key_is_rejected(self):
         self.assertEqual(self.call(token="sk-ai2ai-wrong").status_code, 401)
 
+    def test_model_catalog_lists_auto_when_an_eligible_provider_exists(self):
+        response = self.client.get(
+            "/v1/models",
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        auto_model = next(item for item in response.json()["data"] if item["id"] == "auto")
+        self.assertEqual(auto_model["owned_by"], "ai2ai-router")
+        self.assertEqual(auto_model["pricing"]["unit"], "dynamic credits per request")
+
     def test_real_usage_is_charged_not_the_reserve(self):
         before = self.balance()
         with patch("api.views.urlopen", return_value=fake_response(UPSTREAM_OK)):
@@ -70,6 +82,94 @@ class ChatCompletionsTests(TestCase):
         self.assertEqual(charged, response.json()["usage"]["credits_charged"])
         self.assertGreaterEqual(charged, 1)
         self.assertLess(charged, 10)  # 17 jetons : la réserve pour max_tokens a été remboursée
+
+    def test_shadow_recommendation_preserves_explicit_api_model(self):
+        alternate_provider = APIProvider.objects.create(
+            name="ObservedProvider", slug="observed-provider", base_url="https://observed.example.test", is_active=True
+        )
+        alternate_key = APIKey(provider=alternate_provider, name="k")
+        alternate_key.set_key("alternate-secret")
+        alternate_key.save()
+        alternate_model = AIModel.objects.create(
+            provider=alternate_provider, name="Observed", model_id="observed-model",
+            input_price_per_million=1, output_price_per_million=2,
+        )
+        for _ in range(5):
+            RoutingObservation.objects.create(
+                user=self.user,
+                surface="api",
+                task_category="general",
+                model_id=alternate_model.model_id,
+                provider_slug=alternate_provider.slug,
+                recommended_model_id=alternate_model.model_id,
+                recommended_provider_slug=alternate_provider.slug,
+                outcome="success",
+            )
+
+        with patch("api.views.urlopen", return_value=fake_response(UPSTREAM_OK)) as mocked:
+            response = self.call()
+
+        self.assertEqual(response.status_code, 200)
+        sent = json.loads(mocked.call_args.args[0].data)
+        self.assertEqual(sent["model"], "fake-model")
+        observation = RoutingObservation.objects.filter(
+            user=self.user, surface="api", model_id="fake-model", outcome="success"
+        ).latest("created_at")
+        self.assertEqual(observation.recommended_model_id, alternate_model.model_id)
+        self.assertEqual(observation.recommended_provider_slug, alternate_provider.slug)
+
+    def test_auto_model_routes_to_observed_public_api_candidate(self):
+        alternate_provider = APIProvider.objects.create(
+            name="AutoProvider", slug="auto-provider", base_url="https://auto.example.test", is_active=True
+        )
+        alternate_key = APIKey(provider=alternate_provider, name="k")
+        alternate_key.set_key("auto-secret")
+        alternate_key.save()
+        alternate_model = AIModel.objects.create(
+            provider=alternate_provider, name="Auto", model_id="auto-candidate",
+            input_price_per_million=1, output_price_per_million=2,
+        )
+        for _ in range(5):
+            RoutingObservation.objects.create(
+                user=self.user,
+                surface="api",
+                task_category="general",
+                model_id=alternate_model.model_id,
+                provider_slug=alternate_provider.slug,
+                outcome="success",
+                charged_credits=5,
+                duration_ms=100,
+            )
+
+        with patch("api.views.urlopen", return_value=fake_response(UPSTREAM_OK)) as mocked:
+            response = self.call({"model": "auto"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["model"], alternate_model.model_id)
+        sent = json.loads(mocked.call_args.args[0].data)
+        self.assertEqual(sent["model"], alternate_model.model_id)
+        self.assertGreaterEqual(response.json()["usage"]["credits_charged"], 1)
+
+    def test_streaming_api_records_completed_shadow_observation(self):
+        upstream = MagicMock()
+        upstream.__iter__.return_value = iter([
+            b'data: {"id":"chunk-1","choices":[{"delta":{"content":"Bonjour"}}],"usage":{"prompt_tokens":12,"completion_tokens":5}}\n\n',
+            b"data: [DONE]\n\n",
+        ])
+        before = self.balance()
+        with patch("api.views.urlopen", return_value=upstream):
+            response = self.call({"stream": True})
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
+        self.assertIn(b"data: [DONE]", body)
+        observation = RoutingObservation.objects.get(user=self.user, surface="api", outcome="success")
+        self.assertEqual(observation.model_id, "fake-model")
+        self.assertEqual(observation.prompt_tokens, 12)
+        self.assertEqual(observation.completion_tokens, 5)
+        self.assertGreater(observation.duration_ms, 0)
+        self.assertLess(self.balance(), before)
 
     def test_insufficient_credits_never_reaches_the_provider(self):
         self.account.debit(self.balance(), reason="usage", note="vider")

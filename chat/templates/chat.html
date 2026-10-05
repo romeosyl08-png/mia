@@ -143,6 +143,61 @@
         </select>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
+      <div class="media-options" id="mediaOptionsPanel" hidden>
+        <label class="media-option" id="imageOptions" hidden>
+          <span>Dimensions de l’image</span>
+          <select id="imageSizeSelect">
+            <option value="1024x1024">Carré · 1024 × 1024 px</option>
+            <option value="1024x1536">Portrait · 1024 × 1536 px</option>
+            <option value="1536x1024">Paysage · 1536 × 1024 px</option>
+          </select>
+        </label>
+        <div class="media-option-group" id="videoOptions" hidden>
+          <label class="media-option">
+            <span>Format</span>
+            <select id="videoAspectRatio">
+              <option value="16:9">Paysage · 16:9</option>
+              <option value="9:16">Portrait · 9:16</option>
+              <option value="1:1">Carré · 1:1</option>
+            </select>
+          </label>
+          <label class="media-option">
+            <span>Résolution</span>
+            <select id="videoResolution">
+              <option value="480p">480p</option>
+              <option value="720p" selected>720p</option>
+            </select>
+          </label>
+          <label class="media-option">
+            <span>Durée</span>
+            <select id="videoDuration">
+              <option value="4">4 secondes</option>
+              <option value="6">6 secondes</option>
+              <option value="8" selected>8 secondes</option>
+              <option value="10">10 secondes</option>
+              <option value="15">15 secondes</option>
+              <option value="30">30 secondes</option>
+            </select>
+          </label>
+          <label class="media-option-check"><input id="videoGenerateAudio" type="checkbox" checked><span>Générer aussi le son</span></label>
+        </div>
+        <div class="media-option-group" id="audioOptions" hidden>
+          <label class="media-option">
+            <span>Style musical</span>
+            <select id="audioStyle">
+              <option value="">Décrit dans le prompt</option>
+              <option value="ambient">Ambient</option>
+              <option value="cinematic">Cinématique</option>
+              <option value="electronic">Électronique</option>
+              <option value="jazz">Jazz</option>
+              <option value="pop">Pop</option>
+              <option value="orchestral">Orchestral</option>
+            </select>
+          </label>
+          <label class="media-option-check"><input id="audioInstrumental" type="checkbox"><span>Instrumental, sans voix</span></label>
+        </div>
+        <span class="media-options-note">Options disponibles selon le fournisseur et le modèle actifs.</span>
+      </div>
       <div class="generation-controls" id="generationControlsPanel" hidden>
         <label class="generation-control">
           <span>Température <output id="temperatureValue">0,7</output></span>
@@ -166,6 +221,9 @@
         <a class="workspace-open" id="workspaceOpen" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
       </div>
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
+  {% if ai_models %}
+  <button type="button" class="model-chip auto-model-chip" id="autoModelBtn" data-model-id="auto" aria-label="Choix automatique du modèle">✦ Auto 2AI</button>
+  {% endif %}
   <button type="button" class="model-chip team-chip" id="teamModeBtn" data-team="true">
     <span class="model-dot" aria-hidden="true">✦</span>Équipe IA
   </button>
@@ -195,6 +253,11 @@
           </div>
           <div class="team-count" id="teamCount">0 / 3</div>
         </div>
+        <label class="team-strategy-control" for="teamStrategySelect">Stratégie</label>
+        <select id="teamStrategySelect" class="team-strategy-select">
+          <option value="consensus">Comparer et synthétiser</option>
+          <option value="plan_execute_verify">Planifier, réaliser, vérifier</option>
+        </select>
         <div class="team-model-grid" id="teamModelGrid">
   {% for group in models_by_provider %}
     <div class="team-model-group">

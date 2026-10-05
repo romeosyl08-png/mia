@@ -23,6 +23,7 @@
 
   <h2>Démarrage</h2>
   <p>URL de base : <code>{{ base_url }}</code></p>
+  <p>Pour déléguer le choix du modèle, utilise <code>"model": "auto"</code>. L'API choisit alors parmi les fournisseurs publics actifs et configurés, selon le score disponible et le coût estimé; les modèles nommés restent inchangés.</p>
 <pre><code>curl {{ base_url }}/chat/completions \
   -H "Authorization: Bearer sk-ai2ai-VOTRE_CLE" \
   -H "Content-Type: application/json" \

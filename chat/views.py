@@ -15,8 +15,9 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 
-from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona
-from .media_generation import generate_media
+from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
+from .media_generation import generate_media, normalize_generation_options
+from .routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 from ai_user.models import InsufficientCreditsError
 
 from .services import ProviderError, call_llm_provider, call_llm_team, estimate_cost, generate_openai_image, is_local_provider, stream_llm_provider, stream_llm_team
@@ -41,6 +42,18 @@ def _image_generation_credits(prompt):
 	input_tokens = max(1, round(len(prompt) / 4))
 	cost = IMAGE_GENERATION_COST_USD + input_tokens * IMAGE_PROMPT_COST_PER_MILLION / 1_000_000
 	return max(1, round(cost * 1.5 * 10_000))
+
+
+def _media_generation_credits(media_type, provider_slug, prompt, options):
+	if media_type == 'image':
+		base = _image_generation_credits(prompt) if provider_slug == 'openai' else settings.MEDIA_GENERATION_CREDITS['image']
+		width, height = (int(value) for value in options['image_size'].split('x'))
+		return max(1, round(base * width * height / (1024 * 1024)))
+	if media_type == 'video':
+		base = settings.MEDIA_GENERATION_CREDITS['video']
+		resolution_factor = 0.6 if options['resolution'] == '480p' else 1
+		return max(1, round(base * options['duration_seconds'] / 8 * resolution_factor))
+	return max(1, settings.MEDIA_GENERATION_CREDITS['audio'])
 
 
 def _media_provider_options():
@@ -79,7 +92,8 @@ def chat_home(request):
 	]
 	preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
 	available_model_ids = set(models.values_list('model_id', flat=True))
-	default_model_id = preferences.default_model_id if preferences.default_model_id in available_model_ids else ''
+	default_model_id = 'auto' if preferences.default_model_id == 'auto' and available_model_ids else ''
+	default_model_id = default_model_id or (preferences.default_model_id if preferences.default_model_id in available_model_ids else '')
 	default_model_id = default_model_id or (models.first().model_id if models.exists() else 'demo-mistral')
 	media_provider_options = _media_provider_options()
 	image_provider_available = any('image' in provider['modalities'] for provider in media_provider_options)
@@ -233,7 +247,7 @@ def _file_tool_schemas():
 	]
 
 
-def _run_file_tools(workspace, provider, api_key, model_id, messages, system_prompt, temperature, max_tokens=500, top_p=1.0):
+def _run_file_tools(workspace, provider, api_key, model_id, messages, system_prompt, temperature, max_tokens=500, top_p=1.0, tools_used=None):
 	tool_messages = list(messages)
 	tool_schemas = _file_tool_schemas()
 	input_tokens = 0
@@ -271,6 +285,8 @@ def _run_file_tools(workspace, provider, api_key, model_id, messages, system_pro
 			if not isinstance(arguments, dict):
 				arguments = {}
 			if tool_name in FILE_TOOL_NAMES:
+				if tools_used is not None:
+					tools_used.add(tool_name)
 				result = execute_tool(tool_name, workspace, arguments)
 			else:
 				result = {"error": "Cet outil n’est pas autorisé dans le chat."}
@@ -311,6 +327,9 @@ class SendMessageView(View):
 		mode = payload.get('mode', 'chat')
 		if mode not in {'chat', 'web', 'deep', 'image'}:
 			return _chat_error('Mode de conversation invalide.', 'invalid_request', 400)
+		team_strategy = str(payload.get('team_strategy') or 'consensus')
+		if team_strategy not in {'consensus', 'plan_execute_verify'}:
+			return _chat_error('Stratégie équipe invalide.', 'invalid_request', 400)
 		if mode == 'image':
 			return _chat_error('La génération d’images n’est pas configurée sur ce serveur.', 'image_generation_unavailable', 501)
 		
@@ -325,12 +344,18 @@ class SendMessageView(View):
 		preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
 		model_id = payload.get('model_id') or preferences.default_model_id
 		team_mode = bool(payload.get('team_mode'))
+		auto_requested = not team_mode and model_id == 'auto'
 		team_ids = payload.get('team_model_ids') or []
 		if not isinstance(team_ids, list):
 			team_ids = []
 		if team_mode:
 			team_models = list(model_query.filter(model_id__in=team_ids[:3])) if team_ids else []
 			model = team_models[0] if team_models else None
+			if team_strategy == 'plan_execute_verify' and len(team_models) < 2:
+				return _chat_error('La stratégie Planifier/Réaliser/Vérifier nécessite au moins deux modèles sélectionnés.', 'invalid_request', 400)
+		elif auto_requested:
+			team_models = []
+			model = model_query.first()
 		else:
 			team_models = []
 			model = model_query.filter(model_id=model_id).first() if model_id else model_query.first()
@@ -375,7 +400,7 @@ class SendMessageView(View):
 			conversation.save(update_fields=['workspace', 'updated_at'])
 		if workspace and team_mode:
 			return _chat_error('Désactive le mode Équipe IA pour utiliser les fichiers Bara.', 'invalid_request', 400)
-		if workspace and 'anthropic' in f"{model.provider.slug} {model.provider.name}".lower():
+		if workspace and not auto_requested and 'anthropic' in f"{model.provider.slug} {model.provider.name}".lower():
 			return _chat_error('Les outils de fichiers ne sont pas disponibles avec Anthropic. Choisis Mia, Groq, OpenAI ou Together.', 'unsupported_tools', 400)
 
 		system_prompt = str(payload.get('system_prompt', ''))
@@ -437,12 +462,58 @@ class SendMessageView(View):
 				"\n\nMode réponse approfondie : analyse soigneusement la demande, vérifie les hypothèses, "
 				"puis donne une réponse complète et structurée. Ne révèle pas de raisonnement privé."
 			)
+		if auto_requested:
+			try:
+				category = task_category('chat', mode, workspace=bool(workspace), tools=bool(workspace))
+				candidates = eligible_models(
+					surface='chat',
+					workspace=bool(workspace),
+					streamed='text/event-stream' in request.headers.get('Accept', ''),
+					tools=bool(workspace),
+				)
+				candidate_costs = {
+					model_key(candidate): estimate_cost(
+						content, candidate, full_system_prompt, messages, max_output_tokens=max_tokens,
+					)[0]
+					for candidate in candidates
+				}
+				router_fallback = model if model in candidates else candidates[0] if candidates else model
+				decision = recommend_model(request.user, candidates, category, candidate_costs, current_model=router_fallback)
+				recommended_model = model_query.filter(
+					provider__slug=decision['provider_slug'],
+					model_id=decision['model_id'],
+				).first()
+				if recommended_model:
+					model = recommended_model
+			except Exception:
+				logger.exception('Auto model routing failed; keeping fallback model (user_id=%s)', request.user.pk)
 		reserve, estimated_input = estimate_cost(content, model, full_system_prompt, messages, max_output_tokens=max_tokens)
 		if workspace:
 			reserve *= MAX_FILE_TOOL_ITERATIONS + 1
 		elif team_mode:
 			reserve *= max(1, len(team_models) + 1)
 		account = request.user.credit_account
+		shadow_run = None
+		file_tools_used = set()
+		if not temporary:
+			category = task_category('chat', mode, workspace=bool(workspace), tools=bool(workspace))
+			shadow_run = safe_shadow_run(
+				request.user,
+				'chat',
+				category,
+				team_models if team_mode else [model],
+				lambda candidate: estimate_cost(
+					content, candidate, full_system_prompt, messages, max_output_tokens=max_tokens,
+				)[0],
+				strategy='workspace' if workspace else f'team_{team_strategy}' if team_mode else 'single',
+				workspace=workspace,
+				tools_used=file_tools_used,
+				reserved_credits=reserve,
+				streamed='text/event-stream' in request.headers.get('Accept', ''),
+				has_tools=bool(workspace),
+				workspace_mode=bool(workspace),
+			)
+		balance_before = account.balance
 		try:
 			account.debit(reserve, reason='usage', note=f'Reservation {model.model_id}')
 		except InsufficientCreditsError:
@@ -454,6 +525,7 @@ class SendMessageView(View):
 					request, conversation, persona, content, model, team_models, team_mode,
 					messages, full_system_prompt, temperature, top_p, max_tokens,
 					reserve, estimated_input, account, edit_message, temporary, sources,
+					shadow_run, balance_before, team_strategy,
 				),
 				content_type='text/event-stream',
 				headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
@@ -464,6 +536,7 @@ class SendMessageView(View):
 				api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
 				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
 					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
+					record_shadow_run(request.user, shadow_run, 'error')
 					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
 				reply, provider_input, provider_output = _run_file_tools(
 					workspace,
@@ -475,15 +548,17 @@ class SendMessageView(View):
 					temperature,
 					max_tokens,
 					top_p,
+					tools_used=file_tools_used,
 				)
 			elif team_mode:
 				reply, provider_input, provider_output = call_llm_team(
-					team_models, messages, full_system_prompt, temperature, max_tokens, top_p
+					team_models, messages, full_system_prompt, temperature, max_tokens, top_p, strategy=team_strategy
 				)
 			else:
 				api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
 				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
 					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
+					record_shadow_run(request.user, shadow_run, 'error')
 					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
 				reply, provider_input, provider_output = call_llm_provider(
 					model.provider,
@@ -497,6 +572,7 @@ class SendMessageView(View):
 				)
 		except ProviderError as error:
 			account.credit(reserve, reason='adjustment', note='Remboursement appel IA échoué')
+			record_shadow_run(request.user, shadow_run, 'error', tools_used=file_tools_used)
 			return _chat_error(str(error), 'provider_error', 502)
 		except Exception:
 			logger.exception(
@@ -505,18 +581,30 @@ class SendMessageView(View):
 				request.user.pk,
 			)
 			account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
+			record_shadow_run(request.user, shadow_run, 'error', tools_used=file_tools_used)
 			return _chat_error(
 				"Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.",
 				'provider_error',
 				502,
 			)
 
-		return JsonResponse(_complete_chat_turn(
+		result = _complete_chat_turn(
 			request.user, conversation, persona, content, reply, model, account, reserve,
 			estimated_input, provider_input, provider_output, edit_message, workspace, temporary, sources,
-		))
+		)
+		observation = record_shadow_run(
+			request.user, shadow_run, 'success',
+			charged_credits=max(0, balance_before - account.balance),
+			prompt_tokens=result['prompt_tokens'],
+			completion_tokens=result['completion_tokens'],
+			tools_used=file_tools_used,
+			assistant_message_id=result.get('assistant_message_id'),
+		)
+		if observation:
+			result['routing_observation_id'] = observation.id
+		return JsonResponse(result)
 
-	def _stream_reply(self, request, conversation, persona, content, model, team_models, team_mode, messages, system_prompt, temperature, top_p, max_tokens, reserve, estimated_input, account, edit_message=None, temporary=False, sources=None):
+	def _stream_reply(self, request, conversation, persona, content, model, team_models, team_mode, messages, system_prompt, temperature, top_p, max_tokens, reserve, estimated_input, account, edit_message=None, temporary=False, sources=None, shadow_run=None, balance_before=0, team_strategy="consensus"):
 		def events():
 			reply_parts = []
 			provider_input = 0
@@ -538,7 +626,10 @@ class SendMessageView(View):
 						top_p,
 					)
 				else:
-					provider_stream = stream_llm_team(team_models, messages, system_prompt, temperature, max_tokens, top_p)
+					provider_stream = stream_llm_team(
+						team_models, messages, system_prompt, temperature, max_tokens, top_p,
+						strategy=team_strategy,
+					)
 
 				for event in provider_stream:
 					if event['type'] == 'delta':
@@ -553,10 +644,20 @@ class SendMessageView(View):
 					request.user, conversation, persona, content, reply, model, account, reserve,
 					estimated_input, provider_input, provider_output, edit_message, temporary=temporary, sources=sources,
 				)
+				observation = record_shadow_run(
+					request.user, shadow_run, 'success',
+					charged_credits=max(0, balance_before - account.balance),
+					prompt_tokens=result['prompt_tokens'],
+					completion_tokens=result['completion_tokens'],
+					assistant_message_id=result.get('assistant_message_id'),
+				)
+				if observation:
+					result['routing_observation_id'] = observation.id
 				settled = True
 				yield _sse_event({'type': 'done', **result})
 			except ProviderError as error:
 				account.credit(reserve, reason='adjustment', note='Remboursement appel IA échoué')
+				record_shadow_run(request.user, shadow_run, 'error')
 				settled = True
 				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': str(error)}})
 			except Exception:
@@ -566,11 +667,13 @@ class SendMessageView(View):
 					request.user.pk,
 				)
 				account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
+				record_shadow_run(request.user, shadow_run, 'error')
 				settled = True
 				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': 'Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.'}})
 			finally:
 				if not settled:
 					account.credit(reserve, reason='adjustment', note='Remboursement flux interrompu')
+					record_shadow_run(request.user, shadow_run, 'interrupted')
 
 		return events()
 
@@ -657,6 +760,15 @@ class ImageGenerationView(View):
 			model_id = 'gpt-image-1'
 		if not model_id:
 			return _chat_error('Ce fournisseur ne propose pas ce type de média.', 'media_generation_unavailable', 503)
+		try:
+			generation_options = normalize_generation_options(
+				media_type,
+				provider_slug,
+				model_id,
+				payload.get('generation_options'),
+			)
+		except ProviderError as error:
+			return _chat_error(str(error), 'invalid_request', 400)
 
 		provider = APIProvider.objects.filter(slug=provider_slug, is_active=True).first()
 		api_key = provider.keys.filter(is_active=True).order_by('id').first() if provider else None
@@ -675,7 +787,7 @@ class ImageGenerationView(View):
 			workspace = get_object_or_404(Workspace, id=payload['workspace_id'], user=request.user)
 
 		account = request.user.credit_account
-		charge = _image_generation_credits(prompt) if media_type == 'image' and provider_slug == 'openai' else max(1, settings.MEDIA_GENERATION_CREDITS[media_type])
+		charge = _media_generation_credits(media_type, provider_slug, prompt, generation_options)
 		try:
 			account.debit(charge, reason='usage', note=f'Génération {media_type} {provider_slug}')
 		except InsufficientCreditsError:
@@ -683,11 +795,15 @@ class ImageGenerationView(View):
 
 		try:
 			if provider_slug == 'openai':
-				image_base64, _usage = generate_openai_image(provider, api_key.get_key(), prompt)
+				image_base64, _usage = generate_openai_image(
+					provider, api_key.get_key(), prompt, size=generation_options['image_size'],
+				)
 				media_bytes = base64.b64decode(image_base64, validate=True)
 				content_type = 'image/png'
 			else:
-				media_bytes, content_type = generate_media(provider, api_key.get_key(), media_type, prompt, model_id)
+				media_bytes, content_type = generate_media(
+					provider, api_key.get_key(), media_type, prompt, model_id, generation_options,
+				)
 		except (ProviderError, ValueError) as error:
 			account.credit(charge, reason='adjustment', note='Remboursement génération média échouée')
 			return _chat_error(str(error), 'media_generation_failed', 502)
@@ -805,7 +921,9 @@ class ChatPreferencesView(View):
 		preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
 		if 'default_model_id' in payload:
 			model_id = str(payload.get('default_model_id') or '').strip()
-			if model_id and not AIModel.objects.filter(
+			if model_id == 'auto' and not AIModel.objects.filter(is_active=True, provider__is_active=True).exists():
+				return _chat_error('Aucun modèle actif ne permet le routage automatique.', 'invalid_request', 400)
+			if model_id and model_id != 'auto' and not AIModel.objects.filter(
 				model_id=model_id,
 				is_active=True,
 				provider__is_active=True,
@@ -818,6 +936,42 @@ class ChatPreferencesView(View):
 			preferences.max_tokens = _bounded_int(payload['max_tokens'], 500, 1, 8192)
 		preferences.save()
 		return JsonResponse(self._data(preferences))
+
+
+@method_decorator(login_required(login_url='/auth/?next=/chat/api/messages/feedback/'), name='dispatch')
+class RoutingFeedbackView(View):
+	def post(self, request, message_id):
+		try:
+			payload = json.loads(request.body or '{}')
+		except (TypeError, ValueError):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		if not isinstance(payload, dict):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		rating = payload.get('rating')
+		if rating is not None and (not isinstance(rating, str) or rating not in {'positive', 'negative'}):
+			return _chat_error('Feedback invalide.', 'invalid_request', 400)
+		message = get_object_or_404(Message, id=message_id, role='assistant', conversation__user=request.user)
+		observation = get_object_or_404(
+			RoutingObservation,
+			user=request.user,
+			assistant_message=message,
+		)
+		if rating is None:
+			RoutingFeedback.objects.filter(observation=observation, user=request.user).delete()
+			return JsonResponse({'routing_observation_id': observation.id, 'rating': None})
+		feedback, _ = RoutingFeedback.objects.update_or_create(
+			observation=observation,
+			defaults={
+				'user': request.user,
+				'rating': rating,
+				'correction_needed': rating == 'negative',
+			},
+		)
+		return JsonResponse({
+			'routing_observation_id': observation.id,
+			'rating': feedback.rating,
+			'correction_needed': feedback.correction_needed,
+		})
 
 
 class ConversationDetailView(View):
@@ -840,6 +994,11 @@ class ConversationDetailView(View):
 			if media:
 				message_data['media_url'] = reverse('chat:generated-media', args=[media.id])
 				message_data['media_kind'] = media.kind
+			routing_observation = getattr(message, 'routing_observation', None)
+			if routing_observation:
+				message_data['routing_observation_id'] = routing_observation.id
+				feedback = getattr(routing_observation, 'feedback', None)
+				message_data['routing_feedback'] = feedback.rating if feedback else None
 			messages.append(message_data)
 		return JsonResponse({"id": conv.id, "title": conv.title, "persona_id": conv.persona_id, "workspace_id": conv.workspace_id, "folder": conv.folder, "is_archived": conv.is_archived, "messages": messages})
 

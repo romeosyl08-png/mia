@@ -11,6 +11,7 @@ urlpatterns = [
 	path('chat/api/media/generate/', views.ImageGenerationView.as_view(), name='media-generate'),
 	path('chat/api/media/gallery/', views.GeneratedMediaGalleryView.as_view(), name='generated-media-gallery'),
 	path('chat/api/media/<int:pk>/', views.GeneratedMediaView.as_view(), name='generated-media'),
+	path('chat/api/messages/<int:message_id>/feedback/', views.RoutingFeedbackView.as_view(), name='routing-feedback'),
 	path('dap/', views.dap_home, name='dap-home'),
     path("customize/", views.customize, name="customize"),
 	path('nous/', views.about_page, name='about'),

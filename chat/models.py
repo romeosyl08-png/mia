@@ -38,6 +38,94 @@ class ChatPreferences(models.Model):
         return f"Chat preferences ({self.user})"
 
 
+class RoutingObservation(models.Model):
+    SURFACE_CHOICES = [
+        ("chat", "Chat"),
+        ("bara", "Bara"),
+        ("api", "API"),
+    ]
+    OUTCOME_CHOICES = [
+        ("success", "Succès fournisseur"),
+        ("error", "Échec fournisseur"),
+        ("interrupted", "Interrompu"),
+    ]
+
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="routing_observations",
+    )
+    assistant_message = models.OneToOneField(
+        "chat.Message",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="routing_observation",
+    )
+    workspace = models.ForeignKey(
+        "bara.Workspace",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="routing_observations",
+    )
+    surface = models.CharField(max_length=12, choices=SURFACE_CHOICES, db_index=True)
+    task_category = models.CharField(max_length=40, default="general", db_index=True)
+    strategy = models.CharField(max_length=40, default="single")
+    model_id = models.CharField(max_length=150)
+    provider_slug = models.CharField(max_length=100)
+    recommended_model_id = models.CharField(max_length=150, blank=True)
+    recommended_provider_slug = models.CharField(max_length=100, blank=True)
+    recommendation_confidence = models.FloatField(default=0)
+    recommendation_score = models.FloatField(default=0)
+    recommended_estimated_credits = models.PositiveIntegerField(default=0)
+    recommendation_basis = models.CharField(max_length=24, default="prior")
+    outcome = models.CharField(max_length=12, choices=OUTCOME_CHOICES, db_index=True)
+    estimated_credits = models.PositiveIntegerField(default=0)
+    charged_credits = models.PositiveIntegerField(default=0)
+    duration_ms = models.PositiveIntegerField(default=0)
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    models_used = models.JSONField(default=list, blank=True)
+    tools_used = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["task_category", "model_id", "-created_at"]),
+            models.Index(fields=["user", "task_category", "-created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.surface}:{self.task_category} — {self.model_id} ({self.outcome})"
+
+
+class RoutingFeedback(models.Model):
+    RATING_CHOICES = [
+        ("positive", "Utile"),
+        ("negative", "À améliorer"),
+    ]
+
+    observation = models.OneToOneField(
+        RoutingObservation,
+        on_delete=models.CASCADE,
+        related_name="feedback",
+    )
+    user = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="routing_feedback",
+    )
+    rating = models.CharField(max_length=10, choices=RATING_CHOICES)
+    correction_needed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.rating} — {self.observation}"
+
+
 class Conversation(models.Model):
     user = models.ForeignKey(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
     persona = models.ForeignKey(Persona, on_delete=models.SET_NULL, null=True, blank=True)

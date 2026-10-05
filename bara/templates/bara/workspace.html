@@ -153,6 +153,7 @@
       {% empty %}
         <option value="">Aucun modèle disponible</option>
       {% endfor %}
+      {% if available_models %}<option value="auto">Auto 2AI</option>{% endif %}
     </select>
     <button type="submit">Créer</button>
   </form>
@@ -161,7 +162,7 @@
     {% for item in workspaces %}
       <a class="ws-card" href="{% url 'bara:detail' item.id %}">
         <strong>{{ item.title }}</strong>
-        <span>{{ item.active_model.name|default:default_model_name|default:"Aucun modèle disponible" }} · {{ item.updated_at|date:"d/m/Y" }}</span>
+        <span>{% if item.auto_route %}Auto 2AI{% else %}{{ item.active_model.name|default:default_model_name|default:"Aucun modèle disponible" }}{% endif %} · {{ item.updated_at|date:"d/m/Y" }}</span>
       </a>
     {% empty %}
       <div class="ws-empty">Aucun espace de travail pour l'instant — crée le premier ci-dessus.</div>
@@ -182,9 +183,10 @@
         <form method="post" action="{% url 'bara:update-model' workspace.id %}" style="display:inline-flex;gap:6px;align-items:center;">
           {% csrf_token %}
           <select name="active_model_id" onchange="this.form.submit()" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);">
-            <option value="">Aucun modèle</option>
+            <option value="auto" {% if workspace.auto_route %}selected{% endif %}>Auto 2AI</option>
+            <option value="" {% if not workspace.auto_route and not workspace.active_model_id %}selected{% endif %}>Aucun modèle</option>
             {% for model in available_models %}
-              <option value="{{ model.id }}" {% if workspace.active_model_id == model.id %}selected{% endif %}>{{ model.name }} — {{ model.provider.name }}</option>
+              <option value="{{ model.id }}" {% if not workspace.auto_route and workspace.active_model_id == model.id %}selected{% endif %}>{{ model.name }} — {{ model.provider.name }}</option>
             {% endfor %}
           </select>
         </form>

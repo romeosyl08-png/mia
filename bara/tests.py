@@ -13,6 +13,7 @@ from bara.tools.definitions import run_command, search_code
 from bara.tools.sandbox import run_sandbox_command
 from bara.views import _tools_schema
 from chat.services import ProviderError
+from chat.models import RoutingObservation
 
 
 class WorkspaceToolTests(TestCase):
@@ -30,6 +31,7 @@ class WorkspaceToolTests(TestCase):
         self.assertContains(response, "Workspace model")
         self.assertContains(response, "Workspace model ·")
         self.assertNotContains(response, "Aucun modèle disponible")
+        self.assertContains(response, 'value="auto"')
 
         response = self.client.post(reverse("bara:create"), {
             "title": "Workspace choisi",
@@ -38,6 +40,15 @@ class WorkspaceToolTests(TestCase):
         self.assertEqual(response.status_code, 302)
         created = Workspace.objects.get(user=self.user, title="Workspace choisi")
         self.assertEqual(created.active_model_id, model.id)
+
+        response = self.client.post(reverse("bara:create"), {
+            "title": "Workspace Auto",
+            "active_model_id": "auto",
+        })
+        self.assertEqual(response.status_code, 302)
+        auto_workspace = Workspace.objects.get(user=self.user, title="Workspace Auto")
+        self.assertTrue(auto_workspace.auto_route)
+        self.assertEqual(auto_workspace.active_model_id, model.id)
 
     def test_search_code_finds_matching_lines(self):
         WorkFile.objects.create(
@@ -70,6 +81,98 @@ class WorkspaceToolTests(TestCase):
 
         self.assertIn("Quasar spectroscopy", context)
         self.assertNotIn("bakery schedule", context)
+
+    def test_bara_agent_records_shadow_route_without_changing_selected_model(self):
+        provider = APIProvider.objects.create(name="Bara router provider", slug="bara-router", base_url="https://provider.example.test")
+        model = AIModel.objects.create(provider=provider, name="Workspace model", model_id="bara-router-model")
+        provider.keys.create(name="server-key", key="server-secret")
+        self.workspace.active_model = model
+        self.workspace.save(update_fields=["active_model"])
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 10000
+        self.user.credit_account.save(update_fields=["balance"])
+        self.client.force_login(self.user)
+
+        events = [
+            {"type": "delta", "content": "Réponse Bara."},
+            {"type": "done", "usage": {"prompt_tokens": 12, "completion_tokens": 8}},
+        ]
+        with patch("bara.views.call_llm_with_tools_stream", return_value=iter(events)) as provider_call:
+            response = self.client.post(
+                reverse("bara:message", args=[self.workspace.id, conversation.id]),
+                {"content": "Analyse ce projet"},
+                HTTP_ACCEPT="text/event-stream",
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"R\xc3\xa9ponse Bara.", body)
+        provider_call.assert_called_once()
+        self.assertEqual(provider_call.call_args.kwargs["model_id"], model.model_id)
+        observation = RoutingObservation.objects.get(user=self.user, surface="bara")
+        self.assertEqual(observation.model_id, model.model_id)
+        self.assertEqual(observation.task_category, "coding")
+        self.assertEqual(observation.outcome, "success")
+
+    def test_bara_auto_workspace_routes_to_observed_model_and_keeps_fallback(self):
+        fallback_provider = APIProvider.objects.create(
+            name="A Bara fallback", slug="bara-auto-fallback", base_url="https://fallback.example.test"
+        )
+        fallback_model = AIModel.objects.create(
+            provider=fallback_provider, name="Fallback", model_id="bara-auto-fallback-model",
+            input_price_per_million=1, output_price_per_million=2,
+        )
+        fallback_provider.keys.create(name="fallback-key", key="fallback-secret")
+        preferred_provider = APIProvider.objects.create(
+            name="B Bara preferred", slug="bara-auto-preferred", base_url="https://preferred.example.test"
+        )
+        preferred_model = AIModel.objects.create(
+            provider=preferred_provider, name="Preferred", model_id="bara-auto-preferred-model",
+            input_price_per_million=1, output_price_per_million=2,
+        )
+        preferred_provider.keys.create(name="preferred-key", key="preferred-secret")
+        self.workspace.active_model = fallback_model
+        self.workspace.auto_route = False
+        self.workspace.save(update_fields=["active_model", "auto_route"])
+        self.client.force_login(self.user)
+        selection_response = self.client.post(
+            reverse("bara:update-model", args=[self.workspace.id]),
+            {"active_model_id": "auto"},
+        )
+        self.assertEqual(selection_response.status_code, 302)
+        self.workspace.refresh_from_db()
+        self.assertTrue(self.workspace.auto_route)
+        self.assertEqual(self.workspace.active_model_id, fallback_model.id)
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 10000
+        self.user.credit_account.save(update_fields=["balance"])
+        for _ in range(5):
+            RoutingObservation.objects.create(
+                user=self.user,
+                workspace=self.workspace,
+                surface="bara",
+                task_category="coding",
+                model_id=preferred_model.model_id,
+                provider_slug=preferred_provider.slug,
+                outcome="success",
+            )
+        with patch("bara.views.call_llm_with_tools_stream", return_value=iter([
+            {"type": "delta", "content": "Réponse auto Bara."},
+            {"type": "done", "usage": {"prompt_tokens": 12, "completion_tokens": 8}},
+        ])) as provider_call:
+            response = self.client.post(
+                reverse("bara:message", args=[self.workspace.id, conversation.id]),
+                {"content": "Analyse ce projet"},
+                HTTP_ACCEPT="text/event-stream",
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"R\xc3\xa9ponse auto Bara.", body)
+        self.assertEqual(provider_call.call_args.kwargs["model_id"], preferred_model.model_id)
+        self.workspace.refresh_from_db()
+        self.assertTrue(self.workspace.auto_route)
+        self.assertEqual(self.workspace.active_model_id, fallback_model.id)
 
     def test_run_command_preserves_environment_home(self):
         old_home = os.environ.get("HOME")

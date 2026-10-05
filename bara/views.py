@@ -19,6 +19,7 @@ from .tools import definitions  # noqa: F401 — déclenche l'enregistrement des
 from .mcp_client import call_mcp_tool, list_mcp_tools, validate_mcp_endpoint
 from django.http import FileResponse
 from chat.services import is_local_provider
+from chat.routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -46,12 +47,15 @@ def workspace_home(request):
 def create_workspace(request):
     title = (request.POST.get("title") or "").strip() or "Nouvel espace de travail"
     model_id = request.POST.get("active_model_id")
+    auto_route = model_id == "auto"
     active_model = AIModel.objects.filter(
         id=model_id,
         is_active=True,
         provider__is_active=True,
-    ).first() if model_id else None
-    workspace = Workspace.objects.create(user=request.user, title=title, active_model=active_model)
+    ).first() if model_id and not auto_route else None
+    if auto_route:
+        active_model = AIModel.objects.filter(is_active=True, provider__is_active=True).order_by("provider__name", "name").first()
+    workspace = Workspace.objects.create(user=request.user, title=title, active_model=active_model, auto_route=auto_route)
     return redirect("bara:detail", workspace_id=workspace.id)
 
 
@@ -191,8 +195,10 @@ def send_message(request, workspace_id):
 def update_model(request, workspace_id):
     workspace = get_object_or_404(Workspace, id=workspace_id, user=request.user)
     model_id = request.POST.get("active_model_id")
-    workspace.active_model = AIModel.objects.filter(id=model_id, is_active=True).first() if model_id else None
-    workspace.save(update_fields=["active_model", "updated_at"])
+    workspace.auto_route = model_id == "auto"
+    if not workspace.auto_route:
+        workspace.active_model = AIModel.objects.filter(id=model_id, is_active=True).first() if model_id else None
+    workspace.save(update_fields=["active_model", "auto_route", "updated_at"])
     return redirect("bara:detail", workspace_id=workspace.id)
 
 @login_required
@@ -594,11 +600,6 @@ def send_message(request, workspace_id, conversation_id):
     if not active_model:
         return JsonResponse({"error": "Aucun modèle actif n'est configuré."}, status=503)
 
-    api_key_obj = active_model.provider.keys.filter(is_active=True).order_by("id").first()
-    if not api_key_obj and not is_local_provider(active_model.provider):
-        return JsonResponse({"error": "Aucune clé API active pour ce fournisseur."}, status=503)
-    api_key = api_key_obj.get_key() if api_key_obj else ""
-
     past_messages = list(
         conversation.messages.filter(role__in=("user", "assistant")).order_by("created_at").values("role", "content")
     )
@@ -608,9 +609,49 @@ def send_message(request, workspace_id, conversation_id):
     active_tool_names = [tool["function"]["name"] for tool in tool_schemas]
     system_prompt += "\n\nOutils réellement activés pour cette demande : " + ", ".join(active_tool_names)
 
+    if workspace.auto_route:
+        candidates = eligible_models(surface="bara", workspace=True, tools=bool(tool_schemas))
+        fallback_model = active_model if active_model in candidates else candidates[0] if candidates else active_model
+        costs = {
+            model_key(candidate): estimate_cost(content, candidate, system_prompt, past_messages)[0] * MAX_AGENT_ITERATIONS
+            for candidate in candidates
+        }
+        decision = recommend_model(
+            request.user,
+            candidates,
+            task_category("bara", workspace=True, tools=bool(tool_schemas)),
+            costs,
+            current_model=fallback_model,
+        )
+        routed_model = next(
+            (candidate for candidate in candidates
+             if candidate.provider.slug == decision["provider_slug"] and candidate.model_id == decision["model_id"]),
+            None,
+        )
+        if routed_model:
+            active_model = routed_model
+
+    api_key_obj = active_model.provider.keys.filter(is_active=True).order_by("id").first()
+    if not api_key_obj and not is_local_provider(active_model.provider):
+        return JsonResponse({"error": "Aucune clé API active pour ce fournisseur."}, status=503)
+    api_key = api_key_obj.get_key() if api_key_obj else ""
+
     reserve, estimated_input = estimate_cost(content, active_model, system_prompt, past_messages)
     reserve *= MAX_AGENT_ITERATIONS
     account = request.user.credit_account
+    shadow_category = task_category("bara", workspace=True, tools=bool(tool_schemas))
+    shadow_run = safe_shadow_run(
+        request.user,
+        "bara",
+        shadow_category,
+        [active_model],
+        lambda candidate: estimate_cost(content, candidate, system_prompt, past_messages)[0] * MAX_AGENT_ITERATIONS,
+        strategy="agent",
+        workspace=workspace,
+        reserved_credits=reserve,
+        has_tools=bool(tool_schemas),
+        workspace_mode=True,
+    )
     try:
         account.debit(reserve, reason="usage", note=f"Bara agent — {active_model.model_id}")
     except InsufficientCreditsError:
@@ -625,6 +666,7 @@ def send_message(request, workspace_id, conversation_id):
 
     usage = {"prompt": 0, "completion": 0, "chars": 0, "calls": 0}
     text_parts = []
+    tools_used = set()
     settled = {"done": False}
 
     def settle(outcome):
@@ -651,6 +693,16 @@ def send_message(request, workspace_id, conversation_id):
             text += "\n\n*(réponse interrompue)*"
         if text:
             WorkMessage.objects.create(workspace=workspace, conversation=conversation, role="assistant", content=text)
+        route_outcome = "success" if outcome == "ok" and usage["calls"] else "error" if outcome == "error" else "interrupted"
+        record_shadow_run(
+            request.user,
+            shadow_run,
+            route_outcome,
+            charged_credits=actual,
+            prompt_tokens=usage["prompt"],
+            completion_tokens=usage["completion"],
+            tools_used=tools_used,
+        )
 
     def event_stream():
         outcome = "ok"
@@ -708,6 +760,7 @@ def send_message(request, workspace_id, conversation_id):
 
                 for tc in tool_calls_list:
                     tool_name = tc["function"]["name"]
+                    tools_used.add(tool_name)
                     try:
                         tool_args = json.loads(tc["function"]["arguments"] or "{}")
                     except (TypeError, ValueError):

@@ -30,6 +30,7 @@ class Workspace(models.Model):
         blank=True, 
         related_name="workspaces"
     )
+    auto_route = models.BooleanField(default=False)
     instructions = models.TextField(blank=True)
     disabled_tools = models.JSONField(default=list, blank=True)
 

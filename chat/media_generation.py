@@ -16,6 +16,51 @@ OUTPUT_HOSTS = {
     "replicate": ("replicate.delivery",),
     "apiframe": ("cdn2.apiframe.ai",),
 }
+IMAGE_SIZE_CHOICES = {"1024x1024", "1024x1536", "1536x1024"}
+VIDEO_ASPECT_CHOICES = {"16:9", "9:16", "1:1"}
+VIDEO_RESOLUTION_CHOICES = {"480p", "720p"}
+VIDEO_DURATION_CHOICES = {4, 6, 8, 10, 15, 30}
+AUDIO_STYLE_CHOICES = {"", "ambient", "cinematic", "electronic", "jazz", "pop", "orchestral"}
+
+
+def normalize_generation_options(media_type, provider_slug, model_id, options):
+    if options is None:
+        options = {}
+    if not isinstance(options, dict):
+        raise ProviderError("Les options de génération doivent être un objet JSON.")
+    if media_type == "image":
+        image_size = options.get("image_size", "1024x1024")
+        if image_size not in IMAGE_SIZE_CHOICES:
+            raise ProviderError("Dimensions d’image non prises en charge.")
+        return {"image_size": image_size}
+    if media_type == "video":
+        aspect_ratio = options.get("aspect_ratio", "16:9")
+        resolution = options.get("resolution", "720p")
+        replicate_fixed_video = provider_slug == "replicate" and model_id == "minimax/video-01"
+        duration = options.get("duration_seconds", 6 if replicate_fixed_video else 8)
+        generate_audio = options.get("generate_audio", not replicate_fixed_video)
+        if aspect_ratio not in VIDEO_ASPECT_CHOICES or resolution not in VIDEO_RESOLUTION_CHOICES:
+            raise ProviderError("Format ou résolution vidéo non pris en charge.")
+        if isinstance(duration, bool) or duration not in VIDEO_DURATION_CHOICES:
+            raise ProviderError("Durée vidéo non prise en charge.")
+        if not isinstance(generate_audio, bool):
+            raise ProviderError("L’option son vidéo doit être vraie ou fausse.")
+        if provider_slug == "replicate" and model_id == "minimax/video-01":
+            if aspect_ratio != "16:9" or resolution != "720p" or duration != 6 or generate_audio:
+                raise ProviderError("Minimax Video-01 impose 16:9, 720p et 6 secondes; il ne génère pas de son.")
+        return {
+            "aspect_ratio": aspect_ratio,
+            "resolution": resolution,
+            "duration_seconds": duration,
+            "generate_audio": generate_audio,
+        }
+    if media_type == "audio":
+        style = options.get("style", "")
+        instrumental = options.get("instrumental", False)
+        if style not in AUDIO_STYLE_CHOICES or not isinstance(instrumental, bool):
+            raise ProviderError("Options audio non prises en charge.")
+        return {"style": style, "instrumental": instrumental}
+    raise ProviderError("Type de média non pris en charge.")
 
 
 class _SafeRedirectHandler(HTTPRedirectHandler):
@@ -73,25 +118,61 @@ def _poll_fal(model_id, request_id, api_key):
     raise ProviderError("La génération fal dépasse le délai autorisé.")
 
 
-def _run_fal(model_id, api_key, prompt):
-    submitted = _json_request(f"https://queue.fal.run/{model_id}", api_key, "fal", {"prompt": prompt}, "POST")
+def _run_fal(model_id, api_key, media_type, prompt, options):
+    arguments = {"prompt": prompt}
+    if media_type == "image":
+        width, height = (int(value) for value in options["image_size"].split("x"))
+        arguments["image_size"] = {"width": width, "height": height}
+    elif media_type == "video":
+        arguments.update({
+            "aspect_ratio": options["aspect_ratio"],
+            "duration": options["duration_seconds"],
+            "resolution": options["resolution"],
+            "generate_audio": options["generate_audio"],
+        })
+    elif media_type == "audio":
+        if options["style"]:
+            arguments["prompt"] += f"; musical style: {options['style']}"
+        if options["instrumental"]:
+            arguments["prompt"] += "; instrumental, no vocals"
+    submitted = _json_request(f"https://queue.fal.run/{model_id}", api_key, "fal", arguments, "POST")
     request_id = submitted.get("request_id")
     if not request_id:
         raise ProviderError("fal n’a pas renvoyé d’identifiant de requête.")
     return _poll_fal(model_id, request_id, api_key)
 
 
-def _replicate_output(model_id, api_key, prompt):
+def _replicate_output(model_id, api_key, media_type, prompt, options):
+    model_input = {"prompt": prompt}
+    if media_type == "image" and model_id == "black-forest-labs/flux-schnell":
+        aspect_ratio = {
+            "1024x1024": "1:1",
+            "1024x1536": "2:3",
+            "1536x1024": "3:2",
+        }[options["image_size"]]
+        model_input.update({"aspect_ratio": aspect_ratio, "megapixels": "1"})
+    elif media_type == "video" and model_id == "minimax/video-01":
+        pass
+    elif media_type == "audio" and model_id == "meta/musicgen":
+        if options["style"]:
+            model_input["prompt"] += f"; style: {options['style']}"
+        if options["instrumental"]:
+            model_input["prompt"] += "; instrumental only, no vocals"
+    elif media_type == "audio":
+        if options["style"]:
+            model_input["prompt"] += f"; style: {options['style']}"
+        if options["instrumental"]:
+            model_input["prompt"] += "; instrumental only, no vocals"
     model_ref, separator, version = model_id.partition(":")
     if separator:
         endpoint = "https://api.replicate.com/v1/predictions"
-        payload = {"version": version, "input": {"prompt": prompt}}
+        payload = {"version": version, "input": model_input}
     else:
         parts = model_ref.split("/")
         if len(parts) != 2 or not all(parts):
             raise ProviderError("Le modèle Replicate doit être au format propriétaire/modèle.")
         endpoint = f"https://api.replicate.com/v1/models/{parts[0]}/{parts[1]}/predictions"
-        payload = {"input": {"prompt": prompt}}
+        payload = {"input": model_input}
     prediction = _json_request(endpoint, api_key, "replicate", payload, "POST", timeout=70)
     deadline = time.monotonic() + MEDIA_TIMEOUT_SECONDS
     while prediction.get("status") not in {"succeeded", "failed", "canceled"}:
@@ -110,10 +191,30 @@ def _replicate_output(model_id, api_key, prompt):
     return prediction.get("output")
 
 
-def _run_apiframe(model_id, api_key, media_type, prompt):
+def _run_apiframe(model_id, api_key, media_type, prompt, options):
     endpoint_name = {"image": "images", "video": "videos", "audio": "music"}[media_type]
     root = "https://api.apiframe.ai/v2"
-    job = _json_request(f"{root}/{endpoint_name}/generate", api_key, "apiframe", {"prompt": prompt, "model": model_id}, "POST")
+    payload = {"prompt": prompt, "model": model_id}
+    if media_type == "image" and model_id == "flux-2-pro":
+        width, height = (int(value) for value in options["image_size"].split("x"))
+        resolution = "1 MP" if width * height <= 1_100_000 else "2 MP"
+        payload["fluxParams"] = {"aspect_ratio": f"{width}:{height}", "resolution": resolution}
+    elif media_type == "video" and model_id == "seedance-2.5":
+        payload["seedanceParams"] = {
+            "duration": options["duration_seconds"],
+            "resolution": options["resolution"],
+            "aspect_ratio": options["aspect_ratio"],
+            "generate_audio": options["generate_audio"],
+        }
+    elif media_type == "audio" and model_id == "suno":
+        payload["sunoParams"] = {
+            "model_version": "V4_5PLUS",
+            "custom_mode": False,
+            "instrumental": options["instrumental"],
+        }
+        if options["style"]:
+            payload["sunoParams"]["style"] = options["style"]
+    job = _json_request(f"{root}/{endpoint_name}/generate", api_key, "apiframe", payload, "POST")
     job_id = job.get("jobId")
     if not job_id:
         raise ProviderError("Apiframe n’a pas renvoyé d’identifiant de génération.")
@@ -176,18 +277,19 @@ def _download_output(url, provider_slug, media_type, api_key):
     return data, content_type
 
 
-def generate_media(provider, api_key, media_type, prompt, model_id):
+def generate_media(provider, api_key, media_type, prompt, model_id, options=None):
+    options = normalize_generation_options(media_type, provider.slug, model_id, options)
     if provider.slug == "openai" and media_type == "image":
-        encoded, _usage = generate_openai_image(provider, api_key, prompt)
+        encoded, _usage = generate_openai_image(provider, api_key, prompt, size=options["image_size"])
         import base64
         return base64.b64decode(encoded, validate=True), "image/png"
 
     if provider.slug == "fal":
-        output = _run_fal(model_id, api_key, prompt)
+        output = _run_fal(model_id, api_key, media_type, prompt, options)
     elif provider.slug == "replicate":
-        output = _replicate_output(model_id, api_key, prompt)
+        output = _replicate_output(model_id, api_key, media_type, prompt, options)
     elif provider.slug == "apiframe":
-        output = _run_apiframe(model_id, api_key, media_type, prompt)
+        output = _run_apiframe(model_id, api_key, media_type, prompt, options)
     else:
         raise ProviderError("Ce fournisseur ne prend pas en charge la génération de médias.")
 

@@ -22,6 +22,9 @@ from chat.services import (
     credits_for_usage,
     is_local_provider,
 )
+from chat.routing import record_shadow_run, safe_shadow_run, task_category
+from chat.routing import eligible_models, model_key, recommend_model
+from chat.models import ChatPreferences
 
 from .models import AIModel
 
@@ -364,6 +367,8 @@ def api_home(request):
         }
         for m in _public_models()
     ]
+    if eligible_models(surface="api"):
+        rows.append({"id": "auto", "name": "AI 2AI Auto Router", "provider": "AI 2AI", "input": "variable", "output": "variable"})
     return render(request, "api/api.html", {
         "base_url": request.build_absolute_uri("/v1"),
         "models": rows,
@@ -379,22 +384,31 @@ def models_view(request):
     if error:
         return error
     now = int(time.time())
+    data = [
+        {
+            "id": m.model_id,
+            "object": "model",
+            "created": int(m.created_at.timestamp()) if m.created_at else now,
+            "owned_by": m.provider.slug,
+            "pricing": {
+                "unit": "credits per million tokens",
+                "input": _credits_per_million(m.input_price_per_million),
+                "output": _credits_per_million(m.output_price_per_million),
+            },
+        }
+        for m in _public_models()
+    ]
+    if eligible_models(surface="api"):
+        data.append({
+            "id": "auto",
+            "object": "model",
+            "created": now,
+            "owned_by": "ai2ai-router",
+            "pricing": {"unit": "dynamic credits per request", "input": None, "output": None},
+        })
     return JsonResponse({
         "object": "list",
-        "data": [
-            {
-                "id": m.model_id,
-                "object": "model",
-                "created": int(m.created_at.timestamp()) if m.created_at else now,
-                "owned_by": m.provider.slug,
-                "pricing": {
-                    "unit": "credits per million tokens",
-                    "input": _credits_per_million(m.input_price_per_million),
-                    "output": _credits_per_million(m.output_price_per_million),
-                },
-            }
-            for m in _public_models()
-        ],
+        "data": data,
     })
 
 
@@ -426,10 +440,37 @@ def chat_completions(request):
     params, problem = _parse_params(payload)
     if problem:
         return _error(problem, "invalid_request_error", 400)
-    model = _find_model(payload.get("model"))
-    if model is None:
-        return _error(f"Model {payload.get('model')!r} was not found or is inactive.", "model_not_found", 404, "model")
+    requested_model_id = payload.get("model")
+    auto_requested = requested_model_id == "auto"
     stream = bool(payload.get("stream"))
+    if auto_requested:
+        if tools and stream:
+            return _error("Streaming with function tools is not supported yet.", "invalid_request_error", 400, "stream")
+        candidates = eligible_models(surface="api", streamed=stream, tools=bool(tools))
+        if not candidates:
+            return _error("No eligible configured model is available for automatic routing.", "provider_unavailable", 503, "model")
+        task_model = candidates[0]
+        category = task_category("api", tools=bool(tools))
+        input_estimate = _estimate_input_tokens(messages, tools)
+        candidate_costs = {
+            model_key(candidate): credits_for_usage(candidate, input_estimate, params["max_tokens"])
+            for candidate in candidates
+        }
+        preferences = ChatPreferences.objects.filter(user=user).first()
+        fallback_model = next(
+            (candidate for candidate in candidates if preferences and candidate.model_id == preferences.default_model_id),
+            task_model,
+        )
+        decision = recommend_model(user, candidates, category, candidate_costs, current_model=fallback_model)
+        model = next(
+            (candidate for candidate in candidates
+             if candidate.provider.slug == decision["provider_slug"] and candidate.model_id == decision["model_id"]),
+            fallback_model,
+        )
+    else:
+        model = _find_model(requested_model_id)
+        if model is None:
+            return _error(f"Model {requested_model_id!r} was not found or is inactive.", "model_not_found", 404, "model")
     is_anthropic = _is_anthropic(model.provider)
     if tools and is_anthropic:
         return _error("Function tools are not supported for this provider yet.", "invalid_request_error", 400, "tools")
@@ -445,6 +486,19 @@ def chat_completions(request):
     # Réserve du pire cas (tout max_tokens consommé), ajustée au coût réel après l'appel.
     est_input = _estimate_input_tokens(messages, tools)
     reserve = credits_for_usage(model, est_input, params["max_tokens"])
+    category = task_category("api", tools=bool(tools))
+    shadow_run = safe_shadow_run(
+        user,
+        "api",
+        category,
+        [model],
+        lambda candidate: credits_for_usage(candidate, est_input, params["max_tokens"]),
+        strategy="tools" if tools else "single",
+        reserved_credits=reserve,
+        streamed=stream,
+        has_tools=bool(tools),
+    )
+    balance_before = account.balance
     try:
         account.debit(reserve, reason="usage", note=f"API — {model.model_id}")
     except InsufficientCreditsError:
@@ -465,20 +519,23 @@ def chat_completions(request):
                 raise ValueError("unexpected provider payload")
     except _ConfigError as exc:
         account.credit(reserve, reason="adjustment", note="Remboursement API — configuration")
+        record_shadow_run(user, shadow_run, "error")
         return _error(str(exc), "configuration_error", 503)
     except HTTPError as exc:
         account.credit(reserve, reason="adjustment", note="Remboursement API — erreur fournisseur")
+        record_shadow_run(user, shadow_run, "error")
         return _upstream_error(exc)
     except (URLError, TimeoutError, ValueError) as exc:
         logger.warning("Upstream failure: %s", exc)
         account.credit(reserve, reason="adjustment", note="Remboursement API — fournisseur indisponible")
+        record_shadow_run(user, shadow_run, "error")
         return _error("Provider request failed.", "provider_error", 502)
 
     _touch_keys(user_key, provider_key)
 
     # ----- Streaming : on relaie le flux SSE tel quel, puis on règle les crédits -----
     if stream:
-        state = {"prompt": 0, "completion": 0, "chars": 0, "id": "chatcmpl-" + uuid.uuid4().hex, "charged": None}
+        state = {"prompt": 0, "completion": 0, "chars": 0, "id": "chatcmpl-" + uuid.uuid4().hex, "charged": None, "completed": False}
 
         def settle():
             if state["charged"] is None:
@@ -486,6 +543,14 @@ def chat_completions(request):
                 completion = state["completion"] or max(1, round(state["chars"] / 4))
                 state["tokens"] = (prompt, completion)
                 state["charged"] = _settle(account, model, reserve, prompt, completion)
+                record_shadow_run(
+                    user,
+                    shadow_run,
+                    "success" if state["completed"] else "interrupted",
+                    charged_credits=state["charged"],
+                    prompt_tokens=prompt,
+                    completion_tokens=completion,
+                )
             return state["charged"]
 
         def event_stream():
@@ -495,6 +560,7 @@ def chat_completions(request):
                     if line.startswith("data:"):
                         data = line[5:].strip()
                         if data == "[DONE]":
+                            state["completed"] = True
                             charged = settle()
                             prompt, completion = state["tokens"]
                             summary = {
@@ -545,6 +611,14 @@ def chat_completions(request):
     prompt_tokens = usage.get("prompt_tokens") or est_input
     completion_tokens = usage.get("completion_tokens") or max(1, round(len(completion_text) / 4))
     charged = _settle(account, model, reserve, prompt_tokens, completion_tokens)
+    record_shadow_run(
+        user,
+        shadow_run,
+        "success",
+        charged_credits=charged,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
     balance = _balance(account)
     clean = _clean_completion(result, model, prompt_tokens, completion_tokens)
     clean["usage"]["credits_charged"] = charged

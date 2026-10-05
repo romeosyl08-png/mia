@@ -12,9 +12,10 @@ from urllib.error import HTTPError
 from django.conf import settings
 from api.models import AIModel, APIProvider
 from bara.models import Workspace
-from chat.services import ProviderError, stream_llm_provider
-from chat.media_generation import _download_output, generate_media
-from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona
+from chat.services import ProviderError, call_llm_team, stream_llm_provider, stream_llm_team
+from chat.media_generation import _download_output, _run_apiframe, generate_media, normalize_generation_options
+from chat.routing import recommend_model
+from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
 
 
 class ChatHomeTests(TestCase):
@@ -70,6 +71,334 @@ class ChatHomeTests(TestCase):
 		self.assertIsNotNone(soup.select_one('#videoModeBtn[data-mode="video"]:not([disabled])'))
 		self.assertIsNotNone(soup.select_one('#audioModeBtn[data-mode="audio"]:not([disabled])'))
 		self.assertIn({'slug': 'fal', 'name': 'Configured fal', 'modalities': ['image', 'video', 'audio']}, chat_config['mediaProviders'])
+
+	def test_shadow_recommendation_does_not_change_selected_chat_model(self):
+		user = User.objects.create_user(username='shadow-router-chat-user', password='test-password')
+		user.credit_account.balance = 10000
+		user.credit_account.save(update_fields=['balance'])
+		selected_provider = APIProvider.objects.create(name='Selected chat provider', slug='selected-shadow', base_url='https://selected.example.test')
+		selected_model = AIModel.objects.create(provider=selected_provider, name='Selected model', model_id='selected-model')
+		selected_provider.keys.create(name='selected-key', key='selected-secret')
+		better_provider = APIProvider.objects.create(name='Observed chat provider', slug='observed-shadow', base_url='https://observed.example.test')
+		better_model = AIModel.objects.create(provider=better_provider, name='Observed model', model_id='observed-model')
+		better_provider.keys.create(name='observed-key', key='observed-secret')
+		for _ in range(5):
+			RoutingObservation.objects.create(
+				user=user,
+				surface='chat',
+				task_category='general',
+				model_id=better_model.model_id,
+				provider_slug=better_provider.slug,
+				recommended_model_id=better_model.model_id,
+				recommended_provider_slug=better_provider.slug,
+				outcome='success',
+			)
+		self.client.force_login(user)
+
+		with patch('chat.views.call_llm_provider', return_value=('Réponse observée.', 10, 5)) as provider_call:
+			response = self.client.post('/chat/api/send/', data=json.dumps({
+				'mode': 'chat',
+				'model_id': selected_model.model_id,
+				'content': 'Question de vérification',
+			}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(provider_call.call_args.args[2], selected_model.model_id)
+		observation = RoutingObservation.objects.get(
+			user=user,
+			surface='chat',
+			model_id=selected_model.model_id,
+			outcome='success',
+			task_category='general',
+		)
+		self.assertEqual(observation.model_id, selected_model.model_id)
+		self.assertEqual(observation.recommended_model_id, better_model.model_id)
+		self.assertEqual(observation.recommended_provider_slug, better_provider.slug)
+		self.assertEqual(observation.recommendation_basis, 'user_category')
+		self.assertGreater(observation.recommendation_confidence, 0)
+		self.assertGreater(observation.recommendation_score, 0)
+		self.assertGreater(observation.recommended_estimated_credits, 0)
+
+	def test_persisted_feedback_changes_auto_score_after_threshold(self):
+		user = User.objects.create_user(username='router-feedback-score-user', password='test-password')
+		providers = []
+		models = []
+		for slug in ('feedback-low', 'feedback-high'):
+			provider = APIProvider.objects.create(name=slug, slug=slug, base_url=f'https://{slug}.example.test')
+			model = AIModel.objects.create(
+				provider=provider, name=slug, model_id=f'{slug}-model',
+				input_price_per_million=1, output_price_per_million=2,
+			)
+			providers.append(provider)
+			models.append(model)
+		for model, rating in ((models[0], 'negative'), (models[1], 'positive')):
+			for _ in range(5):
+				observation = RoutingObservation.objects.create(
+					user=user,
+					surface='chat',
+					task_category='general',
+					model_id=model.model_id,
+					provider_slug=model.provider.slug,
+					outcome='success',
+					charged_credits=12,
+					duration_ms=100,
+				)
+				RoutingFeedback.objects.create(
+					observation=observation,
+					user=user,
+					rating=rating,
+					correction_needed=rating == 'negative',
+				)
+
+		decision = recommend_model(
+			user,
+			models,
+			'general',
+			{(model.provider.slug, model.model_id): 100 for model in models},
+			current_model=models[0],
+		)
+
+		self.assertEqual(decision['model_id'], models[1].model_id)
+		self.assertEqual(decision['basis'], 'user_category')
+		self.assertGreater(decision['confidence'], 0)
+
+	def test_chat_auto_mode_routes_to_model_with_observed_reliability(self):
+		user = User.objects.create_user(username='chat-auto-router-user', password='test-password')
+		user.credit_account.balance = 10000
+		user.credit_account.save(update_fields=['balance'])
+		fallback_provider = APIProvider.objects.create(name='A fallback provider', slug='auto-fallback', base_url='https://fallback.example.test')
+		fallback_model = AIModel.objects.create(
+			provider=fallback_provider, name='Fallback', model_id='auto-fallback-model',
+			input_price_per_million=1, output_price_per_million=2,
+		)
+		fallback_provider.keys.create(name='fallback-key', key='fallback-secret')
+		preferred_provider = APIProvider.objects.create(name='B preferred provider', slug='auto-preferred', base_url='https://preferred.example.test')
+		preferred_model = AIModel.objects.create(
+			provider=preferred_provider, name='Preferred', model_id='auto-preferred-model',
+			input_price_per_million=1, output_price_per_million=2,
+		)
+		preferred_provider.keys.create(name='preferred-key', key='preferred-secret')
+		for _ in range(5):
+			RoutingObservation.objects.create(
+				user=user,
+				surface='chat',
+				task_category='general',
+				model_id=preferred_model.model_id,
+				provider_slug=preferred_provider.slug,
+				outcome='success',
+			)
+		self.client.force_login(user)
+
+		with patch('chat.views.call_llm_provider', return_value=('Réponse Auto.', 10, 5)) as provider_call:
+			response = self.client.post('/chat/api/send/', data=json.dumps({
+				'model_id': 'auto',
+				'content': 'Question générale',
+			}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(provider_call.call_args.args[2], preferred_model.model_id)
+		observation = RoutingObservation.objects.filter(
+			user=user, surface='chat', model_id=preferred_model.model_id, outcome='success',
+			created_at__gte=user.date_joined,
+		).latest('created_at')
+		self.assertEqual(observation.recommendation_basis, 'user_category')
+
+	def test_team_plan_execute_verify_uses_planner_executor_and_verifier(self):
+		team_models = []
+		for provider_slug in ('team-planner', 'team-executor'):
+			provider = APIProvider.objects.create(
+				name=provider_slug,
+				slug=provider_slug,
+				base_url=f'https://{provider_slug}.example.test',
+			)
+			provider.keys.create(name='team-key', key=f'{provider_slug}-secret')
+			team_models.append(AIModel.objects.create(
+				provider=provider,
+				name=provider_slug,
+				model_id=f'{provider_slug}-model',
+			))
+
+		with patch('chat.services.call_llm_provider', side_effect=[
+			('Plan: vérifier le résultat.', 1, 2),
+			('Proposition de réalisation.', 3, 4),
+			('Résultat vérifié.', 5, 6),
+		]) as provider_call:
+			reply, prompt_tokens, completion_tokens = call_llm_team(
+				team_models,
+				[{'role': 'user', 'content': 'Résous le problème'}],
+				strategy='plan_execute_verify',
+			)
+
+		self.assertEqual(reply, 'Résultat vérifié.')
+		self.assertEqual((prompt_tokens, completion_tokens), (9, 12))
+		self.assertEqual(provider_call.call_count, 3)
+		self.assertIn('Plan: vérifier le résultat.', provider_call.call_args_list[1].args[4])
+		self.assertIn('Proposition de réalisation.', provider_call.call_args_list[2].args[4])
+
+	def test_streaming_team_plan_execute_verify_streams_only_verified_answer(self):
+		team_models = []
+		for provider_slug in ('stream-planner', 'stream-executor'):
+			provider = APIProvider.objects.create(
+				name=provider_slug,
+				slug=provider_slug,
+				base_url=f'https://{provider_slug}.example.test',
+			)
+			provider.keys.create(name='team-key', key=f'{provider_slug}-secret')
+			team_models.append(AIModel.objects.create(
+				provider=provider,
+				name=provider_slug,
+				model_id=f'{provider_slug}-model',
+			))
+
+		with patch('chat.services.call_llm_provider', side_effect=[
+			('Plan bref.', 1, 2),
+			('Brouillon.', 3, 4),
+		]) as upstream_calls, patch('chat.services.stream_llm_provider', return_value=iter([
+			{'type': 'delta', 'content': 'Final '},
+			{'type': 'delta', 'content': 'vérifié.'},
+			{'type': 'usage', 'input_tokens': 5, 'output_tokens': 6},
+		])) as verifier_stream:
+			events = list(stream_llm_team(
+				team_models,
+				[{'role': 'user', 'content': 'Traite cette tâche'}],
+				strategy='plan_execute_verify',
+			))
+
+		self.assertEqual(upstream_calls.call_count, 2)
+		self.assertEqual(verifier_stream.call_count, 1)
+		self.assertEqual(''.join(event['content'] for event in events if event['type'] == 'delta'), 'Final vérifié.')
+		self.assertEqual(events[-1], {'type': 'usage', 'input_tokens': 9, 'output_tokens': 12})
+
+	@patch('chat.views.call_llm_team', return_value=('Réponse vérifiée.', 20, 12))
+	def test_chat_passes_selected_team_strategy_to_existing_team_path(self, team_call):
+		user = User.objects.create_user(username='team-strategy-chat-user', password='test-password')
+		user.credit_account.balance = 10000
+		user.credit_account.save(update_fields=['balance'])
+		team_ids = []
+		for slug in ('team-strategy-one', 'team-strategy-two'):
+			provider = APIProvider.objects.create(name=slug, slug=slug, base_url=f'https://{slug}.example.test')
+			provider.keys.create(name='team-key', key=f'{slug}-secret')
+			model = AIModel.objects.create(provider=provider, name=slug, model_id=f'{slug}-model')
+			team_ids.append(model.model_id)
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'mode': 'chat',
+			'team_mode': True,
+			'team_strategy': 'plan_execute_verify',
+			'team_model_ids': team_ids,
+			'content': 'Termine et vérifie cette tâche',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['reply'], 'Réponse vérifiée.')
+		self.assertEqual(team_call.call_args.kwargs['strategy'], 'plan_execute_verify')
+		self.assertTrue(RoutingObservation.objects.filter(
+			user=user, strategy='team_plan_execute_verify', outcome='success',
+		).exists())
+
+	def test_shadow_scoring_failure_does_not_block_existing_chat(self):
+		user = User.objects.create_user(username='shadow-failure-chat-user', password='test-password')
+		user.credit_account.balance = 10000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Fail-open provider', slug='fail-open', base_url='https://provider.example.test')
+		model = AIModel.objects.create(provider=provider, name='Selected model', model_id='fail-open-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		self.client.force_login(user)
+
+		with patch('chat.routing.eligible_models', side_effect=RuntimeError('scorer unavailable')), patch(
+			'chat.views.call_llm_provider', return_value=('Réponse normale.', 10, 5),
+		) as provider_call:
+			response = self.client.post('/chat/api/send/', data=json.dumps({
+				'model_id': model.model_id,
+				'content': 'Question sans scoreur',
+			}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(provider_call.call_args.args[2], model.model_id)
+		self.assertFalse(RoutingObservation.objects.filter(user=user).exists())
+
+	@patch('chat.views.call_llm_provider', return_value=('Réponse à noter.', 10, 5))
+	def test_chat_feedback_is_persisted_and_scoped_to_message_owner(self, provider_call):
+		user = User.objects.create_user(username='feedback-owner', password='test-password')
+		user.credit_account.balance = 10000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Feedback provider', slug='feedback-provider', base_url='https://provider.example.test')
+		model = AIModel.objects.create(provider=provider, name='Feedback model', model_id='feedback-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/send/', data=json.dumps({
+			'model_id': model.model_id,
+			'content': 'Donne une réponse',
+		}), content_type='application/json')
+		self.assertEqual(response.status_code, 200)
+		observation_id = response.json()['routing_observation_id']
+		assistant_message_id = response.json()['assistant_message_id']
+		observation = RoutingObservation.objects.get(id=observation_id)
+		self.assertEqual(observation.assistant_message_id, assistant_message_id)
+		invalid_feedback = self.client.post(
+			f'/chat/api/messages/{assistant_message_id}/feedback/',
+			data=json.dumps({'rating': []}),
+			content_type='application/json',
+		)
+		self.assertEqual(invalid_feedback.status_code, 400)
+
+		feedback_response = self.client.post(
+			f'/chat/api/messages/{assistant_message_id}/feedback/',
+			data=json.dumps({'rating': 'negative'}),
+			content_type='application/json',
+		)
+		self.assertEqual(feedback_response.status_code, 200)
+		self.assertTrue(feedback_response.json()['correction_needed'])
+		self.assertEqual(RoutingFeedback.objects.get(observation=observation).rating, 'negative')
+		conversation_response = self.client.get(f'/chat/api/conversations/{response.json()["conversation_id"]}/')
+		self.assertEqual(conversation_response.json()['messages'][1]['routing_feedback'], 'negative')
+
+		other_user = User.objects.create_user(username='feedback-other-owner', password='test-password')
+		self.client.force_login(other_user)
+		other_feedback = self.client.post(
+			f'/chat/api/messages/{assistant_message_id}/feedback/',
+			data=json.dumps({'rating': 'positive'}),
+			content_type='application/json',
+		)
+		self.assertEqual(other_feedback.status_code, 404)
+
+	def test_routing_observations_are_viewable_but_not_editable_in_admin(self):
+		admin_user = User.objects.create_superuser(
+			username='routing-admin', email='routing-admin@example.test', password='test-password'
+		)
+		observation = RoutingObservation.objects.create(
+			user=admin_user,
+			surface='chat',
+			task_category='general',
+			model_id='admin-visible-model',
+			provider_slug='admin-provider',
+			recommended_model_id='admin-visible-model',
+			recommended_provider_slug='admin-provider',
+			outcome='success',
+		)
+		feedback = RoutingFeedback.objects.create(
+			observation=observation,
+			user=admin_user,
+			rating='negative',
+			correction_needed=True,
+		)
+		self.client.force_login(admin_user)
+
+		response = self.client.get('/admin/chat/routingobservation/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'admin-visible-model')
+		self.assertNotContains(response, 'Add routing observation')
+		self.assertEqual(
+			self.client.get(f'/admin/chat/routingobservation/{observation.id}/change/').status_code,
+			200,
+		)
+		feedback_response = self.client.get('/admin/chat/routingfeedback/')
+		self.assertEqual(feedback_response.status_code, 200)
+		self.assertContains(feedback_response, 'À améliorer')
+		self.assertEqual(self.client.get(f'/admin/chat/routingfeedback/{feedback.id}/change/').status_code, 200)
 
 	def test_about_page_is_public_and_explains_site_capabilities(self):
 		response = self.client.get('/nous/')
@@ -143,6 +472,25 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(other_preferences.json()['top_p'], 1.0)
 		self.assertEqual(other_preferences.json()['max_tokens'], 500)
 		self.assertEqual(ChatPreferences.objects.filter(user=user).count(), 1)
+
+	def test_auto_model_preference_persists_and_bootstraps_chat(self):
+		user = User.objects.create_user(username='auto-preference-user', password='test-password')
+		provider = APIProvider.objects.create(name='Auto preference provider', slug='auto-preference', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Auto preference model', model_id='auto-preference-model')
+		self.client.force_login(user)
+
+		response = self.client.patch(
+			'/chat/api/preferences/',
+			data=json.dumps({'default_model_id': 'auto'}),
+			content_type='application/json',
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()['default_model_id'], 'auto')
+		chat_page = self.client.get('/')
+		chat_config = json.loads(BeautifulSoup(chat_page.content, 'html.parser').select_one('#chat-config').string)
+		self.assertEqual(chat_config['modelId'], 'auto')
+		self.assertContains(chat_page, 'id="autoModelBtn"')
 
 	def test_chat_workspace_list_is_scoped_to_the_signed_in_user(self):
 		user = User.objects.create_user(username='workspace-list-owner', password='test-password')
@@ -499,11 +847,13 @@ class ChatHomeTests(TestCase):
 		response = self.client.post('/chat/api/images/generate/', data=json.dumps({
 			'content': 'Un paysage de montagne',
 			'persona_id': persona.id,
+			'generation_options': {'image_size': '1024x1536'},
 		}), content_type='application/json')
 		self.assertEqual(response.status_code, 200)
 		self.assertTrue(response.json()['media_url'].startswith('/chat/api/media/'))
 		conversation = Conversation.objects.get(id=response.json()['conversation_id'], user=user)
 		self.assertEqual(conversation.persona_id, persona.id)
+		self.assertEqual(generate_image.call_args.kwargs['size'], '1024x1536')
 		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), [
 			'Un paysage de montagne', 'Image générée.',
 		])
@@ -572,9 +922,41 @@ class ChatHomeTests(TestCase):
 					self.assertEqual(content_type, content_types[media_type])
 					download.assert_called_once_with(output_url, provider_slug, media_type, 'test-key')
 
+	def test_media_options_are_mapped_to_apiframe_payloads(self):
+		cases = [
+			('image', 'flux-2-pro', {'image_size': '1024x1536'}, 'fluxParams', {'aspect_ratio': '1024:1536', 'resolution': '2 MP'}),
+			('video', 'seedance-2.5', {
+				'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
+			}, 'seedanceParams', {
+				'aspect_ratio': '9:16', 'resolution': '480p', 'duration': 15, 'generate_audio': False,
+			}),
+			('audio', 'suno', {'style': 'jazz', 'instrumental': True}, 'sunoParams', {
+				'model_version': 'V4_5PLUS', 'custom_mode': False, 'instrumental': True, 'style': 'jazz',
+			}),
+		]
+		for media_type, model_id, raw_options, params_name, expected in cases:
+			with self.subTest(media=media_type):
+				options = normalize_generation_options(media_type, 'apiframe', model_id, raw_options)
+				with patch('chat.media_generation._json_request', side_effect=[
+					{'jobId': 'media-job'},
+					{'status': 'COMPLETED', 'result': {'images': ['https://cdn2.apiframe.ai/test.png']}},
+				]) as request:
+					_run_apiframe(model_id, 'server-secret', media_type, 'A test prompt', options)
+				self.assertEqual(request.call_args_list[0].args[3][params_name], expected)
+
 	def test_media_download_rejects_lookalike_provider_hosts(self):
-		with self.assertRaises(ProviderError):
-			_download_output('https://evilreplicate.delivery/file.png', 'replicate', 'image', 'server-secret')
+		for host in ('evilreplicate.delivery', 'malicious-replicate.delivery'):
+			with self.subTest(host=host), self.assertRaises(ProviderError):
+				_download_output(f'https://{host}/file.png', 'replicate', 'image', 'server-secret')
+
+	def test_media_options_reject_duration_not_supported_by_replicate_video01(self):
+		self.assertEqual(normalize_generation_options('video', 'replicate', 'minimax/video-01', {}), {
+			'aspect_ratio': '16:9', 'resolution': '720p', 'duration_seconds': 6, 'generate_audio': False,
+		})
+		with self.assertRaisesRegex(ProviderError, 'impose 16:9, 720p et 6 secondes'):
+			normalize_generation_options('video', 'replicate', 'minimax/video-01', {
+				'aspect_ratio': '16:9', 'resolution': '720p', 'duration_seconds': 15, 'generate_audio': False,
+			})
 
 	@patch('chat.views.generate_media', side_effect=ProviderError('Le fournisseur est indisponible.'))
 	def test_failed_video_generation_refunds_reserved_credits(self, generate_video):
@@ -589,12 +971,18 @@ class ChatHomeTests(TestCase):
 			'content': 'Une scène de test',
 			'kind': 'video',
 			'provider_slug': 'fal',
+			'generation_options': {
+				'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
+			},
 		}), content_type='application/json')
 
 		self.assertEqual(response.status_code, 502)
 		self.assertEqual(response.json()['error']['type'], 'media_generation_failed')
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, 50000)
+		self.assertEqual(generate_video.call_args.args[5], {
+			'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
+		})
 		generate_video.assert_called_once()
 
 	@patch('chat.views.generate_media', return_value=(b'audio bytes', 'audio/mpeg'))
@@ -610,6 +998,7 @@ class ChatHomeTests(TestCase):
 			'content': 'Un court thème musical',
 			'kind': 'audio',
 			'provider_slug': 'apiframe',
+			'generation_options': {'style': 'jazz', 'instrumental': True},
 		}), content_type='application/json')
 
 		self.assertEqual(response.status_code, 200)
@@ -622,6 +1011,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(media_response['Content-Type'], 'audio/mpeg')
 		self.assertEqual(b''.join(media_response.streaming_content), b'audio bytes')
 		self.assertEqual(self.client.get('/chat/api/media/gallery/?kind=audio').json()[0]['id'], media.id)
+		self.assertEqual(generate_audio.call_args.args[5], {'style': 'jazz', 'instrumental': True})
 		generate_audio.assert_called_once()
 
 	@patch('chat.views.generate_openai_image', return_value=('cG5n', {}))
@@ -782,6 +1172,11 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response['Content-Type'], 'text/event-stream')
 		self.assertEqual([event['content'] for event in events if event['type'] == 'delta'], ['Bon', 'jour.'])
 		self.assertEqual(events[-1]['type'], 'done')
+		self.assertIsNotNone(events[-1]['routing_observation_id'])
+		self.assertEqual(
+			RoutingObservation.objects.get(id=events[-1]['routing_observation_id']).assistant_message_id,
+			events[-1]['assistant_message_id'],
+		)
 		conversation = Conversation.objects.get(id=events[-1]['conversation_id'])
 		self.assertEqual(conversation.persona_id, persona.id)
 		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), ['Salut', 'Bonjour.'])
@@ -812,6 +1207,7 @@ class ChatHomeTests(TestCase):
 		self.assertIsNone(response.json()['conversation_id'])
 		self.assertFalse(Conversation.objects.filter(user=user).exists())
 		self.assertFalse(Message.objects.exists())
+		self.assertFalse(RoutingObservation.objects.filter(user=user).exists())
 		call_args = call_llm_provider.call_args.args
 		self.assertEqual(call_args[3], [
 			{'role': 'user', 'content': 'Question précédente'},
@@ -858,6 +1254,7 @@ class ChatHomeTests(TestCase):
 		self.assertIsNone(events[-1]['conversation_id'])
 		self.assertFalse(Conversation.objects.filter(user=user).exists())
 		self.assertFalse(Message.objects.exists())
+		self.assertFalse(RoutingObservation.objects.filter(user=user).exists())
 		call_args = stream_provider.call_args.args
 		self.assertEqual(call_args[3], [
 			{'role': 'assistant', 'content': 'Réponse précédente'},

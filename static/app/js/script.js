@@ -233,6 +233,8 @@ let state = {
         content: m.content,
         mediaUrl: m.media_url || null,
         mediaKind: m.media_kind || "image",
+          routingObservationId: m.routing_observation_id || null,
+          feedback: m.routing_feedback || null,
         sources: Array.isArray(m.sources) ? m.sources : [],
         tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens,
         createdAt: m.created_at
@@ -294,6 +296,8 @@ let state = {
       toggle.querySelector(".provider-toggle-label").textContent = item.dataset.modelName;
     }
   });
+  const autoModelBtn = el("autoModelBtn");
+  if(autoModelBtn) autoModelBtn.classList.toggle("active", state.modelId === "auto");
 
   function renderConvoList(){
     const list = el("convoList");
@@ -742,14 +746,10 @@ function renderMessages(){
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(new SpeechSynthesisUtterance(m.content));
       });
-      const likeBtn = addAction("like", "J'aime cette réponse", () => {
-        likeBtn.classList.toggle("active");
-        dislikeBtn.classList.remove("active");
-      });
-      const dislikeBtn = addAction("dislike", "Je n'aime pas cette réponse", () => {
-        dislikeBtn.classList.toggle("active");
-        likeBtn.classList.remove("active");
-      });
+      const likeBtn = addAction("like", "J'aime cette réponse", () => saveRoutingFeedback(m, "positive", likeBtn, dislikeBtn));
+      const dislikeBtn = addAction("dislike", "Je n'aime pas cette réponse", () => saveRoutingFeedback(m, "negative", dislikeBtn, likeBtn));
+      likeBtn.classList.toggle("active", m.feedback === "positive");
+      dislikeBtn.classList.toggle("active", m.feedback === "negative");
       addAction("refresh", "Régénérer la réponse", () => regenerateResponse(messageIndex));
       const time = document.createElement("span");
       time.className = "response-time";
@@ -766,6 +766,41 @@ function renderMessages(){
     wrap.appendChild(div);
   });
   wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function saveRoutingFeedback(message, rating, selectedButton, otherButton){
+  const previousRating = message.feedback || null;
+  const nextRating = previousRating === rating ? null : rating;
+  const updateButtons = value => {
+    selectedButton.classList.toggle("active", value === rating);
+    otherButton.classList.toggle("active", value && value !== rating);
+  };
+  message.feedback = nextRating;
+  updateButtons(nextRating);
+  if(!message.routingObservationId || !message.id) return;
+  try{
+    const response = await fetch(`/chat/api/messages/${message.id}/feedback/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+      },
+      body: JSON.stringify({ rating: nextRating })
+    });
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.error?.message || "Enregistrement du feedback impossible.");
+    message.feedback = data.rating;
+    updateButtons(data.rating);
+  }catch(error){
+    message.feedback = previousRating;
+    updateButtons(previousRating);
+    const notice = document.getElementById("creditNotice");
+    if(notice){
+      notice.textContent = error.message;
+      notice.classList.add("show");
+      window.setTimeout(() => notice.classList.remove("show"), 3200);
+    }
+  }
 }
 
   function relativeTime(value){
@@ -926,6 +961,7 @@ function renderMessages(){
         content: userText,
         kind: isMediaMode ? mode : null,
         provider_slug: isMediaMode ? el("mediaProviderSelect").value : null,
+        generation_options: isMediaMode ? collectMediaOptions(mode) : null,
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
         system_prompt: persona.prompt,
@@ -934,6 +970,7 @@ function renderMessages(){
         max_tokens: Number(el("maxTokensControl").value),
         mode: document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat",
         team_mode: el("teamModeBtn").classList.contains("active"),
+        team_strategy: el("teamStrategySelect").value,
         team_model_ids: Array.from(el("teamModelSelect").selectedOptions).map(option => option.value)
       })
     });
@@ -1054,7 +1091,10 @@ function renderMessages(){
       const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
       userMessage.tokens = inputTokens;
       streamingMessage.content = replyText;
+      if(data.assistant_message_id) streamingMessage.id = data.assistant_message_id;
       streamingMessage.tokens = replyTokens;
+      streamingMessage.routingObservationId = data.routing_observation_id || null;
+      streamingMessage.feedback = data.routing_feedback || null;
       streamingMessage.streaming = false;
       const newCredits = Number(data.remaining_balance);
         if (Number.isFinite(newCredits)) {
@@ -1454,8 +1494,21 @@ function renderMessages(){
     }
   });
 el("modelChips").addEventListener("click", (e) => {
+  const autoButton = e.target.closest("#autoModelBtn");
   const toggle = e.target.closest(".provider-toggle");
   const item = e.target.closest(".provider-menu-item");
+
+  if(autoButton){
+    e.stopPropagation();
+    state.modelId = "auto";
+    autoButton.classList.add("active");
+    document.querySelectorAll(".provider-menu").forEach(menu => { menu.hidden = true; });
+    document.querySelectorAll(".provider-menu-item").forEach(menuItem => menuItem.classList.remove("active"));
+    document.querySelectorAll(".provider-toggle").forEach(provider => provider.classList.remove("has-selection"));
+    el("teamModeBtn").classList.remove("active");
+    el("teamOptions").hidden = true;
+    return;
+  }
 
   if (toggle) {
     e.stopPropagation();
@@ -1473,6 +1526,7 @@ el("modelChips").addEventListener("click", (e) => {
   if (item) {
     e.stopPropagation();
     state.modelId = item.dataset.modelId;
+    if(autoModelBtn) autoModelBtn.classList.remove("active");
     item.closest(".provider-menu").querySelectorAll(".provider-menu-item")
       .forEach(i => i.classList.toggle("active", i === item));
 
@@ -1493,6 +1547,8 @@ document.addEventListener("click", () => {
 
   el("teamModeBtn").addEventListener("click", () => {
     const active = el("teamModeBtn").classList.toggle("active");
+    if(active && autoModelBtn) autoModelBtn.classList.remove("active");
+    if(!active && autoModelBtn && state.modelId === "auto") autoModelBtn.classList.add("active");
     el("teamOptions").hidden = !active;
     if(active){
       document.querySelectorAll(".model-chip:not(.team-chip)").forEach(item => item.classList.remove("active"));
@@ -1515,6 +1571,46 @@ document.addEventListener("click", () => {
     el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
   });
   const mediaProviderSelect = el("mediaProviderSelect");
+  const mediaOptionsPanel = el("mediaOptionsPanel");
+  function setAvailableOptions(select, values, fallback){
+    const allowed = new Set(values);
+    Array.from(select.options).forEach(option => {
+      option.hidden = !allowed.has(option.value);
+      option.disabled = option.hidden;
+    });
+    if(!allowed.has(select.value)) select.value = fallback;
+    select.disabled = allowed.size <= 1;
+  }
+  function updateMediaOptionControls(mode){
+    const mediaMode = ["image", "video", "audio"].includes(mode);
+    mediaOptionsPanel.hidden = !mediaMode;
+    el("imageOptions").hidden = mode !== "image";
+    el("videoOptions").hidden = mode !== "video";
+    el("audioOptions").hidden = mode !== "audio";
+    const provider = mediaProviderSelect.value;
+    if(mode === "video"){
+      const isReplicate = provider === "replicate";
+      const isFal = provider === "fal";
+      setAvailableOptions(el("videoDuration"), isReplicate ? ["6"] : isFal ? ["4", "6", "8"] : ["4", "6", "8", "10", "15", "30"], isReplicate ? "6" : isFal ? "8" : "8");
+      setAvailableOptions(el("videoResolution"), isReplicate || isFal ? ["720p"] : ["480p", "720p"], "720p");
+      setAvailableOptions(el("videoAspectRatio"), isReplicate ? ["16:9"] : ["16:9", "9:16", "1:1"], "16:9");
+      el("videoGenerateAudio").disabled = isReplicate;
+      if(isReplicate) el("videoGenerateAudio").checked = false;
+    }
+  }
+  function collectMediaOptions(mode){
+    if(mode === "image") return { image_size: el("imageSizeSelect").value };
+    if(mode === "video") return {
+      aspect_ratio: el("videoAspectRatio").value,
+      resolution: el("videoResolution").value,
+      duration_seconds: Number(el("videoDuration").value),
+      generate_audio: el("videoGenerateAudio").checked,
+    };
+    return {
+      style: el("audioStyle").value,
+      instrumental: el("audioInstrumental").checked,
+    };
+  }
   function updateMediaProviderSelection(mode){
     const isMediaMode = ["image", "video", "audio"].includes(mode);
     const options = Array.from(mediaProviderSelect.options);
@@ -1529,8 +1625,13 @@ document.addEventListener("click", () => {
     }
     mediaProviderSelect.hidden = !isMediaMode;
     mediaProviderSelect.disabled = isMediaMode && !firstAvailable;
+    updateMediaOptionControls(mode);
   }
   updateMediaProviderSelection("chat");
+  mediaProviderSelect.addEventListener("change", () => {
+    const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    updateMediaOptionControls(mode);
+  });
   document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tool-btn[data-mode]").forEach(item => {
