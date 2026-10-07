@@ -1,6 +1,40 @@
 # ai_2ai
 # mia
 
+## Modèles texte : OpenRouter et IA locale
+
+Le chat cloud utilise OpenRouter. Ajoute la clé au fichier `.env` du projet, puis initialise le fournisseur, sa clé chiffrée et le catalogue des modèles :
+
+```dotenv
+OPENROUTER_API_KEY=ta_cle_openrouter
+```
+
+```sh
+python manage.py seed_providers
+python manage.py sync_provider_keys
+python manage.py sync_openrouter_models
+```
+
+La synchronisation récupère les modèles texte tarifés et leurs prix. Les modèles dont OpenRouter n’expose pas le tarif sont ignorés, car leur coût ne peut pas être estimé de manière fiable. Les anciens modèles texte Groq, Together, Anthropic, OpenAI et Ollama sont désactivés par `seed_providers` sans supprimer leurs données. Les générations d’images et de vidéos utilisent également OpenRouter; l’audio conserve sa configuration dédiée.
+
+Dans le chat, **Choisir une IA** et **Équipe IA** peuvent classer les modèles OpenRouter par usage texte général ou par tâche (programmation, jeu de rôle, marketing, sciences, traduction, etc.). `sync_openrouter_models` synchronise ces classements hebdomadaires avec la clé OpenRouter active. Les catégories de tâches sont des estimations basées sur un échantillon et indiquent la popularité, pas la qualité ni un benchmark. Les modèles sans rang restent triés par prix de sortie décroissant. La fenêtre cite OpenRouter et la date de référence de chaque classement; les données sont réutilisées sous CC BY 4.0. Sans clé ou si l’API des classements échoue, le catalogue tarifé reste disponible et l’ordre de secours est le prix. L’IA locale apparaît séparément dans le sélecteur et ne peut pas rejoindre l’équipe cloud.
+
+L’option **IA locale** se connecte directement, depuis le navigateur, à Ollama ou à une API locale compatible OpenAI (`/v1/models` et `/v1/chat/completions`). Le serveur AI 2 AI ne relaie pas ces requêtes. Avec Ollama, autorise l’origine du site dans `OLLAMA_ORIGINS`; le navigateur peut aussi bloquer une connexion locale selon sa configuration CORS ou HTTPS.
+
+Les conversations créées avec une IA locale sont enregistrées dans le stockage du navigateur par défaut, sans être envoyées à l’historique du compte. Le bouton **Copier dans mon compte** synchronise explicitement les nouveaux échanges vers le serveur. Cette copie est distincte de l’original local.
+
+## Recharges et paiements
+
+Stripe accepte les paiements par carte en USD. Pour activer Mobile Money via CinetPay, configure `CINETPAY_API_KEY`, `CINETPAY_SITE_ID` et `CINETPAY_XOF_PER_USD` dans l'environnement :
+
+```dotenv
+CINETPAY_API_KEY=
+CINETPAY_SITE_ID=
+CINETPAY_XOF_PER_USD=600
+```
+
+Le taux par défaut affiché est `600 FCFA = 1 USD = 10 000 jetons`; tu peux le remplacer avec `CINETPAY_XOF_PER_USD`. Le montant Mobile Money est saisi en FCFA et les jetons sont calculés avec ce taux. Le minimum de paiement correspond à l'équivalent configuré de 1 USD. La page publique `/tarifs/` liste les modèles cloud actifs et les crédits par million de tokens en entrée et en sortie, selon la même formule que la facturation. Stripe nécessite également `STRIPE_SECRET_KEY`.
+
 ## PostgreSQL local
 
 Le fichier `.env` à la racine du projet (`ai_2ai/.env`) peut sélectionner une base PostgreSQL locale :
@@ -13,7 +47,9 @@ Crée d'abord la base `ai_2ai` dans PostgreSQL, puis applique les migrations ave
 
 ## Génération de médias
 
-Les images, vidéos et audios utilisent les clés serveur des fournisseurs. Configure une ou plusieurs clés dans l'environnement, puis lance `python manage.py seed_providers` et `python manage.py sync_provider_keys` :
+Les images et vidéos utilisent la clé `OPENROUTER_API_KEY` configurée plus haut. Le modèle par défaut est `bytedance-seed/seedream-4.5` pour les images et `alibaba/wan-3.0` pour les vidéos; remplace-les si besoin avec `OPENROUTER_IMAGE_MODEL` et `OPENROUTER_VIDEO_MODEL`. Les modèles renvoyant `usage.cost` sont facturés au coût réel avec la marge configurée; une réserve est débitée avant l’appel et ajustée après la réponse.
+
+La génération audio conserve les intégrations existantes. Configure une clé audio dans l'environnement, puis lance `python manage.py seed_providers` et `python manage.py sync_provider_keys` :
 
 ```dotenv
 FAL_API_KEY=
@@ -21,9 +57,9 @@ REPLICATE_API_TOKEN=
 APIFRAME_API_KEY=
 ```
 
-Les modèles par défaut sont configurables avec `FAL_IMAGE_MODEL`, `FAL_VIDEO_MODEL`, `FAL_AUDIO_MODEL`, `REPLICATE_IMAGE_MODEL`, `REPLICATE_VIDEO_MODEL`, `REPLICATE_AUDIO_MODEL`, `APIFRAME_IMAGE_MODEL`, `APIFRAME_VIDEO_MODEL` et `APIFRAME_AUDIO_MODEL`. Le compositeur propose des dimensions image standard (carré, portrait ou paysage), et pour la vidéo un ratio, une résolution, une durée et l’activation du son. L’audio propose un style et une option instrumentale. Les options disponibles sont restreintes selon les capacités du modèle choisi; par exemple Replicate MiniMax Video-01 reste en 16:9, 720p, six secondes, sans son.
+Les modèles audio par défaut sont configurables avec `FAL_AUDIO_MODEL`, `REPLICATE_AUDIO_MODEL` et `APIFRAME_AUDIO_MODEL`. Le compositeur propose des dimensions image standard (carré, portrait ou paysage), et pour la vidéo un ratio, une résolution, une durée et l’activation du son. L’audio propose un style et une option instrumentale.
 
-Les crédits internes se règlent avec `MEDIA_IMAGE_CREDITS` (630 pour 1 MP), `MEDIA_VIDEO_CREDITS` (10000 pour 8 secondes en 720p) et `MEDIA_AUDIO_CREDITS` (2000 par génération). Le débit image évolue avec le nombre de pixels et le débit vidéo avec la durée et la résolution sélectionnées. Ces montants sont des crédits internes, pas un devis du fournisseur : ajuste-les à tes modèles et coûts réels avant la production.
+Les crédits internes se règlent avec `MEDIA_IMAGE_CREDITS` (630 pour 1 MP), `MEDIA_VIDEO_CREDITS` (16800 pour 8 secondes en 720p) et `MEDIA_AUDIO_CREDITS` (2000 par génération). Le débit image évolue avec le nombre de pixels et le débit vidéo avec la durée et la résolution sélectionnées. Ces montants servent de réserve; le coût réel OpenRouter ajuste le débit lorsqu’il est communiqué.
 
 ## AI Router — Phases 1 à 6
 
@@ -36,6 +72,26 @@ Dans le chat, les votes J’aime/Je n’aime pas sont désormais persistés par 
 L’équipe garde « Comparer et synthétiser » comme stratégie par défaut. Une option distincte « Planifier, réaliser, vérifier » orchestre trois étapes avec deux ou trois modèles sélectionnés; le plan et le brouillon restent internes et seule la réponse vérifiée est affichée. Le mode est également transmis lors du streaming.
 
 L’API compatible OpenAI continue d’exiger un identifiant de modèle explicite : `model="auto"` n’est pas encore activé. L’Auto actif concerne le chat et les workspaces Bara; aucune orchestration automatique n’est ajoutée à l’API.
+
+### Sécurité des outils Bara
+
+Les outils `run_python` et `run_command` sont désactivés par défaut. `run_python` transmet le code au service tiers Piston; `run_command` lance un sous-processus sur l’hôte applicatif et ne constitue pas un bac à sable de sécurité, même si les fichiers du workspace sont copiés dans un répertoire temporaire. N'active ces outils qu'avec `BARA_CODE_EXECUTION_ENABLED=true` sur une instance isolée et sans données sensibles. La sélection individuelle dans un workspace ne peut pas contourner ce réglage serveur.
+
+Bara ajuste le débit après la réponse selon les tokens d’entrée/sortie réellement rapportés et les tarifs configurés pour le modèle. Si le coût dépasse la réserve prélevée et que le solde ne suffit plus, l’interface indique explicitement les jetons qui n’ont pas pu être débités.
+
+Les outils de lecture `read_file_lines` (jusqu’à 500 lignes) et `compare_files` (diff en lecture seule) complètent `read_file` pour inspecter de gros fichiers ou comparer deux versions sans modifier le workspace.
+
+Le panneau `AUTOMATISATIONS` propose Gmail, Outlook et Blender, ainsi que des serveurs MCP Streamable HTTP personnalisés. Gmail et Outlook utilisent OAuth avec PKCE et nécessitent `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_ID` et `MICROSOFT_CLIENT_SECRET` ; `MICROSOFT_TENANT_ID` vaut `common` par défaut. Enregistre comme URI de redirection OAuth les adresses fixes `https://<domaine>/bara/plugins/email/google_mail/callback/` et `https://<domaine>/bara/plugins/email/microsoft_mail/callback/`.
+
+Gmail demande `gmail.readonly` et `gmail.compose` ; Outlook demande `Mail.ReadWrite` et `Mail.Send` (la permission Microsoft `Mail.ReadWrite` est plus large que les opérations exposées). Bara ne propose que la recherche/lecture, la création de brouillons et l'envoi après confirmation explicite. Le contenu des e-mails est non fiable et n'est pas conservé dans le journal des outils.
+
+Pour Blender, connecte le module complémentaire téléchargeable dans le panneau. Le module interroge Bara par HTTPS sortant avec un jeton secret, qui n'est affiché qu'à sa création ; aucun code Python arbitraire n'est exécuté. La lecture de scène est en lecture seule et toute modification de scène demande une confirmation dans Bara. HTTP n'est autorisé que pour les adresses loopback en développement.
+
+Le panneau `VISUALISATIONS` ouvre un site directement dans le navigateur, dans un iframe sandboxé, ou prépare une demande de graphique. Le site n'est pas récupéré par le serveur ; certains sites refusent les iframes ou leur authentification ne fonctionne pas dans le cadre isolé, et doivent alors être ouverts dans un nouvel onglet. L'outil `visualize_chart` affiche des graphiques SVG avec infobulles à partir des données fournies dans la conversation ou les fichiers.
+
+2AI est installable comme PWA sur HTTPS (et sur `localhost` en développement). Le service worker met uniquement en cache les ressources publiques sous `/static/` ; les pages, conversations et réponses privées ne sont pas disponibles hors ligne. Sur iOS, utilise Safari puis **Partager → Sur l’écran d’accueil**.
+
+Les serveurs MCP activés peuvent agir sans confirmation individuelle : limite leurs permissions et ne connecte que des services de confiance.
 
 ## Barrassons CLI
 

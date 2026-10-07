@@ -4,11 +4,14 @@ from urllib.error import URLError
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.management import call_command
 from django.test import TestCase
 
 from ai_user.models import UserAPIKey
+from api.constants import OPENROUTER_RANKING_OPTIONS
 from api.models import AIModel, APIKey, APIProvider
 from chat.models import RoutingObservation
+from chat.services import call_llm_provider
 
 UPSTREAM_OK = {
     "id": "x",
@@ -61,6 +64,122 @@ class ChatCompletionsTests(TestCase):
 
     def test_invalid_key_is_rejected(self):
         self.assertEqual(self.call(token="sk-ai2ai-wrong").status_code, 401)
+
+    def test_openrouter_provider_uses_its_chat_completions_endpoint(self):
+        provider = APIProvider.objects.create(
+            name="OpenRouter", slug="openrouter", base_url="https://openrouter.ai/api", is_active=True
+        )
+
+        with patch("chat.services.urlopen", return_value=fake_response(UPSTREAM_OK)) as mocked:
+            reply, input_tokens, output_tokens = call_llm_provider(
+                provider,
+                "test-openrouter-key",
+                "open/model",
+                [{"role": "user", "content": "Bonjour"}],
+            )
+
+        request = mocked.call_args.args[0]
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-openrouter-key")
+        self.assertEqual(reply, "Bonjour")
+        self.assertEqual((input_tokens, output_tokens), (12, 5))
+
+    def test_openrouter_catalog_sync_updates_text_models_and_deactivates_stale_entries(self):
+        provider = APIProvider.objects.create(
+            name="OpenRouter", slug="openrouter", base_url="https://openrouter.ai/api", is_active=True
+        )
+        stale = AIModel.objects.create(provider=provider, name="Stale", model_id="stale/model")
+        catalog = {
+            "data": [
+                {
+                    "id": "open/model",
+                    "name": "Open Model",
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                    "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                },
+                {
+                    "id": "image/model",
+                    "name": "Image Model",
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["image"]},
+                    "pricing": {"prompt": "0", "completion": "0"},
+                },
+                {
+                    "id": "typesafe/jev-router",
+                    "name": "Jev Router",
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                    "pricing": {"prompt": "-1", "completion": "-1"},
+                },
+            ]
+        }
+
+        with patch("api.management.commands.sync_openrouter_models.urlopen", return_value=fake_response(catalog)):
+            call_command("sync_openrouter_models")
+
+        model = AIModel.objects.get(provider=provider, model_id="open/model")
+        stale.refresh_from_db()
+        self.assertEqual(model.input_price_per_million, 1)
+        self.assertEqual(model.output_price_per_million, 2)
+        self.assertFalse(stale.is_active)
+        self.assertFalse(AIModel.objects.filter(model_id="image/model").exists())
+        self.assertFalse(AIModel.objects.filter(model_id="typesafe/jev-router").exists())
+
+    def test_openrouter_catalog_sync_records_general_and_task_rankings(self):
+        provider = APIProvider.objects.create(
+            name="OpenRouter", slug="openrouter", base_url="https://openrouter.ai/api", is_active=True
+        )
+        key = APIKey(provider=provider, name="rankings-test")
+        key.set_key("test-openrouter-key")
+        key.save()
+        catalog = {
+            "data": [
+                {
+                    "id": "open/model",
+                    "name": "Open Model",
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                    "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                },
+                {
+                    "id": "second/model",
+                    "name": "Second Model",
+                    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                    "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                },
+            ]
+        }
+        requests = []
+
+        def openrouter_response(request, timeout):
+            requests.append(request)
+            if request.full_url.endswith("/models"):
+                return fake_response(catalog)
+            is_programming = "category=programming" in request.full_url
+            rows = [
+                {"date": "2026-09-28", "model_permaslug": "open/model", "total_tokens": "9000"},
+                {"date": "2026-10-05", "model_permaslug": "open/model", "total_tokens": "400"},
+                {
+                    "date": "2026-10-05",
+                    "model_permaslug": "second/model",
+                    "total_tokens": "950" if is_programming else "100",
+                },
+            ]
+            return fake_response({
+                "data": rows,
+                "meta": {"as_of": "2026-10-06T02:00:00.000Z"},
+            })
+
+        with patch(
+            "api.management.commands.sync_openrouter_models.urlopen",
+            side_effect=openrouter_response,
+        ):
+            call_command("sync_openrouter_models")
+
+        model = AIModel.objects.get(provider=provider, model_id="second/model")
+        self.assertEqual(model.openrouter_rankings["all"]["total_tokens"], 100)
+        self.assertEqual(model.openrouter_rankings["programming"]["total_tokens"], 950)
+        self.assertEqual(model.openrouter_rankings["programming"]["as_of"], "2026-10-06T02:00:00.000Z")
+        self.assertEqual(len(requests), 1 + len(OPENROUTER_RANKING_OPTIONS))
+        ranking_request = next(request for request in requests if "/datasets/rankings-daily" in request.full_url)
+        self.assertEqual(ranking_request.get_header("Authorization"), "Bearer test-openrouter-key")
 
     def test_model_catalog_lists_auto_when_an_eligible_provider_exists(self):
         response = self.client.get(

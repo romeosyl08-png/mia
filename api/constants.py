@@ -1,0 +1,15 @@
+OPENROUTER_RANKING_OPTIONS = (
+    ("all", "Tous les usages texte"),
+    ("programming", "Programmation"),
+    ("roleplay", "Jeu de rôle"),
+    ("marketing", "Marketing"),
+    ("marketing/seo", "Marketing SEO"),
+    ("technology", "Technologie"),
+    ("science", "Sciences"),
+    ("translation", "Traduction"),
+    ("legal", "Juridique"),
+    ("finance", "Finance"),
+    ("health", "Santé"),
+    ("trivia", "Culture générale"),
+    ("academia", "Études et recherche"),
+)

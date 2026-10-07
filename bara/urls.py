@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import plugin_views, views
 
 app_name = "bara"
 
@@ -21,6 +21,13 @@ urlpatterns = [
     path('<int:workspace_id>/mcp/<int:server_id>/refresh/', views.refresh_mcp_server, name='refresh-mcp-server'),
     path('<int:workspace_id>/mcp/<int:server_id>/toggle/', views.toggle_mcp_server, name='toggle-mcp-server'),
     path('<int:workspace_id>/mcp/<int:server_id>/delete/', views.delete_mcp_server, name='delete-mcp-server'),
+    path('<int:workspace_id>/plugins/email/<str:plugin>/connect/', plugin_views.connect_email, name='plugin-email-connect'),
+    path('plugins/email/<str:plugin>/callback/', plugin_views.email_oauth_callback, name='email-oauth-callback'),
+    path('<int:workspace_id>/plugins/<str:plugin>/disconnect/', plugin_views.disconnect_plugin, name='plugin-disconnect'),
+    path('<int:workspace_id>/plugins/blender/pair/', plugin_views.pair_blender, name='plugin-blender-pair'),
+    path('plugins/blender/poll/', plugin_views.blender_poll, name='blender-poll'),
+    path('plugins/blender/complete/', plugin_views.blender_complete, name='blender-complete'),
+    path('plugins/blender/addon/', plugin_views.download_blender_addon, name='download-blender-addon'),
     path('<int:workspace_id>/journal/', views.tool_journal, name='tool-journal'),
     path('<int:workspace_id>/export/', views.export_zip, name='export-zip'),
     path('<int:workspace_id>/actions/<int:action_id>/<str:decision>/', views.resolve_action, name='resolve-action'),

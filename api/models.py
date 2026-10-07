@@ -46,6 +46,7 @@ class AIModel(models.Model):
 
     input_price_per_million = models.DecimalField(max_digits=8, decimal_places=4, default=0, help_text="Prix en $ pour 1M tokens en entrée")
     output_price_per_million = models.DecimalField(max_digits=8, decimal_places=4, default=0, help_text="Prix en $ pour 1M tokens en sortie")
+    openrouter_rankings = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     
 
@@ -96,5 +97,4 @@ class APIKey(models.Model):
 
     def __str__(self):
         return f"{self.provider.name} — {self.name}"
-
 

@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import time
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login
@@ -15,6 +15,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import csrf_exempt
+from api.models import AIModel
+from chat.services import (
+    CREDITS_PER_DOLLAR,
+    MARGIN_MULTIPLIER,
+    credits_per_million_tokens,
+    is_local_provider,
+)
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 import requests
 import uuid
@@ -26,7 +33,6 @@ RECHARGE_PLANS = {
 	"25": {"amount_cents": 2_500, "credits": 300_000},
 }
 MIN_RECHARGE_CENTS = 500
-CREDITS_PER_DOLLAR = 10_000
 MOBILE_MONEY_OPERATORS = {"wave", "orange", "momo", "moov"}
 
 
@@ -91,7 +97,87 @@ def whatsapp_send_otp(request):
 
 @login_required(login_url="/auth/?next=/recharge/")
 def recharge_page(request):
-	return render(request, "recharge.html", {"plans": RECHARGE_PLANS})
+	account = getattr(request.user, "credit_account", None)
+	credits = account.balance if account is not None else 0
+	rate = settings.CINETPAY_XOF_PER_USD
+	rate_configured = rate.is_finite() and rate > 0
+	mobile_money_minimum_xof = (
+		int(rate.to_integral_value(rounding=ROUND_CEILING))
+		if rate_configured else 0
+	)
+	mobile_money_credentials_configured = bool(settings.CINETPAY_API_KEY and settings.CINETPAY_SITE_ID)
+	mobile_money_available = rate_configured and mobile_money_credentials_configured
+	if not mobile_money_credentials_configured:
+		mobile_money_unavailable_reason = "Le paiement Mobile Money n’est pas configuré pour le moment."
+	elif not rate_configured:
+		mobile_money_unavailable_reason = "Le taux FCFA/USD doit être configuré avant d’activer ce paiement."
+	else:
+		mobile_money_unavailable_reason = ""
+	mobile_money_presets = []
+	if mobile_money_available:
+		for usd_amount in (1, 5, 10):
+			xof_amount = int(
+				(rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)
+			)
+			mobile_money_presets.append({
+				"amount": xof_amount,
+				"label": f"{xof_amount:,}".replace(",", " "),
+			})
+	default_mobile_money_amount = mobile_money_presets[0]["amount"] if mobile_money_presets else ""
+	default_mobile_money_credits = (
+		int((Decimal(default_mobile_money_amount) * CREDITS_PER_DOLLAR / rate).to_integral_value(rounding=ROUND_DOWN))
+		if mobile_money_available else 0
+	)
+	return render(request, "recharge.html", {
+		"plans": RECHARGE_PLANS,
+		"credits": credits,
+		"credits_display": f"{credits:,}".replace(",", " "),
+		"credits_per_dollar": CREDITS_PER_DOLLAR,
+		"credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
+		"conversion_rate_display": format(rate.normalize(), "f") if rate.is_finite() and rate > 0 else "",
+		"stripe_available": bool(settings.STRIPE_SECRET_KEY),
+		"stripe_currency": settings.STRIPE_CURRENCY.upper(),
+		"stripe_default_credits": MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100,
+		"stripe_default_credits_display": f"{MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100:,}".replace(",", " "),
+		"mobile_money_available": mobile_money_available,
+		"mobile_money_unavailable_reason": mobile_money_unavailable_reason,
+		"mobile_money_rate": rate if rate_configured else "",
+		"mobile_money_minimum_xof": mobile_money_minimum_xof,
+		"mobile_money_presets": mobile_money_presets,
+		"default_mobile_money_amount": default_mobile_money_amount,
+		"default_mobile_money_credits": default_mobile_money_credits,
+		"default_mobile_money_credits_display": f"{default_mobile_money_credits:,}".replace(",", " "),
+	})
+
+
+def tariffs_page(request):
+    rate = settings.CINETPAY_XOF_PER_USD
+    conversion_rate_display = (
+        format(rate.normalize(), "f") if rate.is_finite() and rate > 0 else ""
+    )
+    models = (
+        AIModel.objects.filter(is_active=True, provider__is_active=True)
+        .select_related("provider")
+        .order_by("name", "model_id")
+    )
+    tariffs = [
+        {
+            "name": model.name,
+            "model_id": model.model_id,
+            "input_credits": f"{credits_per_million_tokens(model.input_price_per_million):,}".replace(",", " "),
+            "output_credits": f"{credits_per_million_tokens(model.output_price_per_million):,}".replace(",", " "),
+        }
+        for model in models
+        if not is_local_provider(model.provider)
+    ]
+    return render(request, "tariffs.html", {
+        "tariffs": tariffs,
+        "model_count": len(tariffs),
+        "credits_per_dollar": CREDITS_PER_DOLLAR,
+        "credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
+        "margin_multiplier": MARGIN_MULTIPLIER,
+        "conversion_rate_display": conversion_rate_display,
+    })
 
 
 @login_required(login_url="/auth/?next=/recharge/")
@@ -143,25 +229,32 @@ def create_mobile_money_checkout(request):
     if not settings.CINETPAY_API_KEY or not settings.CINETPAY_SITE_ID:
         return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
 
+    rate = settings.CINETPAY_XOF_PER_USD
+    if not rate.is_finite() or rate <= 0:
+        return JsonResponse({"error": "Le taux de conversion FCFA/USD n'est pas configure."}, status=503)
+
     try:
         amount = Decimal(request.POST.get("amount", ""))
-        amount_cents = int(amount * 100)
+        amount_fcfa = int(amount)
     except (ArithmeticError, TypeError, ValueError):
-        return JsonResponse({"error": "Montant invalide."}, status=400)
-    if amount_cents < 100:
-        return JsonResponse({"error": "Le montant Mobile Money minimum est de 1 dollar."}, status=400)
+        return JsonResponse({"error": "Le montant doit etre un nombre entier en FCFA."}, status=400)
+    if not amount.is_finite() or amount != Decimal(amount_fcfa):
+        return JsonResponse({"error": "Le montant Mobile Money doit etre un nombre entier en FCFA."}, status=400)
+    minimum_amount_xof = int(rate.to_integral_value(rounding=ROUND_CEILING))
+    if amount_fcfa < minimum_amount_xof:
+        return JsonResponse({
+            "error": f"Le montant Mobile Money minimum est de {minimum_amount_xof:,} FCFA.".replace(",", " "),
+        }, status=400)
 
     phone = request.POST.get("phone", "").strip()
     operator = request.POST.get("operator", "").strip()
     if not phone or operator not in MOBILE_MONEY_OPERATORS:
         return JsonResponse({"error": "Le numero et l'operateur Mobile Money sont requis."}, status=400)
-
     transaction_id = str(uuid.uuid4())
-    credits = (amount_cents * CREDITS_PER_DOLLAR) // 100
-
-    # CinetPay travaille en XOF (FCFA) — conversion approximative si ton montant est en USD/EUR
-    # Adapte selon la devise réelle de ton amount ; exemple ici en supposant déjà du FCFA
-    amount_fcfa = int(amount)
+    credits = int(
+        (Decimal(amount_fcfa) * CREDITS_PER_DOLLAR / rate).to_integral_value(rounding=ROUND_DOWN)
+    )
+    amount_cents = amount_fcfa * 100
 
     payload = {
         "apikey": settings.CINETPAY_API_KEY,
@@ -188,19 +281,27 @@ def create_mobile_money_checkout(request):
     except (requests.RequestException, ValueError):
         return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
 
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Réponse invalide du prestataire Mobile Money."}, status=502)
     if data.get("code") != "201":
         return JsonResponse({"error": data.get("message", "Erreur CinetPay.")}, status=502)
+    provider_data = data.get("data")
+    payment_url = provider_data.get("payment_url") if isinstance(provider_data, dict) else None
+    if not isinstance(payment_url, str) or not payment_url:
+        return JsonResponse({"error": "CinetPay n'a pas fourni de lien de paiement valide."}, status=502)
 
     # Enregistre la transaction en attente, avant même la confirmation
     RechargePurchase.objects.create(
         user=request.user,
         stripe_session_id=transaction_id,  # réutilise ce champ, ou ajoute un champ dédié cinetpay_transaction_id
+        method=RechargePurchase.Method.CINETPAY,
+        phone_number=phone,
         amount_cents=amount_cents,
         credits=credits,
         status=RechargePurchase.Status.PENDING,
     )
 
-    return JsonResponse({"payment_url": data["data"]["payment_url"]})
+    return JsonResponse({"payment_url": payment_url})
 
 @login_required(login_url="/auth/?next=/recharge/")
 def recharge_success(request):

@@ -4,6 +4,13 @@ from api.models import APIProvider, AIModel
 
 PROVIDERS = [
     {
+        "slug": "openrouter",
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api",
+        "docs_url": "https://openrouter.ai/docs",
+        "models": [],
+    },
+    {
         "slug": "ollama-local",
         "name": "Mia (Ollama local)",
         "base_url": "http://127.0.0.1:11434",
@@ -96,7 +103,7 @@ PROVIDERS = [
 
 
 class Command(BaseCommand):
-    help = "Crée ou met à jour les fournisseurs IA, leurs modèles et leurs prix."
+    help = "Crée ou met à jour OpenRouter et les fournisseurs de génération de médias."
 
     def handle(self, *args, **options):
         for entry in PROVIDERS:
@@ -126,4 +133,8 @@ class Command(BaseCommand):
                 model_action = "créé" if model_created else "mis à jour"
                 self.stdout.write(f"  Modèle {model.name} {model_action}.")
 
-        self.stdout.write(self.style.SUCCESS("Terminé. Pense à ajouter les clés API via k.set_key(...) dans le shell."))
+        legacy_text_providers = APIProvider.objects.filter(
+            slug__in=("groq", "together", "anthropic", "openai", "ollama-local", "mia")
+        ).exclude(slug="openrouter")
+        AIModel.objects.filter(provider__in=legacy_text_providers).update(is_active=False)
+        self.stdout.write(self.style.SUCCESS("Terminé. Synchronise ensuite le catalogue OpenRouter avec sync_openrouter_models."))

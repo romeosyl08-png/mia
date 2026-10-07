@@ -8,6 +8,7 @@ import mimetypes
 from django.core.files.base import ContentFile
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,14 +17,13 @@ from django.utils.decorators import method_decorator
 from django.views import View
 
 from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
-from .media_generation import generate_media, normalize_generation_options
+from .media_generation import generate_media, generate_openrouter_media, normalize_generation_options
 from .routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 from ai_user.models import InsufficientCreditsError
+from api.constants import OPENROUTER_RANKING_OPTIONS
 
-from .services import ProviderError, call_llm_provider, call_llm_team, estimate_cost, generate_openai_image, is_local_provider, stream_llm_provider, stream_llm_team
+from .services import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, ProviderError, call_llm_provider, call_llm_team, estimate_cost, generate_openai_image, is_local_provider, stream_llm_provider, stream_llm_team
 from api.models import AIModel, APIProvider
-from itertools import groupby
-
 from bara.models import Workspace
 from bara.services import call_llm_with_tools, get_workspace_context, actual_cost_credits
 from bara.tools.executor import execute_tool
@@ -51,28 +51,43 @@ def _media_generation_credits(media_type, provider_slug, prompt, options):
 		return max(1, round(base * width * height / (1024 * 1024)))
 	if media_type == 'video':
 		base = settings.MEDIA_GENERATION_CREDITS['video']
-		resolution_factor = 0.6 if options['resolution'] == '480p' else 1
+		resolution_factor = 0.49 if options['resolution'] == '480p' else 1
 		return max(1, round(base * options['duration_seconds'] / 8 * resolution_factor))
 	return max(1, settings.MEDIA_GENERATION_CREDITS['audio'])
 
 
-def _media_provider_options():
+def _model_usage_for_category(model, category):
+	rankings = model.openrouter_rankings if isinstance(model.openrouter_rankings, dict) else {}
+	ranking = rankings.get(category)
+	if not isinstance(ranking, dict):
+		return 0
+	try:
+		return int(ranking.get('total_tokens', 0))
+	except (TypeError, ValueError):
+		return 0
+
+
+def _sort_openrouter_models(models, category='all'):
+	return sorted(
+		models,
+		key=lambda model: (
+			-_model_usage_for_category(model, category),
+			-model.output_price_per_million,
+			model.name.casefold(),
+			model.model_id,
+		),
+	)
+
+
+def _media_audio_provider():
 	providers = APIProvider.objects.filter(
 		is_active=True,
 		keys__is_active=True,
 	).distinct().order_by('name')
-	options = []
 	for provider in providers:
-		modalities = list(settings.MEDIA_GENERATION_MODELS.get(provider.slug, {}).keys())
-		if provider.slug == 'openai':
-			modalities.append('image')
-		if modalities:
-			options.append({
-				'slug': provider.slug,
-				'name': provider.name,
-				'modalities': modalities,
-			})
-	return options
+		if settings.MEDIA_GENERATION_MODELS.get(provider.slug, {}).get('audio'):
+			return provider
+	return None
 
 
 def chat_home(request):
@@ -82,42 +97,62 @@ def chat_home(request):
 	credits = 0
 	credit_account = getattr(request.user, "credit_account", None)
 	credits = credit_account.balance if credit_account is not None else 0
-	models = AIModel.objects.filter(
+	models = list(AIModel.objects.filter(
 		is_active=True,
 		provider__is_active=True,
-	).select_related('provider').order_by('provider__name', 'name')
-	models_by_provider = [
-    {'provider_name': provider_name, 'models': list(group)}
-    for provider_name, group in groupby(models, key=lambda m: m.provider.name)
-	]
+		provider__slug='openrouter',
+	).select_related('provider'))
+	models = _sort_openrouter_models(models)
 	preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
-	available_model_ids = set(models.values_list('model_id', flat=True))
+	available_model_ids = {model.model_id for model in models}
 	default_model_id = 'auto' if preferences.default_model_id == 'auto' and available_model_ids else ''
 	default_model_id = default_model_id or (preferences.default_model_id if preferences.default_model_id in available_model_ids else '')
-	default_model_id = default_model_id or (models.first().model_id if models.exists() else 'demo-mistral')
-	media_provider_options = _media_provider_options()
-	image_provider_available = any('image' in provider['modalities'] for provider in media_provider_options)
-	video_provider_available = any('video' in provider['modalities'] for provider in media_provider_options)
-	audio_provider_available = any('audio' in provider['modalities'] for provider in media_provider_options)
+	default_model_id = default_model_id or (models[0].model_id if models else 'demo-mistral')
+	rankings_as_of = {}
+	for model in models:
+		rankings = model.openrouter_rankings if isinstance(model.openrouter_rankings, dict) else {}
+		for category, ranking in rankings.items():
+			as_of = ranking.get('as_of') if isinstance(ranking, dict) else None
+			if isinstance(as_of, str) and as_of > rankings_as_of.get(category, ''):
+				rankings_as_of[category] = as_of
+	model_ranking_options = [
+		{
+			'value': category,
+			'label': label,
+			'as_of': rankings_as_of.get(category, ''),
+		}
+		for category, label in OPENROUTER_RANKING_OPTIONS
+	]
+	model_rankings_by_id = {
+		model.model_id: model.openrouter_rankings
+		for model in models
+		if isinstance(model.openrouter_rankings, dict)
+	}
+	openrouter_media_available = APIProvider.objects.filter(
+		slug='openrouter',
+		is_active=True,
+		keys__is_active=True,
+	).exists()
+	audio_provider_available = _media_audio_provider() is not None
 
 	chat_config = {
 		'initialCredits': credits,
 		'isAuthenticated': request.user.is_authenticated,
+		'userId': request.user.pk,
 		'loginUrl': '/auth/?next=/',
-		'hasActiveModels': models.exists(),
+		'hasActiveModels': bool(models),
 		'modelId': default_model_id,
 		'defaultTopP': preferences.top_p,
 		'defaultMaxTokens': preferences.max_tokens,
-		'imageProviderAvailable': image_provider_available,
-		'videoProviderAvailable': video_provider_available,
+		'imageGenerationAvailable': openrouter_media_available and bool(settings.OPENROUTER_IMAGE_MODEL),
+		'videoGenerationAvailable': openrouter_media_available and bool(settings.OPENROUTER_VIDEO_MODEL),
 		'audioProviderAvailable': audio_provider_available,
-		'mediaProviders': media_provider_options,
 	}
 
 	return render(request, 'chat.html', {
-		'models_by_provider': models_by_provider,
 		'ai_models': models,
-		'media_providers': media_provider_options,
+		'model_ranking_options': model_ranking_options,
+		'model_rankings_by_id': model_rankings_by_id,
 		'chat_config': chat_config,
 		  'initial_credits': credits,
 		  'is_authenticated': request.user.is_authenticated,
@@ -137,6 +172,7 @@ def customize(request):
 			"ai_models": AIModel.objects.filter(
 				is_active=True,
 				provider__is_active=True,
+				provider__slug='openrouter',
 			).select_related('provider').order_by('provider__name', 'name'),
         },
     )
@@ -340,7 +376,10 @@ class SendMessageView(View):
 				"rate_limit_exceeded",
 				429,
     )
-		model_query = AIModel.objects.filter(is_active=True, provider__is_active=True).select_related('provider')
+		model_query = AIModel.objects.filter(
+			is_active=True,
+			provider__is_active=True,
+		).select_related('provider')
 		preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
 		model_id = payload.get('model_id') or preferences.default_model_id
 		team_mode = bool(payload.get('team_mode'))
@@ -401,7 +440,7 @@ class SendMessageView(View):
 		if workspace and team_mode:
 			return _chat_error('Désactive le mode Équipe IA pour utiliser les fichiers Bara.', 'invalid_request', 400)
 		if workspace and not auto_requested and 'anthropic' in f"{model.provider.slug} {model.provider.name}".lower():
-			return _chat_error('Les outils de fichiers ne sont pas disponibles avec Anthropic. Choisis Mia, Groq, OpenAI ou Together.', 'unsupported_tools', 400)
+			return _chat_error('Les outils de fichiers ne sont pas disponibles avec ce modèle. Choisis un modèle compatible.', 'unsupported_tools', 400)
 
 		system_prompt = str(payload.get('system_prompt', ''))
 		messages = []
@@ -537,7 +576,7 @@ class SendMessageView(View):
 				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
 					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
 					record_shadow_run(request.user, shadow_run, 'error')
-					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
+					return _chat_error('Le modèle d’IA n’est pas configuré.', 'provider_unavailable', 503)
 				reply, provider_input, provider_output = _run_file_tools(
 					workspace,
 					model.provider,
@@ -559,7 +598,7 @@ class SendMessageView(View):
 				if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
 					account.credit(reserve, reason='adjustment', note='Remboursement modèle non configuré')
 					record_shadow_run(request.user, shadow_run, 'error')
-					return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
+					return _chat_error('Le modèle d’IA n’est pas configuré.', 'provider_unavailable', 503)
 				reply, provider_input, provider_output = call_llm_provider(
 					model.provider,
 					api_key.get_key() if api_key else '',
@@ -583,7 +622,7 @@ class SendMessageView(View):
 			account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
 			record_shadow_run(request.user, shadow_run, 'error', tools_used=file_tools_used)
 			return _chat_error(
-				"Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.",
+				"Erreur inattendue pendant la génération. Réessaie dans un instant.",
 				'provider_error',
 				502,
 			)
@@ -614,7 +653,7 @@ class SendMessageView(View):
 				if not team_mode:
 					api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
 					if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
-						raise ProviderError('Le fournisseur IA n’est pas configuré.')
+						raise ProviderError('Le modèle d’IA n’est pas configuré.')
 					provider_stream = stream_llm_provider(
 						model.provider,
 						api_key.get_key() if api_key else '',
@@ -669,7 +708,7 @@ class SendMessageView(View):
 				account.credit(reserve, reason='adjustment', note='Remboursement erreur fournisseur inattendue')
 				record_shadow_run(request.user, shadow_run, 'error')
 				settled = True
-				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': 'Erreur inattendue pendant l’appel au fournisseur. Réessaie dans un instant.'}})
+				yield _sse_event({'type': 'error', 'error': {'type': 'provider_error', 'message': 'Erreur inattendue pendant la génération. Réessaie dans un instant.'}})
 			finally:
 				if not settled:
 					account.credit(reserve, reason='adjustment', note='Remboursement flux interrompu')
@@ -677,6 +716,57 @@ class SendMessageView(View):
 
 		return events()
 
+
+
+@method_decorator(login_required(login_url='/auth/?next=/chat/api/conversations/sync-local/'), name='dispatch')
+class LocalConversationSyncView(View):
+	def post(self, request):
+		if len(request.body) > 1_000_000:
+			return _chat_error('La conversation est trop volumineuse pour être synchronisée.', 'invalid_request', 413)
+		try:
+			payload = json.loads(request.body or '{}')
+		except (TypeError, ValueError):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		if not isinstance(payload, dict):
+			return _chat_error('JSON invalide.', 'invalid_request', 400)
+
+		raw_messages = payload.get('messages')
+		if not isinstance(raw_messages, list) or len(raw_messages) > 200:
+			return _chat_error('La conversation doit contenir au maximum 200 messages.', 'invalid_request', 400)
+		messages = []
+		total_chars = 0
+		for item in raw_messages:
+			if not isinstance(item, dict) or item.get('role') not in {'user', 'assistant'}:
+				return _chat_error('Chaque message doit avoir un rôle utilisateur ou assistant.', 'invalid_request', 400)
+			content = item.get('content')
+			if not isinstance(content, str) or not content.strip() or len(content) > 100_000:
+				return _chat_error('Le contenu d’un message est invalide.', 'invalid_request', 400)
+			total_chars += len(content)
+			if total_chars > 900_000:
+				return _chat_error('La conversation est trop volumineuse pour être synchronisée.', 'invalid_request', 413)
+			messages.append((item['role'], content))
+		if not messages:
+			return _chat_error('La conversation ne contient aucun nouveau message.', 'invalid_request', 400)
+
+		persona = None
+		persona_id = payload.get('persona_id')
+		if persona_id is not None:
+			persona = get_object_or_404(Persona, id=persona_id, user=request.user)
+		conversation_id = payload.get('conversation_id')
+		with transaction.atomic():
+			if conversation_id is not None:
+				conversation = get_object_or_404(Conversation, id=conversation_id, user=request.user)
+			else:
+				title = str(payload.get('title') or 'Conversation locale').strip()[:200] or 'Conversation locale'
+				conversation = Conversation.objects.create(user=request.user, persona=persona, title=title)
+			if persona and conversation.persona_id != persona.id:
+				conversation.persona = persona
+				conversation.save(update_fields=['persona', 'updated_at'])
+			for role, content in messages:
+				Message.objects.create(conversation=conversation, role=role, content=content)
+			conversation.save(update_fields=['updated_at'])
+
+		return JsonResponse({'conversation_id': conversation.id, 'title': conversation.title})
 
 
 class ConversationListView(View):
@@ -751,15 +841,21 @@ class ImageGenerationView(View):
 		if not check_user_rate_limit(request.user.id, max_requests=3, window_seconds=60, key_prefix=f'media-{media_type}')[0]:
 			return _chat_error('Trop de générations demandées. Réessaie dans un instant.', 'rate_limit_exceeded', 429)
 
-		provider_slug = str(payload.get('provider_slug') or '').strip()
-		if not provider_slug and media_type == 'image':
-			provider_slug = 'openai'
-		provider_models = settings.MEDIA_GENERATION_MODELS.get(provider_slug, {})
-		model_id = provider_models.get(media_type)
-		if provider_slug == 'openai' and media_type == 'image':
-			model_id = 'gpt-image-1'
+		audio_provider = None
+		if media_type in {'image', 'video'}:
+			provider_slug = 'openrouter'
+			model_id = (
+				settings.OPENROUTER_IMAGE_MODEL
+				if media_type == 'image'
+				else settings.OPENROUTER_VIDEO_MODEL
+			)
+		else:
+			audio_provider = _media_audio_provider()
+			provider_slug = audio_provider.slug if audio_provider else ''
+			model_id = settings.MEDIA_GENERATION_MODELS.get(provider_slug, {}).get('audio')
 		if not model_id:
-			return _chat_error('Ce fournisseur ne propose pas ce type de média.', 'media_generation_unavailable', 503)
+			error_type = 'image_generation_unavailable' if media_type == 'image' else 'media_generation_unavailable'
+			return _chat_error('Ce type de génération n’est pas configuré.', error_type, 503)
 		try:
 			generation_options = normalize_generation_options(
 				media_type,
@@ -770,11 +866,11 @@ class ImageGenerationView(View):
 		except ProviderError as error:
 			return _chat_error(str(error), 'invalid_request', 400)
 
-		provider = APIProvider.objects.filter(slug=provider_slug, is_active=True).first()
+		provider = audio_provider or APIProvider.objects.filter(slug=provider_slug, is_active=True).first()
 		api_key = provider.keys.filter(is_active=True).order_by('id').first() if provider else None
-		if not provider or not api_key or (provider_slug == 'openai' and not provider.base_url):
+		if not provider or not api_key:
 			error_type = 'image_generation_unavailable' if media_type == 'image' else 'media_generation_unavailable'
-			return _chat_error('Aucun fournisseur média avec une clé active n’est configuré.', error_type, 503)
+			return _chat_error('La génération n’est pas configurée pour le moment.', error_type, 503)
 
 		conversation = None
 		if payload.get('conversation_id'):
@@ -793,13 +889,12 @@ class ImageGenerationView(View):
 		except InsufficientCreditsError:
 			return _chat_error('Crédits insuffisants pour générer ce média.', 'insufficient_credits', 402)
 
+		usage_cost_usd = None
 		try:
-			if provider_slug == 'openai':
-				image_base64, _usage = generate_openai_image(
-					provider, api_key.get_key(), prompt, size=generation_options['image_size'],
+			if provider_slug == 'openrouter':
+				media_bytes, content_type, usage_cost_usd = generate_openrouter_media(
+					api_key.get_key(), media_type, prompt, model_id, generation_options,
 				)
-				media_bytes = base64.b64decode(image_base64, validate=True)
-				content_type = 'image/png'
 			else:
 				media_bytes, content_type = generate_media(
 					provider, api_key.get_key(), media_type, prompt, model_id, generation_options,
@@ -811,6 +906,37 @@ class ImageGenerationView(View):
 			logger.exception('Unexpected media generation failure (user_id=%s)', request.user.pk)
 			account.credit(charge, reason='adjustment', note='Remboursement génération média échouée')
 			return _chat_error('La génération du média a échoué. Aucun crédit n’a été conservé.', 'media_generation_failed', 502)
+
+		if usage_cost_usd is not None:
+			actual_charge = max(
+				1,
+				round(float(usage_cost_usd) * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR),
+			)
+			if actual_charge > charge:
+				try:
+					account.debit(
+						actual_charge - charge,
+						reason='usage',
+						note=f'Ajustement génération {media_type}',
+					)
+				except InsufficientCreditsError:
+					account.credit(
+						charge,
+						reason='adjustment',
+						note='Remboursement génération au coût réel inaccessible',
+					)
+					return _chat_error(
+						'Le coût réel dépasse le solde disponible. Les crédits réservés ont été remboursés.',
+						'insufficient_credits',
+						402,
+					)
+			elif actual_charge < charge:
+				account.credit(
+					charge - actual_charge,
+					reason='adjustment',
+					note=f'Ajustement du coût réel génération {media_type}',
+				)
+			charge = actual_charge
 
 		if temporary:
 			return JsonResponse({
@@ -1180,7 +1306,10 @@ class PersonaMemorySuggestionView(View):
 		if not check_user_rate_limit(request.user.id, max_requests=3, window_seconds=60, key_prefix='persona-memory')[0]:
 			return _chat_error('Trop de demandes de mémoire. Réessaie dans un instant.', 'rate_limit_exceeded', 429)
 
-		model_query = AIModel.objects.filter(is_active=True, provider__is_active=True).select_related('provider')
+		model_query = AIModel.objects.filter(
+			is_active=True,
+			provider__is_active=True,
+		).select_related('provider')
 		preferences, _ = ChatPreferences.objects.get_or_create(user=request.user)
 		model_id = payload.get('model_id') or preferences.default_model_id
 		model = model_query.filter(model_id=model_id).first() if model_id else model_query.first()
@@ -1190,7 +1319,7 @@ class PersonaMemorySuggestionView(View):
 			return _chat_error('Aucun modèle actif n’est configuré.', 'provider_unavailable', 503)
 		api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
 		if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
-			return _chat_error('Le fournisseur IA n’est pas configuré.', 'provider_unavailable', 503)
+			return _chat_error('Le modèle d’IA n’est pas configuré.', 'provider_unavailable', 503)
 
 		system_prompt = (
 			"Tu extrais uniquement des préférences stables sur la façon dont la personne veut recevoir ses réponses. "

@@ -223,3 +223,74 @@ class WorkspaceMCPServer(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.workspace})"
+
+
+class WorkspacePluginConnection(models.Model):
+    PLUGIN_CHOICES = [
+        ("google_mail", "Gmail"),
+        ("microsoft_mail", "Outlook"),
+        ("blender", "Blender"),
+    ]
+
+    workspace = models.ForeignKey(
+        Workspace,
+        on_delete=models.CASCADE,
+        related_name="plugin_connections",
+    )
+    plugin = models.CharField(max_length=20, choices=PLUGIN_CHOICES)
+    account_email = models.EmailField(blank=True)
+    encrypted_access_token = models.TextField(blank=True)
+    encrypted_refresh_token = models.TextField(blank=True)
+    access_token_expires_at = models.DateTimeField(null=True, blank=True)
+    blender_token_hash = models.CharField(max_length=64, blank=True, db_index=True)
+    is_enabled = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["plugin"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "plugin"],
+                name="bara_unique_workspace_plugin",
+            ),
+        ]
+
+    def set_oauth_tokens(self, access_token, refresh_token=None):
+        self.encrypted_access_token = encrypt_value(access_token) if access_token else ""
+        if refresh_token:
+            self.encrypted_refresh_token = encrypt_value(refresh_token)
+
+    def get_access_token(self):
+        return decrypt_value(self.encrypted_access_token) if self.encrypted_access_token else ""
+
+    def get_refresh_token(self):
+        return decrypt_value(self.encrypted_refresh_token) if self.encrypted_refresh_token else ""
+
+    def __str__(self):
+        return f"{self.get_plugin_display()} ({self.workspace})"
+
+
+class BlenderAutomationTask(models.Model):
+    STATUS_CHOICES = [
+        ("queued", "En attente"),
+        ("running", "En cours"),
+        ("success", "Réussi"),
+        ("error", "Erreur"),
+    ]
+
+    connection = models.ForeignKey(
+        WorkspacePluginConnection,
+        on_delete=models.CASCADE,
+        related_name="blender_tasks",
+    )
+    action = models.CharField(max_length=40)
+    arguments = models.JSONField(default=dict)
+    result = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="queued")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at"]

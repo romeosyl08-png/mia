@@ -1,88 +1,174 @@
 {% extends "base.html" %}
 
-{% block title %}Recharger ses jetons{% endblock %}
+{% block title %}Recharger mes jetons{% endblock %}
 
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=recharge-rates-1">
 {% endblock %}
 
 {% block body %}
+<main class="recharge-page">
+  <nav class="recharge-nav" aria-label="Navigation de recharge">
+    <a class="recharge-back" href="{% url 'chat:chat-home' %}">
+      <span aria-hidden="true">←</span> Retour au chat
+    </a>
+    <span class="recharge-brand">2AI <span aria-hidden="true">/</span> MON COMPTE</span>
+  </nav>
 
-  <!-- CRÉDITS -->
-<section class="settings-section">
+  <header class="recharge-hero">
+    <p class="recharge-eyebrow">Crédits 2AI</p>
+    <h1>Recharge ton solde</h1>
+    <p>Choisis un montant et un moyen de paiement. Tes jetons seront ajoutés après confirmation.</p>
+    <div class="recharge-equivalence">
+      <strong>
+        {% if conversion_rate_display %}{{ conversion_rate_display }} FCFA = {% endif %}
+        1 USD = {{ credits_per_dollar_display }} jetons
+      </strong>
+      <a href="{% url 'tariffs-page' %}">Voir les tarifs de toutes les IA <span aria-hidden="true">→</span></a>
+    </div>
+  </header>
 
-            <h2>Solde de jetons</h2>
-
-            <div class="gauge-wrap">
-
-                <div class="gauge">
-                    <svg width="128" height="128" viewBox="0 0 128 128">
-                        <circle
-                            class="track"
-                            cx="64"
-                            cy="64"
-                            r="54">
-                        </circle>
-
-                        <circle
-                            class="fill"
-                            id="gaugeFill"
-                            cx="64"
-                            cy="64"
-                            r="54"
-                            stroke-dasharray="339"
-                            stroke-dashoffset="0">
-                        </circle>
-                    </svg>
-
-                    <div class="gauge-center">
-                        <div class="num" id="gaugeNum">0</div>
-                        <div class="lbl">jetons restants</div>
-                    </div>
-                </div>
-
-                <div class="low-warning" id="lowWarning">
-                    ⚠ Solde bas — pense à recharger
-                </div>
-            </div>
-
-        </section>
-
-  <h1>Recharger mes jetons</h1>
-  <p class="intro">Paiement sécurisé par Stripe. Les jetons sont ajoutés après confirmation du paiement.</p>
-  <div class="plans">
-    <form class="plan custom-plan" method="post" action="{% url 'create-recharge-checkout' %}">
-      {% csrf_token %}
-      <h2>Stripe</h2>
-      <label for="stripe-amount"><strong>Montant</strong></label>
-      <div class="amount-row"><span>$</span><input id="stripe-amount" name="amount" type="number" min="5" step="0.01" value="5.00" required></div>
-      <p>A partir de $5, sans montant maximum. Chaque dollar ajoute 10 000 jetons.</p>
-      <button type="submit">Payer avec Stripe</button>
-    </form>
-
-    <form class="plan custom-plan" method="post" action="{% url 'create-mobile-money-checkout' %}">
-      {% csrf_token %}
-      <h2>Mobile Money</h2>
-      <label for="mobile-amount"><strong>Montant</strong></label>
-      <div class="amount-row"><span>$</span><input id="mobile-amount" name="amount" type="number" min="1" step="0.01" value="1.00" required></div>
-      <span class="operator-label">Operateur</span>
-      <input type="hidden" id="operator" name="operator" value="wave" required>
-      <div class="operator-grid" role="group" aria-label="Choisir un operateur Mobile Money">
-        <button class="operator-choice active" type="button" data-operator="wave"><span class="operator-icon wave">W</span><span class="operator-name">Wave</span></button>
-        <button class="operator-choice" type="button" data-operator="orange"><span class="operator-icon orange">OM</span><span class="operator-name">Orange Money<span class="operator-prefix">07</span></span></button>
-        <button class="operator-choice" type="button" data-operator="momo"><span class="operator-icon momo">M</span><span class="operator-name">Momo<span class="operator-prefix">01</span></span></button>
-        <button class="operator-choice" type="button" data-operator="moov"><span class="operator-icon moov">M</span><span class="operator-name">Moov Money<span class="operator-prefix">05</span></span></button>
+  <section class="balance-card" aria-labelledby="balanceHeading">
+    <div class="balance-mark" aria-hidden="true">✦</div>
+    <div class="balance-copy">
+      <span id="balanceHeading" class="balance-label">Ton solde actuel</span>
+      <div class="balance-amount">
+        <strong>{{ credits_display }}</strong>
+        <span>jetons</span>
       </div>
-      <label class="field" for="phone">Numero Mobile Money<input id="phone" name="phone" type="tel" placeholder="+225 07 00 00 00 00" required></label>
-      <p>A partir de $1, sans montant maximum. Le paiement sera confirme par l'operateur.</p>
-      <button type="submit">Payer avec Mobile Money</button>
-    </form>
-  </div>
-  <div style="margin-top:40px;">
-    <h2>Autres méthodes de paiement</h2>
-    <p>Si tu souhaites utiliser un autre moyen de paiement (Wave, Orange Money, Moov Money, Momo, CinetPay, PayPal, crypto-monnaies...), contacte-nous à </p>
-  </div>
-  <a class="back" href="{% url 'chat:chat-home' %}">Retour au chat</a>
+      {% if credits == 0 %}
+      <p class="balance-message is-low">Ton solde est épuisé. Recharge pour continuer à utiliser les IA.</p>
+      {% else %}
+      <p class="balance-message">Le solde est crédité après confirmation du paiement.</p>
+      {% endif %}
+    </div>
+    <div class="balance-side-note">Mis à jour à l’ouverture de cette page</div>
+  </section>
 
+  <section class="payment-section" aria-labelledby="paymentHeading">
+    <div class="payment-section-heading">
+      <div>
+        <p class="recharge-eyebrow">Paiement</p>
+        <h2 id="paymentHeading">Choisis ta méthode</h2>
+      </div>
+      <span class="payment-security"><span aria-hidden="true">✓</span> Paiement confirmé avant crédit</span>
+    </div>
+
+    <div class="payment-grid">
+      <form class="payment-card stripe-card" method="post" action="{% url 'create-recharge-checkout' %}">
+        {% csrf_token %}
+        <div class="payment-card-heading">
+          <span class="payment-provider-mark stripe-mark" aria-hidden="true">S</span>
+          <div>
+            <p class="payment-overline">Carte bancaire</p>
+            <h3>Stripe</h3>
+          </div>
+          <span class="payment-tag">USD</span>
+        </div>
+        <p class="payment-description">Paiement par carte via la page sécurisée de Stripe.</p>
+
+        <label class="amount-label" for="stripe-amount">Montant à recharger</label>
+        <div class="currency-input">
+          <span class="currency-symbol" aria-hidden="true">$</span>
+          <input id="stripe-amount" name="amount" type="number" min="5" step="0.01" value="5.00" required aria-describedby="stripeRate stripeCreditsEstimate">
+          <span class="currency-code">USD</span>
+        </div>
+        <div class="amount-presets" aria-label="Montants rapides en dollars">
+          <button type="button" data-set-amount="stripe-amount" data-amount="5">$5</button>
+          <button type="button" data-set-amount="stripe-amount" data-amount="10">$10</button>
+          <button type="button" data-set-amount="stripe-amount" data-amount="25">$25</button>
+        </div>
+        <p class="payment-rate-note" id="stripeRate">Minimum 5 USD · {{ credits_per_dollar_display }} jetons par dollar.</p>
+        <div class="credit-estimate">
+          <span>Tu recevras environ</span>
+          <output id="stripeCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" aria-live="polite">{{ stripe_default_credits_display }} jetons</output>
+        </div>
+
+        {% if stripe_available %}
+        <button class="payment-submit" type="submit">Continuer avec Stripe <span aria-hidden="true">→</span></button>
+        <p class="payment-footnote">Tu seras redirigé vers Stripe pour confirmer le paiement.</p>
+        {% else %}
+        <p class="payment-unavailable" role="status">Le paiement par carte n’est pas configuré pour le moment.</p>
+        <button class="payment-submit" type="button" disabled>Stripe indisponible</button>
+        {% endif %}
+      </form>
+
+      <form class="payment-card mobile-card" id="mobileMoneyForm" method="post" action="{% url 'create-mobile-money-checkout' %}">
+        {% csrf_token %}
+        <div class="payment-card-heading">
+          <span class="payment-provider-mark mobile-mark" aria-hidden="true">M</span>
+          <div>
+            <p class="payment-overline">Paiement local</p>
+            <h3>Mobile Money</h3>
+          </div>
+          <span class="payment-tag">FCFA</span>
+        </div>
+        <p class="payment-description">Choisis ton opérateur puis confirme le paiement sur ton téléphone.</p>
+
+        <label class="amount-label" for="mobile-amount">Montant à recharger</label>
+        <div class="currency-input">
+          <span class="currency-symbol currency-symbol-text" aria-hidden="true">FCFA</span>
+          <input id="mobile-amount" name="amount" type="number" min="{{ mobile_money_minimum_xof }}" step="1" value="{{ default_mobile_money_amount }}" required aria-describedby="mobileMoneyRate mobileMoneyCreditsEstimate" {% if not mobile_money_available %}disabled{% endif %}>
+          <span class="currency-code">XOF</span>
+        </div>
+        {% if mobile_money_available %}
+        <div class="amount-presets" aria-label="Montants rapides en FCFA">
+          {% for preset in mobile_money_presets %}
+          <button type="button" data-set-amount="mobile-amount" data-amount="{{ preset.amount }}">{{ preset.label }} FCFA</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <p class="payment-rate-note" id="mobileMoneyRate">
+          {% if mobile_money_available %}
+          Minimum {{ mobile_money_minimum_xof|floatformat:0 }} FCFA · 1 USD = {{ conversion_rate_display }} FCFA.
+          {% else %}
+          {{ mobile_money_unavailable_reason }}
+          {% endif %}
+        </p>
+        <div class="credit-estimate">
+          <span>Tu recevras environ</span>
+          <output id="mobileMoneyCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-xof-per-usd="{{ mobile_money_rate|default:0 }}" aria-live="polite">
+            {% if mobile_money_available %}{{ default_mobile_money_credits_display }} jetons{% else %}Indisponible{% endif %}
+          </output>
+        </div>
+
+        <span class="operator-label">Ton opérateur</span>
+        <input type="hidden" id="operator" name="operator" value="wave">
+        <div class="operator-grid" role="group" aria-label="Choisir un opérateur Mobile Money">
+          <button class="operator-choice active" type="button" data-operator="wave" aria-pressed="true" {% if not mobile_money_available %}disabled{% endif %}>
+            <span class="operator-icon wave" aria-hidden="true">W</span><span class="operator-name">Wave</span>
+          </button>
+          <button class="operator-choice" type="button" data-operator="orange" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
+            <span class="operator-icon orange" aria-hidden="true">OM</span><span class="operator-name">Orange Money<span class="operator-prefix">07</span></span>
+          </button>
+          <button class="operator-choice" type="button" data-operator="momo" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
+            <span class="operator-icon momo" aria-hidden="true">M</span><span class="operator-name">Momo<span class="operator-prefix">01</span></span>
+          </button>
+          <button class="operator-choice" type="button" data-operator="moov" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
+            <span class="operator-icon moov" aria-hidden="true">M</span><span class="operator-name">Moov Money<span class="operator-prefix">05</span></span>
+          </button>
+        </div>
+
+        <label class="phone-field" for="phone">
+          Numéro Mobile Money
+          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+225 07 00 00 00 00" required {% if not mobile_money_available %}disabled{% endif %}>
+        </label>
+        <p class="payment-status" id="mobileMoneyStatus" role="status" aria-live="polite"></p>
+        {% if mobile_money_available %}
+        <button class="payment-submit" id="mobileMoneySubmit" type="submit">Continuer avec Mobile Money <span aria-hidden="true">→</span></button>
+        {% else %}
+        <button class="payment-submit" id="mobileMoneySubmit" type="button" disabled>Mobile Money indisponible</button>
+        {% endif %}
+        <p class="payment-footnote">Le taux configuré est appliqué au montant en FCFA pour calculer les jetons.</p>
+      </form>
+    </div>
+  </section>
+
+  <section class="payment-steps" aria-label="Étapes du paiement">
+    <div><span>1</span><p>Choisis un montant</p></div>
+    <div><span>2</span><p>Confirme auprès du prestataire</p></div>
+    <div><span>3</span><p>Retrouve tes jetons dans ton solde</p></div>
+  </section>
+</main>
 {% endblock %}

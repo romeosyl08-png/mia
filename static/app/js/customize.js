@@ -418,7 +418,12 @@
             personaLength.value = persona.length || "moyenne";
             applyPersonaAppearance(persona);
             const fallback = appearance.get();
-            if (botNameInput) botNameInput.value = persona.appearance_name || fallback.botName;
+            if (botNameInput) {
+                const personaName = persona.appearance_name || fallback.botName;
+                botNameInput.value = personaName.toLocaleLowerCase() === "le comptoir"
+                    ? "2AI"
+                    : personaName;
+            }
             if (botAvatarInput) botAvatarInput.value = persona.appearance_avatar || fallback.botAvatar;
             render();
             const temperatureLabel = document.getElementById("tempVal");

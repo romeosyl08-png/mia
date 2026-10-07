@@ -37,7 +37,7 @@
 {% block body %}
 <div class="legal-page">
   <header class="legal-topbar">
-    <a class="legal-brand" href="/">2AI · Le Comptoir</a>
+    <a class="legal-brand" href="/">2AI</a>
     <nav class="legal-nav" aria-label="Navigation">
       <a href="/">Le chat</a>
       <a href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
@@ -46,7 +46,7 @@
 
   <main>
     <header class="legal-header">
-      <p class="legal-eyebrow">2AI · Le Comptoir</p>
+      <p class="legal-eyebrow">2AI</p>
       <h1>Informations juridiques</h1>
       <p>Informations sur l’éditeur, l’hébergement, les données utilisées et les services de paiement de la plateforme.</p>
     </header>
@@ -72,8 +72,8 @@
     <section class="legal-section" aria-labelledby="dataTitle">
       <h2 id="dataTitle">Données et fonctionnement</h2>
       <p>Le service traite les informations nécessaires au compte et à son fonctionnement, notamment les identifiants de compte, les conversations enregistrées, les réglages de persona, les espaces de fichiers utilisés et l’historique des opérations de jetons.</p>
-      <p>Les conversations ordinaires sont conservées dans l’historique du compte. Le mode temporaire évite leur enregistrement comme conversation dans la base 2AI; les requêtes restent transmises au fournisseur d’IA sélectionné et l’utilisation reste débitée. Le fournisseur tiers applique ses propres règles de traitement et de conservation.</p>
-      <p>Les contenus nécessaires à une demande (par exemple le message, le contexte fourni et, selon l’outil choisi, des extraits de fichiers) sont transmis au fournisseur d’IA concerné pour produire la réponse. Les fournisseurs actifs et les durées exactes de conservation doivent être précisés par l’éditeur selon la configuration de chaque déploiement.</p>
+      <p>Les conversations ordinaires sont conservées dans l’historique du compte. Le mode temporaire évite leur enregistrement comme conversation dans la base 2AI; les requêtes restent transmises aux services d’IA externes nécessaires à leur traitement et l’utilisation reste débitée. Ces services appliquent leurs propres règles de traitement et de conservation.</p>
+      <p>Les contenus nécessaires à une demande (par exemple le message, le contexte fourni et, selon l’outil choisi, des extraits de fichiers) sont transmis aux services d’IA concernés pour produire la réponse. L’éditeur doit préciser les services actifs et les durées exactes de conservation selon la configuration de chaque déploiement.</p>
       <p>Les cookies de session, de sécurité et de protection contre les requêtes falsifiées sont utilisés pour le fonctionnement du site. Le navigateur peut aussi conserver localement des préférences d’apparence.</p>
     </section>
 
@@ -95,7 +95,7 @@
   </main>
 
   <footer class="legal-footer">
-    <span>2AI · Le Comptoir</span>
+    <span>2AI</span>
     <a href="{% url 'chat:about' %}">À propos de 2AI</a>
   </footer>
 </div>

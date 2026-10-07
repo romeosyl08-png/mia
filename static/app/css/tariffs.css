@@ -1,0 +1,288 @@
+html:has(.tariffs-page),
+body:has(.tariffs-page) {
+  height: auto;
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+body:has(.tariffs-page) {
+  display: block;
+}
+
+.tariffs-page {
+  --tariffs-ink: #24211f;
+  --tariffs-muted: #77716d;
+  --tariffs-accent: #b64b3f;
+  --tariffs-line: #e9e2de;
+  --tariffs-paper: #fffdfb;
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 28px 0 64px;
+  color: var(--tariffs-ink);
+}
+
+.tariffs-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 64px;
+  color: var(--tariffs-muted);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: .08em;
+}
+
+.tariffs-nav a {
+  color: inherit;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+
+.tariffs-nav a:hover {
+  color: var(--tariffs-accent);
+}
+
+.tariffs-nav > span {
+  text-transform: uppercase;
+}
+
+.tariffs-nav > span > span {
+  color: var(--tariffs-accent);
+}
+
+.tariffs-hero {
+  margin-bottom: 36px;
+}
+
+.tariffs-eyebrow {
+  margin: 0 0 10px;
+  color: var(--tariffs-accent);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.tariffs-hero h1 {
+  margin: 0;
+  font-size: clamp(38px, 6vw, 66px);
+  line-height: 1.03;
+  letter-spacing: -.055em;
+}
+
+.tariffs-hero > p:not(.tariffs-eyebrow) {
+  max-width: 700px;
+  margin: 18px 0 0;
+  color: var(--tariffs-muted);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.tariffs-equivalence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 26px;
+  padding: 16px 20px;
+  border: 1px solid #e8c7c1;
+  border-radius: 14px;
+  background: #fff8f6;
+}
+
+.tariffs-equivalence strong {
+  font-size: 18px;
+}
+
+.tariffs-equivalence span {
+  color: var(--tariffs-muted);
+  font-size: 14px;
+}
+
+.tariffs-panel {
+  padding: 28px;
+  border: 1px solid var(--tariffs-line);
+  border-radius: 20px;
+  background: var(--tariffs-paper);
+  box-shadow: 0 16px 48px rgb(50 37 31 / 5%);
+}
+
+.tariffs-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 24px;
+}
+
+.tariffs-panel-heading h2 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -.035em;
+}
+
+.tariffs-search {
+  display: grid;
+  gap: 7px;
+  width: min(340px, 100%);
+  color: var(--tariffs-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tariffs-search input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--tariffs-line);
+  border-radius: 10px;
+  background: white;
+  color: var(--tariffs-ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.tariffs-search input:focus {
+  outline: 2px solid rgb(182 75 63 / 24%);
+  border-color: var(--tariffs-accent);
+}
+
+.tariffs-explanation {
+  margin: 18px 0;
+  color: var(--tariffs-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tariffs-table-wrap {
+  overflow: auto;
+  max-height: 68vh;
+  border: 1px solid var(--tariffs-line);
+  border-radius: 12px;
+}
+
+.tariffs-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.tariffs-table th,
+.tariffs-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--tariffs-line);
+  vertical-align: middle;
+}
+
+.tariffs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f7f3f0;
+  color: var(--tariffs-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tariffs-table thead th span {
+  color: var(--tariffs-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tariffs-table tbody tr:hover {
+  background: #fff8f6;
+}
+
+.tariffs-table tbody tr:last-child th,
+.tariffs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tariffs-table tbody th {
+  min-width: 260px;
+  font-weight: 600;
+}
+
+.tariffs-model-name,
+.tariffs-table code {
+  display: block;
+}
+
+.tariffs-table code {
+  margin-top: 4px;
+  color: var(--tariffs-muted);
+  font-size: 11px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.tariffs-table td:nth-child(n + 3) {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tariffs-empty,
+.tariffs-no-results {
+  padding: 24px;
+  color: var(--tariffs-muted);
+  text-align: center;
+}
+
+.tariffs-result-count {
+  margin: 12px 0 0;
+  color: var(--tariffs-muted);
+  font-size: 12px;
+}
+
+.tariffs-local-note {
+  margin-top: 20px;
+  padding: 20px 22px;
+  border-left: 3px solid var(--tariffs-accent);
+  border-radius: 8px;
+  background: #f7f3f0;
+}
+
+.tariffs-local-note p {
+  margin: 5px 0 0;
+  color: var(--tariffs-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (max-width: 700px) {
+  .tariffs-page {
+    width: min(100% - 28px, 1180px);
+    padding-top: 18px;
+  }
+
+  .tariffs-nav {
+    margin-bottom: 42px;
+    font-size: 11px;
+  }
+
+  .tariffs-panel {
+    padding: 18px 14px;
+    border-radius: 15px;
+  }
+
+  .tariffs-panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .tariffs-search {
+    width: 100%;
+  }
+
+  .tariffs-table th,
+  .tariffs-table td {
+    padding: 11px 12px;
+  }
+
+  .tariffs-table tbody th {
+    min-width: 210px;
+  }
+}

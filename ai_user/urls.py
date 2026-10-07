@@ -11,6 +11,7 @@ urlpatterns = [
     path('auth/google/', views.google_login, name='google-login'),
     path('auth/google/callback/', views.google_callback, name='google-callback'),
     path("recharge/", views.recharge_page, name="recharge-page"),
+    path("tarifs/", views.tariffs_page, name="tariffs-page"),
     path("recharge/create-checkout/", views.create_recharge_checkout, name="create-recharge-checkout"),
     path("recharge/mobile-money/", views.create_mobile_money_checkout, name="create-mobile-money-checkout"),
     path("recharge/success/", views.recharge_success, name="recharge-success"),

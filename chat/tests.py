@@ -13,7 +13,7 @@ from django.conf import settings
 from api.models import AIModel, APIProvider
 from bara.models import Workspace
 from chat.services import ProviderError, call_llm_team, stream_llm_provider, stream_llm_team
-from chat.media_generation import _download_output, _run_apiframe, generate_media, normalize_generation_options
+from chat.media_generation import _download_output, _json_request, _run_apiframe, generate_media, generate_openrouter_media, normalize_generation_options
 from chat.routing import recommend_model
 from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
 
@@ -57,10 +57,89 @@ class ChatHomeTests(TestCase):
 		self.assertLess(sidebar_html.index('personaTopSelect'), sidebar_html.index('conversationsSectionTitle'))
 		self.assertGreater(sidebar_html.index('quick-nav'), sidebar_html.index('convoList'))
 
-	def test_media_controls_enable_for_a_configured_provider(self):
+	def test_chat_model_catalog_uses_openrouter_and_exposes_local_connection(self):
+		user = User.objects.create_user(username='openrouter-chat-user', password='test-password')
+		openrouter = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
+		AIModel.objects.create(
+			provider=openrouter, name='Open model', model_id='open/model',
+			output_price_per_million=2,
+			openrouter_rankings={
+				'all': {'total_tokens': 10000, 'as_of': '2026-10-06T02:00:00.000Z'},
+				'programming': {'total_tokens': 50, 'as_of': '2026-10-06T02:00:00.000Z'},
+			},
+		)
+		AIModel.objects.create(
+			provider=openrouter, name='Premium model', model_id='open/premium',
+			output_price_per_million=10,
+			openrouter_rankings={
+				'all': {'total_tokens': 100, 'as_of': '2026-10-06T02:00:00.000Z'},
+				'programming': {'total_tokens': 5000, 'as_of': '2026-10-06T02:00:00.000Z'},
+			},
+		)
+		legacy = APIProvider.objects.create(name='Legacy provider', slug='legacy-provider', base_url='https://legacy.example.test')
+		AIModel.objects.create(provider=legacy, name='Legacy model', model_id='legacy-model')
+		self.client.force_login(user)
+
+		response = self.client.get('/')
+		soup = BeautifulSoup(response.content, 'html.parser')
+		model_ids = [
+			item['data-model-id']
+			for item in soup.select('#modelPickerList .model-picker-item[data-model-id]:not(#localModelDialogBtn)')
+		]
+		team_model_ids = [item['data-model-id'] for item in soup.select('.team-model-option')]
+		model_rankings = json.loads(soup.select_one('#openrouterModelRankings').string)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(model_ids, ['open/model', 'open/premium'])
+		self.assertEqual(team_model_ids, model_ids)
+		self.assertIn('Choisir une IA', soup.select_one('#modelPickerBtn').get_text())
+		self.assertIsNotNone(soup.select_one('#modelTaskCategory option[value="programming"]'))
+		self.assertEqual(model_rankings['open/premium']['programming']['total_tokens'], 5000)
+		self.assertIsNotNone(soup.select_one('#localModelDialogBtn'))
+		self.assertIsNotNone(soup.select_one('#modelPickerDialog'))
+		self.assertIsNotNone(soup.select_one('#localModelDialog'))
+
+	def test_local_conversation_sync_is_explicit_and_appends_messages(self):
+		user = User.objects.create_user(username='local-sync-user', password='test-password')
+		self.client.force_login(user)
+		first_batch = [
+			{'role': 'user', 'content': 'Question locale'},
+			{'role': 'assistant', 'content': 'Réponse locale'},
+		]
+
+		first_response = self.client.post(
+			'/chat/api/conversations/sync-local/',
+			data=json.dumps({'title': 'Conversation locale', 'messages': first_batch}),
+			content_type='application/json',
+		)
+
+		self.assertEqual(first_response.status_code, 200)
+		conversation_id = first_response.json()['conversation_id']
+		conversation = Conversation.objects.get(id=conversation_id, user=user)
+		self.assertEqual(conversation.messages.count(), 2)
+
+		second_response = self.client.post(
+			'/chat/api/conversations/sync-local/',
+			data=json.dumps({
+				'conversation_id': conversation_id,
+				'messages': [
+					{'role': 'user', 'content': 'Question suivante'},
+					{'role': 'assistant', 'content': 'Réponse suivante'},
+				],
+			}),
+			content_type='application/json',
+		)
+
+		self.assertEqual(second_response.status_code, 200)
+		self.assertEqual(Conversation.objects.filter(user=user).count(), 1)
+		self.assertEqual(conversation.messages.count(), 4)
+
+	def test_media_controls_use_openrouter_and_hide_media_provider_selection(self):
 		user = User.objects.create_user(username='configured-media-user', password='test-password')
-		provider = APIProvider.objects.create(name='Configured fal', slug='fal', base_url='https://queue.fal.run')
-		provider.keys.create(name='fal-key', key='server-secret')
+		openrouter = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
+		openrouter.keys.create(name='openrouter-key', key='server-secret')
+		audio_provider = APIProvider.objects.create(name='Configured audio', slug='apiframe', base_url='https://api.apiframe.ai')
+		audio_provider.keys.create(name='audio-key', key='audio-secret')
 		self.client.force_login(user)
 
 		response = self.client.get('/')
@@ -68,9 +147,14 @@ class ChatHomeTests(TestCase):
 		chat_config = json.loads(soup.select_one('#chat-config').string)
 
 		self.assertEqual(response.status_code, 200)
+		self.assertIsNotNone(soup.select_one('#imageModeBtn[data-mode="image"]:not([disabled])'))
 		self.assertIsNotNone(soup.select_one('#videoModeBtn[data-mode="video"]:not([disabled])'))
 		self.assertIsNotNone(soup.select_one('#audioModeBtn[data-mode="audio"]:not([disabled])'))
-		self.assertIn({'slug': 'fal', 'name': 'Configured fal', 'modalities': ['image', 'video', 'audio']}, chat_config['mediaProviders'])
+		self.assertIsNone(soup.select_one('#mediaProviderSelect'))
+		self.assertIs(chat_config['imageGenerationAvailable'], True)
+		self.assertIs(chat_config['videoGenerationAvailable'], True)
+		self.assertNotIn('mediaProviders', chat_config)
+		self.assertNotContains(response, 'Configured audio')
 
 	def test_shadow_recommendation_does_not_change_selected_chat_model(self):
 		user = User.objects.create_user(username='shadow-router-chat-user', password='test-password')
@@ -407,10 +491,11 @@ class ChatHomeTests(TestCase):
 		self.assertContains(response, 'À propos de 2AI')
 		self.assertContains(response, 'Recherche web')
 		self.assertContains(response, 'génération d’images, de vidéos ou d’audio')
-		self.assertContains(response, 'dépendent des services activés')
-		self.assertContains(response, '<title>À propos de 2AI — Le Comptoir</title>')
+		self.assertContains(response, 'consomment des jetons')
+		self.assertContains(response, '<title>À propos de 2AI</title>')
 		self.assertContains(response, 'href="/juridique/"')
 		self.assertContains(response, 'href="/auth/?next=/recharge/"')
+		self.assertNotContains(response, 'Le Comptoir')
 
 		user = User.objects.create_user(username='about-purchase-user', password='test-password')
 		self.client.force_login(user)
@@ -475,7 +560,7 @@ class ChatHomeTests(TestCase):
 
 	def test_auto_model_preference_persists_and_bootstraps_chat(self):
 		user = User.objects.create_user(username='auto-preference-user', password='test-password')
-		provider = APIProvider.objects.create(name='Auto preference provider', slug='auto-preference', base_url='https://provider.example.test')
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		AIModel.objects.create(provider=provider, name='Auto preference model', model_id='auto-preference-model')
 		self.client.force_login(user)
 
@@ -551,6 +636,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(user.personas.count(), 3)
 		personas = list(user.personas.order_by('id'))
 		self.assertEqual(personas[0].name, 'Assistant général')
+		self.assertEqual(personas[0].appearance_name, '2AI')
 		self.assertEqual(personas[0].appearance_avatar, '🐘')
 		self.assertEqual(personas[1].appearance_avatar, '📚')
 		self.assertEqual(personas[1].appearance_accent, '#3F8E8A')
@@ -820,7 +906,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(provider_call.call_args.args[6], 2000)
 		self.assertIn('réponse approfondie', provider_call.call_args.args[4])
 
-	def test_image_mode_reports_missing_provider_without_charging(self):
+	def test_image_mode_requires_openrouter_without_charging(self):
 		user = User.objects.create_user(username='image-mode-user', password='test-password')
 		initial_balance = user.credit_account.balance
 		self.client.force_login(user)
@@ -834,12 +920,12 @@ class ChatHomeTests(TestCase):
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, initial_balance)
 
-	@patch('chat.views.generate_openai_image', return_value=('cG5n', {}))
+	@patch('chat.views.generate_openrouter_media', return_value=(b'png', 'image/png', 0.04))
 	def test_image_generation_saves_private_media_to_the_conversation(self, generate_image):
 		user = User.objects.create_user(username='generated-image-user', password='test-password')
 		user.credit_account.balance = 5000
 		user.credit_account.save(update_fields=['balance'])
-		provider = APIProvider.objects.create(name='OpenAI', slug='openai', base_url='https://api.openai.com')
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		provider.keys.create(name='image-key', key='server-secret')
 		persona = user.personas.first()
 		self.client.force_login(user)
@@ -853,7 +939,10 @@ class ChatHomeTests(TestCase):
 		self.assertTrue(response.json()['media_url'].startswith('/chat/api/media/'))
 		conversation = Conversation.objects.get(id=response.json()['conversation_id'], user=user)
 		self.assertEqual(conversation.persona_id, persona.id)
-		self.assertEqual(generate_image.call_args.kwargs['size'], '1024x1536')
+		self.assertEqual(generate_image.call_args.args[1], 'image')
+		self.assertEqual(generate_image.call_args.args[3], settings.OPENROUTER_IMAGE_MODEL)
+		self.assertEqual(generate_image.call_args.args[4], {'image_size': '1024x1536'})
+		self.assertEqual(response.json()['remaining_balance'], 4400)
 		self.assertEqual(list(conversation.messages.values_list('content', flat=True)), [
 			'Un paysage de montagne', 'Image générée.',
 		])
@@ -893,6 +982,26 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(self.client.get('/chat/api/media/gallery/').json(), [])
 		generate_image.assert_called_once()
 
+	@patch('chat.views.generate_openrouter_media', return_value=(b'png', 'image/png', 0.1))
+	def test_openrouter_actual_media_cost_cannot_exceed_available_credits(self, generate_image):
+		user = User.objects.create_user(username='actual-media-cost-user', password='test-password')
+		user.credit_account.balance = 700
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
+		provider.keys.create(name='media-key', key='server-secret')
+		self.client.force_login(user)
+
+		response = self.client.post('/chat/api/images/generate/', data=json.dumps({
+			'content': 'Une image dont le coût réel est élevé',
+		}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 402)
+		self.assertEqual(response.json()['error']['type'], 'insufficient_credits')
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 700)
+		self.assertFalse(GeneratedMedia.objects.filter(owner=user).exists())
+		generate_image.assert_called_once()
+
 	def test_media_adapters_normalize_image_video_and_audio_outputs(self):
 		media_urls = {
 			'image': 'https://v3.fal.media/files/image.png',
@@ -922,6 +1031,73 @@ class ChatHomeTests(TestCase):
 					self.assertEqual(content_type, content_types[media_type])
 					download.assert_called_once_with(output_url, provider_slug, media_type, 'test-key')
 
+	def test_openrouter_image_adapter_sends_model_and_returns_usage_cost(self):
+		with patch('chat.media_generation._json_request', return_value={
+			'data': [{'b64_json': 'cG5n', 'media_type': 'image/png'}],
+			'usage': {'cost': '0.04'},
+		}) as request:
+			media, content_type, usage_cost = generate_openrouter_media(
+				'server-secret',
+				'image',
+				'Un paysage',
+				'bytedance-seed/seedream-4.5',
+				{'image_size': '1024x1536'},
+			)
+
+		self.assertEqual(media, b'png')
+		self.assertEqual(content_type, 'image/png')
+		self.assertEqual(str(usage_cost), '0.04')
+		self.assertEqual(request.call_args.args[0], 'https://openrouter.ai/api/v1/images')
+		self.assertEqual(request.call_args.args[2], 'openrouter')
+		self.assertEqual(request.call_args.args[3]['model'], 'bytedance-seed/seedream-4.5')
+		self.assertEqual(request.call_args.args[3]['aspect_ratio'], '2:3')
+
+	def test_openrouter_video_adapter_polls_downloads_and_returns_usage_cost(self):
+		with patch('chat.media_generation._json_request', side_effect=[
+			{
+				'id': 'job-123',
+				'polling_url': 'https://openrouter.ai/api/v1/videos/job-123',
+			},
+			{
+				'status': 'completed',
+				'unsigned_urls': ['https://openrouter.ai/api/v1/videos/job-123/content?index=0'],
+				'usage': {'cost': '0.56'},
+			},
+		]) as request, patch(
+			'chat.media_generation._download_openrouter_video',
+			return_value=(b'video', 'video/mp4'),
+		) as download, patch('chat.media_generation.time.sleep'):
+			media, content_type, usage_cost = generate_openrouter_media(
+				'server-secret',
+				'video',
+				'Une scène',
+				'alibaba/wan-3.0',
+				{
+					'aspect_ratio': '16:9',
+					'resolution': '720p',
+					'duration_seconds': 8,
+					'generate_audio': True,
+				},
+			)
+
+		self.assertEqual(media, b'video')
+		self.assertEqual(content_type, 'video/mp4')
+		self.assertEqual(str(usage_cost), '0.56')
+		self.assertEqual(request.call_args_list[0].args[0], 'https://openrouter.ai/api/v1/videos')
+		self.assertEqual(request.call_args_list[1].args[0], 'https://openrouter.ai/api/v1/videos/job-123')
+		download.assert_called_once_with(
+			'https://openrouter.ai/api/v1/videos/job-123/content?index=0',
+			'server-secret',
+		)
+
+	def test_json_media_requests_send_bearer_authorization(self):
+		with patch('chat.media_generation.urlopen') as urlopen:
+			urlopen.return_value.__enter__.return_value.read.return_value = b'{}'
+			_json_request('https://openrouter.ai/api/v1/models', 'server-secret', 'openrouter')
+
+		request = urlopen.call_args.args[0]
+		self.assertEqual(request.get_header('Authorization'), 'Bearer server-secret')
+
 	def test_media_options_are_mapped_to_apiframe_payloads(self):
 		cases = [
 			('image', 'flux-2-pro', {'image_size': '1024x1536'}, 'fluxParams', {'aspect_ratio': '1024:1536', 'resolution': '2 MP'}),
@@ -949,28 +1125,30 @@ class ChatHomeTests(TestCase):
 			with self.subTest(host=host), self.assertRaises(ProviderError):
 				_download_output(f'https://{host}/file.png', 'replicate', 'image', 'server-secret')
 
-	def test_media_options_reject_duration_not_supported_by_replicate_video01(self):
-		self.assertEqual(normalize_generation_options('video', 'replicate', 'minimax/video-01', {}), {
-			'aspect_ratio': '16:9', 'resolution': '720p', 'duration_seconds': 6, 'generate_audio': False,
+	def test_video_options_accept_openrouter_supported_values(self):
+		options = normalize_generation_options('video', 'openrouter', 'alibaba/wan-3.0', {
+			'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
 		})
-		with self.assertRaisesRegex(ProviderError, 'impose 16:9, 720p et 6 secondes'):
-			normalize_generation_options('video', 'replicate', 'minimax/video-01', {
-				'aspect_ratio': '16:9', 'resolution': '720p', 'duration_seconds': 15, 'generate_audio': False,
+		self.assertEqual(options, {
+			'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
+		})
+		with self.assertRaisesRegex(ProviderError, 'Durée vidéo non prise en charge'):
+			normalize_generation_options('video', 'openrouter', 'alibaba/wan-3.0', {
+				'duration_seconds': 7,
 			})
 
-	@patch('chat.views.generate_media', side_effect=ProviderError('Le fournisseur est indisponible.'))
+	@patch('chat.views.generate_openrouter_media', side_effect=ProviderError('La génération est indisponible.'))
 	def test_failed_video_generation_refunds_reserved_credits(self, generate_video):
 		user = User.objects.create_user(username='failed-video-user', password='test-password')
 		user.credit_account.balance = 50000
 		user.credit_account.save(update_fields=['balance'])
-		provider = APIProvider.objects.create(name='fal video', slug='fal', base_url='https://queue.fal.run')
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		provider.keys.create(name='video-key', key='server-secret')
 		self.client.force_login(user)
 
 		response = self.client.post('/chat/api/media/generate/', data=json.dumps({
 			'content': 'Une scène de test',
 			'kind': 'video',
-			'provider_slug': 'fal',
 			'generation_options': {
 				'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
 			},
@@ -980,7 +1158,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response.json()['error']['type'], 'media_generation_failed')
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, 50000)
-		self.assertEqual(generate_video.call_args.args[5], {
+		self.assertEqual(generate_video.call_args.args[4], {
 			'aspect_ratio': '9:16', 'resolution': '480p', 'duration_seconds': 15, 'generate_audio': False,
 		})
 		generate_video.assert_called_once()
@@ -997,7 +1175,6 @@ class ChatHomeTests(TestCase):
 		response = self.client.post('/chat/api/media/generate/', data=json.dumps({
 			'content': 'Un court thème musical',
 			'kind': 'audio',
-			'provider_slug': 'apiframe',
 			'generation_options': {'style': 'jazz', 'instrumental': True},
 		}), content_type='application/json')
 
@@ -1014,12 +1191,12 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(generate_audio.call_args.args[5], {'style': 'jazz', 'instrumental': True})
 		generate_audio.assert_called_once()
 
-	@patch('chat.views.generate_openai_image', return_value=('cG5n', {}))
+	@patch('chat.views.generate_openrouter_media', return_value=(b'png', 'image/png', None))
 	def test_temporary_image_is_returned_inline_without_database_records(self, generate_image):
 		user = User.objects.create_user(username='temporary-image-user', password='test-password')
 		user.credit_account.balance = 5000
 		user.credit_account.save(update_fields=['balance'])
-		provider = APIProvider.objects.create(name='OpenAI', slug='openai', base_url='https://api.openai.com')
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		provider.keys.create(name='image-key', key='server-secret')
 		self.client.force_login(user)
 
@@ -1407,7 +1584,7 @@ class ChatHomeTests(TestCase):
 
 		self.assertEqual(response.status_code, 502)
 		self.assertEqual(response.json()['error']['type'], 'provider_error')
-		self.assertEqual(response.json()['error']['message'], 'Le fournisseur est temporairement indisponible.')
+		self.assertEqual(response.json()['error']['message'], 'Le service est temporairement indisponible.')
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, 1000)
 
@@ -1504,7 +1681,8 @@ class ChatHomeTests(TestCase):
 		response = self.client.get('/')
 
 		self.assertEqual(response.status_code, 200)
-		self.assertContains(response, 'Le Comptoir')
+		self.assertContains(response, '2AI')
+		self.assertNotContains(response, 'Le Comptoir')
 
 	def test_anonymous_user_is_sent_to_authentication(self):
 		response = self.client.get('/')
@@ -1514,17 +1692,17 @@ class ChatHomeTests(TestCase):
 	def test_active_models_are_available_for_selection(self):
 		user = User.objects.create_user(username='model-user', password='test-password')
 		self.client.force_login(user)
-		provider = APIProvider.objects.create(name='Anthropic')
+		provider = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		AIModel.objects.create(
 			provider=provider,
-			name='Claude Sonnet 4',
-			model_id='claude-sonnet-4-6',
+			name='OpenRouter model',
+			model_id='openrouter-test-model',
 		)
 
 		response = self.client.get('/')
 
-		self.assertContains(response, 'Claude Sonnet 4')
-		self.assertContains(response, 'value="claude-sonnet-4-6"')
+		self.assertContains(response, 'OpenRouter model')
+		self.assertContains(response, 'data-model-id="openrouter-test-model"')
 
 	def test_anonymous_user_has_zero_credits_and_cannot_recharge(self):
 		response = self.client.get('/auth/?next=/')

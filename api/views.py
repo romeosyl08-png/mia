@@ -16,9 +16,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from ai_user.models import InsufficientCreditsError, UserAPIKey
 from chat.services import (
-    CREDITS_PER_DOLLAR,
-    MARGIN_MULTIPLIER,
     check_user_rate_limit,
+    credits_per_million_tokens,
     credits_for_usage,
     is_local_provider,
 )
@@ -87,10 +86,6 @@ def _json_body(request):
     except (TypeError, ValueError):
         return None
     return body if isinstance(body, dict) else None
-
-
-def _credits_per_million(price_usd):
-    return round(float(price_usd or 0) * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR)
 
 
 def _is_anthropic(provider):
@@ -361,14 +356,13 @@ def api_home(request):
         {
             "id": m.model_id,
             "name": m.name,
-            "provider": m.provider.name,
-            "input": _credits_per_million(m.input_price_per_million),
-            "output": _credits_per_million(m.output_price_per_million),
+            "input": credits_per_million_tokens(m.input_price_per_million),
+            "output": credits_per_million_tokens(m.output_price_per_million),
         }
         for m in _public_models()
     ]
     if eligible_models(surface="api"):
-        rows.append({"id": "auto", "name": "AI 2AI Auto Router", "provider": "AI 2AI", "input": "variable", "output": "variable"})
+        rows.append({"id": "auto", "name": "AI 2AI Auto Router", "input": "variable", "output": "variable"})
     return render(request, "api/api.html", {
         "base_url": request.build_absolute_uri("/v1"),
         "models": rows,
@@ -392,8 +386,8 @@ def models_view(request):
             "owned_by": m.provider.slug,
             "pricing": {
                 "unit": "credits per million tokens",
-                "input": _credits_per_million(m.input_price_per_million),
-                "output": _credits_per_million(m.output_price_per_million),
+                "input": credits_per_million_tokens(m.input_price_per_million),
+                "output": credits_per_million_tokens(m.output_price_per_million),
             },
         }
         for m in _public_models()

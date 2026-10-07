@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Paramètres — Le Comptoir{% endblock %}
+{% block title %}Paramètres — 2AI{% endblock %}
 
 {% block extra_head %}
 <link rel="stylesheet" href="{% static 'app/css/customize.css' %}">
@@ -19,7 +19,7 @@
 
         <div class="customize-brand">
             <span class="brand-avatar" id="customizeAvatar" data-bot-avatar>🐘</span>
-            <span id="customizeBotName" data-bot-name>Le Comptoir</span>
+            <span id="customizeBotName" data-bot-name>2AI</span>
         </div>
 
     </header>
@@ -39,7 +39,7 @@
                     <option value="">Premier modèle disponible</option>
                     {% if ai_models %}<option value="auto">Auto 2AI</option>{% endif %}
                     {% for model in ai_models %}
-                    <option value="{{ model.model_id|escape }}">{{ model.name }} — {{ model.provider.name }}</option>
+                    <option value="{{ model.model_id|escape }}">{{ model.name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -204,6 +204,6 @@
 
 
 {% block extra_js %}
-<script src="{% static 'app/js/customize.js' %}?v=persona-memory-1"></script>
+<script src="{% static 'app/js/customize.js' %}?v=persona-brand-2"></script>
 
 {% endblock %}

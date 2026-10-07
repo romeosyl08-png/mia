@@ -1,6 +1,7 @@
 import ipaddress
 import re
 import socket
+from difflib import unified_diff
 from urllib.parse import urljoin, urlparse
 from .workspace_sandbox import WorkspaceSandbox
 from bs4 import BeautifulSoup
@@ -25,6 +26,8 @@ MAX_FETCH_BYTES = 1_000_000
 MAX_FETCH_CHARS = 20_000
 MAX_REDIRECTS = 3
 MAX_EDITABLE_CHARS = 50_000
+MAX_READ_LINES = 500
+MAX_TOOL_OUTPUT_CHARS = 20_000
 
 
 def _clean_name(name):
@@ -40,6 +43,16 @@ def _to_int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _line_number(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdecimal():
+        return int(value)
+    return None
 
 
 def _get_file(workspace, file_id):
@@ -120,6 +133,114 @@ def read_file(workspace, file_id):
         "name": file.original_name,
         "content": file.extracted_text,
     }
+
+
+@register_tool(
+    name="read_file_lines",
+    description=(
+        "Lit une plage précise de lignes d'un fichier texte du workspace, sans charger tout le fichier. "
+        "La plage est limitée à 500 lignes et la sortie à 20 000 caractères."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "file_id": {"type": "integer", "description": "Identifiant du fichier (voir list_files)"},
+            "start_line": {"type": "integer", "description": "Première ligne à lire, à partir de 1"},
+            "end_line": {"type": "integer", "description": "Dernière ligne à lire, incluse (500 lignes maximum)"},
+        },
+        "required": ["file_id", "start_line", "end_line"],
+    },
+)
+def read_file_lines(workspace, file_id, start_line, end_line):
+    work_file = _get_file(workspace, file_id)
+    if not work_file:
+        return {"error": "Fichier introuvable dans cet espace de travail."}
+    if not _is_text_file(work_file):
+        return {"error": "Seuls les fichiers texte peuvent être lus par lignes."}
+    start = _line_number(start_line)
+    end = _line_number(end_line)
+    if start is None or end is None or start < 1 or end < start:
+        return {
+            "error": "Plage invalide : indique des numéros de ligne entiers positifs et une fin supérieure ou égale au début."
+        }
+    if end - start + 1 > MAX_READ_LINES:
+        return {"error": f"La plage est trop grande : {MAX_READ_LINES} lignes maximum par appel."}
+
+    lines = (work_file.extracted_text or "").splitlines()
+    if start > len(lines):
+        return {"error": f"Le fichier contient {len(lines)} ligne(s) ; la ligne {start} n'existe pas."}
+    actual_end = min(end, len(lines))
+    content = "\n".join(lines[start - 1:actual_end])
+    truncated = len(content) > MAX_TOOL_OUTPUT_CHARS
+    if truncated:
+        content = content[:MAX_TOOL_OUTPUT_CHARS]
+
+    return {
+        "file_id": work_file.id,
+        "name": work_file.original_name,
+        "start_line": start,
+        "end_line": actual_end,
+        "total_lines": len(lines),
+        "content": content,
+        "truncated": truncated,
+    }
+
+
+@register_tool(
+    name="compare_files",
+    description=(
+        "Compare deux fichiers texte du workspace et retourne leur diff unifié en lecture seule. "
+        "Chaque fichier est limité à 50 000 caractères et la sortie à 20 000 caractères."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "first_file_id": {"type": "integer", "description": "Identifiant du premier fichier"},
+            "second_file_id": {"type": "integer", "description": "Identifiant du second fichier"},
+        },
+        "required": ["first_file_id", "second_file_id"],
+    },
+)
+def compare_files(workspace, first_file_id, second_file_id):
+    first_file = _get_file(workspace, first_file_id)
+    second_file = _get_file(workspace, second_file_id)
+    if not first_file or not second_file:
+        return {"error": "Un des fichiers est introuvable dans cet espace de travail."}
+    if not _is_text_file(first_file) or not _is_text_file(second_file):
+        return {"error": "Seuls les fichiers texte peuvent être comparés."}
+
+    first_content = first_file.extracted_text or ""
+    second_content = second_file.extracted_text or ""
+    if len(first_content) > MAX_EDITABLE_CHARS or len(second_content) > MAX_EDITABLE_CHARS:
+        return {"error": f"Chaque fichier doit contenir au maximum {MAX_EDITABLE_CHARS} caractères."}
+
+    diff_parts = []
+    diff_size = 0
+    truncated = False
+    for line in unified_diff(
+        first_content.splitlines(),
+        second_content.splitlines(),
+        fromfile=f"a/file-{first_file.id}",
+        tofile=f"b/file-{second_file.id}",
+        lineterm="",
+    ):
+        line = f"{line}\n"
+        remaining = MAX_TOOL_OUTPUT_CHARS - diff_size
+        if len(line) > remaining:
+            diff_parts.append(line[:remaining])
+            truncated = True
+            break
+        diff_parts.append(line)
+        diff_size += len(line)
+
+    return {
+        "first_file": {"id": first_file.id, "name": first_file.original_name},
+        "second_file": {"id": second_file.id, "name": second_file.original_name},
+        "identical": first_content == second_content,
+        "diff": "".join(diff_parts),
+        "truncated": truncated,
+    }
+
 
 @register_tool(
     name="write_file",
@@ -252,7 +373,10 @@ PISTON_URL = "https://emkc.org/api/v2/piston/execute"
 
 @register_tool(
     name="run_python",
-    description="Exécute un script Python court dans un environnement isolé et retourne sa sortie. Pas d'accès réseau ni fichiers persistants.",
+    description=(
+        "Envoie le code à l'API tierce Piston pour exécuter un court script Python. "
+        "Ne transmets aucun secret ni code confidentiel."
+    ),
     parameters={
         "type": "object",
         "properties": {
@@ -545,10 +669,10 @@ def search_code(workspace, query, file_pattern=None, max_results=50):
 @register_tool(
     name="run_command",
     description=(
-        "Exécute une commande de développement dans une copie temporaire "
-        "du workspace et retourne sa sortie. Les modifications faites "
-        "par la commande ne sont pas automatiquement enregistrées dans "
-        "les fichiers du workspace."
+        "Exécute une commande de développement sur le serveur de l'application, "
+        "dans une copie temporaire du workspace. Ce processus n'est pas isolé "
+        "du système hôte et peut accéder à ses permissions et au réseau. "
+        "Les modifications ne sont pas automatiquement enregistrées dans le workspace."
     ),
     parameters={
         "type": "object",

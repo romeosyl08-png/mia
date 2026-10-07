@@ -3,7 +3,7 @@
     const STORAGE_KEY = "ai2ai-appearance";
 
     const DEFAULTS = {
-        botName: "Le Comptoir",
+        botName: "2AI",
         botAvatar: "🐘",
         accent: "#6C6FCB",
         theme: "light"
@@ -30,12 +30,16 @@
                 return { ...DEFAULTS };
             }
 
+            const savedBotName = typeof saved.botName === "string"
+                ? saved.botName.trim()
+                : "";
+
             return {
 
                 botName:
-                    typeof saved.botName === "string" &&
-                    saved.botName.trim()
-                        ? saved.botName.trim()
+                    savedBotName &&
+                    savedBotName.toLocaleLowerCase() !== "le comptoir"
+                        ? savedBotName
                         : DEFAULTS.botName,
 
                 botAvatar:
@@ -297,7 +301,10 @@
 
         applyPersona(persona) {
             if (!persona) return;
-            appearance.botName = normalizeValue(persona.appearance_name, defaultAppearance.botName);
+            const personaName = normalizeValue(persona.appearance_name, defaultAppearance.botName);
+            appearance.botName = personaName.toLocaleLowerCase() === "le comptoir"
+                ? "2AI"
+                : personaName;
             appearance.botAvatar = normalizeValue(persona.appearance_avatar, defaultAppearance.botAvatar);
             appearance.accent = ACCENTS.includes(persona.appearance_accent)
                 ? persona.appearance_accent

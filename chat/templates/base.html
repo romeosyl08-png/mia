@@ -3,27 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}Le Comptoir — chatbot personnalisable{% endblock %}</title>
+{% load static %}
+<meta name="theme-color" content="#E56B45">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="2AI">
+<link rel="manifest" href="{% url 'pwa-manifest' %}">
+<link rel="apple-touch-icon" href="{% static 'app/pwa/apple-touch-icon.png' %}">
+<link rel="icon" type="image/png" sizes="192x192" href="{% static 'app/pwa/icon-192.png' %}">
+<title>{% block title %}2AI — assistant IA personnalisable{% endblock %}</title>
 <link id="botFavicon" rel="icon" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
-{% load static %}
 
 <link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=media-options-2">
+<link rel="stylesheet" href="{% static 'app/css/pwa.css' %}?v=pwa-1">
 {% block extra_head %}
 {% endblock %}
 </head>
 <body data-theme="light">
 {% block body %}
 {% endblock %}
+<div id="pwa-install-controls" hidden>
+  <button type="button" id="pwa-install-button" hidden>Installer 2AI</button>
+  <details id="pwa-ios-install-help" hidden>
+    <summary>Installer 2AI</summary>
+    <p>Dans Safari, ouvre le menu Partager puis choisis « Sur l’écran d’accueil ».</p>
+  </details>
+  <span id="pwa-install-status" role="status" aria-live="polite"></span>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.0/purify.min.js"></script>
 
 
     <!-- APPARENCE GLOBALE -->
       {% if chat_config %}{{ chat_config|json_script:"chat-config" }}{% endif %}
-    <script src="{% static 'app/js/appearance.js' %}?v=persona-appearance-1"></script>
-    <script src="{% static 'app/js/script.js' %}?v=media-options-2"></script>
+    <script src="{% static 'app/js/appearance.js' %}?v=persona-brand-2"></script>
+    <script src="{% static 'app/js/script.js' %}?v=media-openrouter-1"></script>
+    <script src="{% static 'app/js/pwa.js' %}?v=pwa-1"></script>
 
     {% block extra_js %}{% endblock %}
 </body>

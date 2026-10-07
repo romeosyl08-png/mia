@@ -3,12 +3,80 @@ const chatConfigElement = document.getElementById("chat-config");
 if (chatConfigElement) {
 const chatConfig = JSON.parse(chatConfigElement.textContent);
 (function(){
+  const localStorageScope = chatConfig.userId || "anonymous";
+  const localAISettingsKey = `ai2ai-local-model-v1:${localStorageScope}`;
+  const localConversationsKey = `ai2ai-local-conversations-v1:${localStorageScope}`;
+
+  function showChatNotice(message){
+    const notice = document.getElementById("creditNotice");
+    if(!notice) return;
+    notice.textContent = message;
+    notice.classList.add("show");
+    window.clearTimeout(showChatNotice.timer);
+    showChatNotice.timer = window.setTimeout(() => notice.classList.remove("show"), 5000);
+  }
+
+  function readLocalAISettings(){
+    try{
+      const value = JSON.parse(localStorage.getItem(localAISettingsKey) || "null");
+      return value && typeof value.baseUrl === "string" && typeof value.modelId === "string" ? value : null;
+    }catch(error){
+      console.error("Impossible de lire la configuration IA locale", error);
+      showChatNotice("Impossible de lire la configuration locale du navigateur.");
+      return null;
+    }
+  }
+
+  function readLocalConversations(){
+    try{
+      const value = JSON.parse(localStorage.getItem(localConversationsKey) || "[]");
+      if(!Array.isArray(value)) throw new Error("Le stockage des conversations locales est invalide.");
+      return value.filter(item =>
+        item && typeof item.localId === "string" && Array.isArray(item.messages)
+      ).map(item => ({
+        ...item,
+        id: null,
+        title: typeof item.title === "string" ? item.title.slice(0, 200) : "Conversation locale",
+        folder: typeof item.folder === "string" ? item.folder.slice(0, 80) : "",
+        isArchived: item.isArchived === true,
+        localModel: item.localModel && typeof item.localModel.baseUrl === "string" &&
+          typeof item.localModel.modelId === "string" ? item.localModel : null,
+        messages: item.messages.filter(message =>
+          message && ["user", "bot"].includes(message.role) && typeof message.content === "string"
+        ).map(message => ({
+          role: message.role,
+          content: message.content,
+          tokens: Number.isFinite(message.tokens) ? message.tokens : 0,
+          createdAt: typeof message.createdAt === "string" ? message.createdAt : new Date().toISOString()
+        })),
+        localOnly: true,
+        temporary: false
+      }));
+    }catch(error){
+      console.error("Impossible de lire les conversations locales", error);
+      showChatNotice("Impossible de lire les conversations locales de ce navigateur.");
+      return [];
+    }
+  }
+
+  function persistLocalConversations(){
+    const local = state.conversations.filter(conversation => conversation.localOnly && !conversation.temporary);
+    try{
+      localStorage.setItem(localConversationsKey, JSON.stringify(local));
+      return true;
+    }catch(error){
+      console.error("Impossible d’enregistrer les conversations locales", error);
+      showChatNotice("Le navigateur n’a pas pu enregistrer la conversation locale. Vérifie l’espace disponible.");
+      return false;
+    }
+  }
+
   // ---------- State ----------
   const globalAppearance =
     window.AI2AIAppearance
         ? window.AI2AIAppearance.get()
         : {
-            botName: "Le Comptoir",
+            botName: "2AI",
             botAvatar: "🐘",
             accent: "#6C6FCB",
             theme: "light"
@@ -34,6 +102,8 @@ let state = {
     hasActiveModels:
         Boolean(chatConfig.hasActiveModels),
 
+    localAI:
+        readLocalAISettings(),
 
     /*
      * APPARENCE GLOBALE
@@ -103,18 +173,36 @@ let state = {
 
   function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 
-  function conversationKey(convo){ return convo.id ?? convo.draftId; }
+  function conversationKey(convo){ return convo.id ?? convo.localId ?? convo.draftId; }
 
   async function newConversation(personaId, temporary = state.temporaryChat){
     const persona = state.personas.find(p => p.id === personaId) || state.personas[0];
     if(!persona) return null;
-    const convo = { id: null, draftId: uid("draft"), title: "Nouvelle conversation", personaId: persona.id, workspaceId: state.selectedWorkspaceId, messages: [], temporary };
+    const localOnly = state.modelId.startsWith("local:");
+    const convo = {
+      id: null,
+      localId: localOnly && !temporary ? uid("local") : null,
+      draftId: uid("draft"),
+      title: "Nouvelle conversation",
+      personaId: persona.id,
+      workspaceId: localOnly ? null : state.selectedWorkspaceId,
+      messages: [],
+      temporary,
+      localOnly,
+      folder: "",
+      isArchived: false,
+      localModel: localOnly ? { ...state.localAI } : null,
+      syncedConversationId: null,
+      syncedMessageCount: 0
+    };
     state.conversations.unshift(convo);
     state.activeConvoId = conversationKey(convo);
     return convo;
   }
 
   async function loadConversations(){
+    const localConversations = readLocalConversations();
+    state.conversations = localConversations;
     if(!state.isAuthenticated) return;
     try{
       const res = await fetch("/chat/api/conversations/");
@@ -128,7 +216,7 @@ let state = {
         folder: c.folder || "",
         isArchived: Boolean(c.is_archived),
         messages: null
-      }));
+      })).concat(localConversations);
       if(state.conversations.length > 0){
         state.activeConvoId = conversationKey(state.conversations[0]);
         state.activePersonaId = state.conversations[0].personaId;
@@ -139,6 +227,11 @@ let state = {
       await loadConversationHistory();
     }catch(err){
       console.error("Erreur chargement conversations", err);
+      state.sidebarConversations = localHistoryRows();
+      if(!state.activeConvoId && localConversations.length){
+        state.activeConvoId = conversationKey(localConversations[0]);
+        state.activePersonaId = localConversations[0].personaId;
+      }
     }
   }
 
@@ -148,9 +241,25 @@ let state = {
       const response = await fetch("/chat/api/folders/");
       if(!response.ok) throw new Error("Erreur chargement des dossiers");
       state.conversationFolders = await response.json();
+      state.conversationFolders = [...new Set(state.conversationFolders.concat(
+        state.conversations.filter(conversation => conversation.localOnly && conversation.folder).map(conversation => conversation.folder)
+      ))].sort((a, b) => a.localeCompare(b));
     }catch(error){
       console.error("Erreur chargement des dossiers de conversations", error);
     }
+  }
+
+  function localHistoryRows(){
+    const persona = activePersona();
+    const search = state.conversationSearch.toLowerCase();
+    return state.conversations.filter(conversation =>
+      conversation.localOnly &&
+      conversation.isArchived === state.showArchived &&
+      (!persona || conversation.personaId === persona.id) &&
+      (!state.selectedFolder || conversation.folder === state.selectedFolder) &&
+      (!search || conversation.title.toLowerCase().includes(search) ||
+        conversation.messages.some(message => message.content.toLowerCase().includes(search)))
+    );
   }
 
   async function loadConversationHistory(){
@@ -186,9 +295,10 @@ let state = {
         }
         return conversation;
       });
+      state.sidebarConversations.push(...localHistoryRows());
     }catch(error){
       console.error("Erreur recherche des conversations", error);
-      state.sidebarConversations = [];
+      state.sidebarConversations = localHistoryRows();
     }
   }
 
@@ -222,7 +332,7 @@ let state = {
 
   async function loadConversationMessages(convoId){
     const convo = state.conversations.find(c => c.id === convoId);
-    if(!convo || !convoId) return;
+    if(!convo || !convoId || convo.localOnly) return;
     try{
       const res = await fetch(`/chat/api/conversations/${convoId}/`);
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
@@ -258,6 +368,9 @@ let state = {
   function activeConvo(){
     return state.conversations.find(c => conversationKey(c) === state.activeConvoId) || null;
   }
+  function isLocalModelSelected(){
+    return typeof state.modelId === "string" && state.modelId.startsWith("local:");
+  }
 
   // ---------- Token estimation ----------
   function estimateTokens(text){
@@ -282,22 +395,87 @@ let state = {
 
   // ---------- Rendering ----------
   const el = id => document.getElementById(id);
+  const modelRankingsById = JSON.parse(el("openrouterModelRankings").textContent);
 
   const initialTopP = Number(chatConfig.defaultTopP ?? 1);
   el("topPControl").value = String(initialTopP);
   el("topPValue").value = initialTopP.toFixed(2).replace(".", ",");
   el("maxTokensControl").value = String(chatConfig.defaultMaxTokens ?? 500);
-  document.querySelectorAll(".provider-menu-item").forEach(item => {
-    const selected = item.dataset.modelId === state.modelId;
-    item.classList.toggle("active", selected);
-    if(selected){
-      const toggle = item.closest(".provider-dropdown").querySelector(".provider-toggle");
-      toggle.classList.add("has-selection");
-      toggle.querySelector(".provider-toggle-label").textContent = item.dataset.modelName;
-    }
-  });
   const autoModelBtn = el("autoModelBtn");
-  if(autoModelBtn) autoModelBtn.classList.toggle("active", state.modelId === "auto");
+  function modelUsage(modelId, category){
+    const tokens = Number(modelRankingsById[modelId]?.[category]?.total_tokens || 0);
+    return Number.isFinite(tokens) ? tokens : 0;
+  }
+  function sortModelsForTask(category){
+    const pickerList = el("modelPickerList");
+    const models = Array.from(pickerList.querySelectorAll(".model-picker-item[data-model-id]:not(#localModelDialogBtn)"));
+    const priceFor = item => {
+      const price = Number(item.dataset.outputPrice);
+      return Number.isFinite(price) ? price : 0;
+    };
+    const usageFor = item => modelUsage(item.dataset.modelId, category);
+    models.sort((left, right) => {
+      const usageDifference = usageFor(right) - usageFor(left);
+      if(usageDifference) return usageDifference;
+      const priceDifference = priceFor(right) - priceFor(left);
+      if(priceDifference) return priceDifference;
+      return left.dataset.modelName.localeCompare(right.dataset.modelName);
+    });
+
+    const rankLabels = models.filter(item => usageFor(item) > 0);
+    const ranks = new Map(rankLabels.map((item, index) => [item, index + 1]));
+    models.forEach(item => {
+      const label = item.querySelector(".model-picker-ranking");
+      const rank = ranks.get(item);
+      label.hidden = !rank;
+      label.textContent = rank ? `Classement d’usage #${rank}` : "";
+      pickerList.append(item);
+    });
+    const localModelButton = el("localModelDialogBtn");
+    if(localModelButton) pickerList.append(localModelButton);
+
+    const teamModels = new Map(
+      Array.from(el("teamModelGrid").querySelectorAll(".team-model-option"))
+        .map(item => [item.dataset.modelId, item]),
+    );
+    const modelSelect = el("teamModelSelect");
+    const modelOptions = new Map(Array.from(modelSelect.options).map(option => [option.value, option]));
+    models.forEach(item => {
+      const teamModel = teamModels.get(item.dataset.modelId);
+      const modelOption = modelOptions.get(item.dataset.modelId);
+      if(teamModel) el("teamModelGrid").append(teamModel);
+      if(modelOption) modelSelect.append(modelOption);
+    });
+
+    const selectedOption = el("modelTaskCategory").selectedOptions[0];
+    const asOf = selectedOption?.dataset.asOf || "";
+    const rankedCount = rankLabels.length;
+    el("modelRankingStatus").textContent = rankedCount
+      ? category === "all"
+        ? "Tri hebdomadaire par volume de tokens texte. L’usage indique la popularité, pas la qualité."
+        : "Tri hebdomadaire estimé à partir d’un échantillon de requêtes de cette tâche; ce n’est pas un benchmark."
+      : "Classement non synchronisé pour cette tâche; les modèles sont alors triés par prix de sortie.";
+    el("modelRankingAttribution").textContent = asOf
+      ? `Source: OpenRouter (openrouter.ai/rankings), as of ${asOf}.`
+      : "";
+  }
+  function renderModelPickerState(){
+    const conversation = activeConvo();
+    const localModelId = conversation?.localOnly
+      ? conversation.localModel?.modelId || state.localAI?.modelId
+      : state.localAI?.modelId;
+    el("localModelLabel").textContent = localModelId || "Configurer ou utiliser un modèle sur ton appareil";
+    document.querySelectorAll(".model-picker-item").forEach(item => {
+      const selected = item.id === "localModelDialogBtn"
+        ? isLocalModelSelected()
+        : item.dataset.modelId === state.modelId;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
+    if(autoModelBtn) autoModelBtn.classList.toggle("active", state.modelId === "auto");
+  }
+  sortModelsForTask(el("modelTaskCategory").value);
+  renderModelPickerState();
 
   function renderConvoList(){
     const list = el("convoList");
@@ -336,6 +514,19 @@ let state = {
 
       const actions = document.createElement("div");
       actions.className = "conversation-actions";
+      if(c.localOnly && state.isAuthenticated){
+        const syncButton = document.createElement("button");
+        syncButton.type = "button";
+        syncButton.className = "conversation-action";
+        syncButton.title = c.syncedConversationId ? "Mettre à jour la copie du compte" : "Copier dans mon compte";
+        syncButton.setAttribute("aria-label", syncButton.title);
+        syncButton.textContent = "↥";
+        syncButton.addEventListener("click", event => {
+          event.stopPropagation();
+          syncLocalConversation(c);
+        });
+        actions.appendChild(syncButton);
+      }
       const archiveButton = document.createElement("button");
       archiveButton.type = "button";
       archiveButton.className = "conversation-action";
@@ -374,6 +565,11 @@ let state = {
         state.temporaryChat = false;
         state.activePersonaId = c.personaId;
         state.activeConvoId = convoKey;
+        if(c.localOnly && c.localModel?.modelId){
+          state.modelId = `local:${c.localModel.modelId}`;
+        }else if(isLocalModelSelected()){
+          state.modelId = chatConfig.modelId || "auto";
+        }
         renderAll();  // affichage immédiat de la sélection, même avant le chargement
         if(c.id && c.messages === null){
           await loadConversationMessages(c.id);
@@ -384,6 +580,15 @@ let state = {
   }
 
   async function updateConversation(conversation, changes){
+    if(conversation.localOnly){
+      if(Object.hasOwn(changes, "folder")) conversation.folder = changes.folder;
+      if(Object.hasOwn(changes, "is_archived")) conversation.isArchived = Boolean(changes.is_archived);
+      persistLocalConversations();
+      await loadConversationFolders();
+      await loadConversationHistory();
+      renderAll();
+      return;
+    }
     if(!conversation.id) return;
     try{
       const response = await fetch(`/chat/api/conversations/${conversation.id}/`, {
@@ -408,6 +613,21 @@ let state = {
 
   async function deleteConversation(conversation, event){
     event.stopPropagation();
+    if(conversation.localOnly){
+      const message = conversation.syncedConversationId
+        ? "Supprimer uniquement la copie locale de « " + conversation.title + " » ? La copie synchronisée sur le compte restera disponible."
+        : `Supprimer « ${conversation.title} » de ce navigateur ?`;
+      if(!window.confirm(message)) return;
+      state.conversations = state.conversations.filter(item => item.localId !== conversation.localId);
+      persistLocalConversations();
+      if(state.activeConvoId === conversationKey(conversation)){
+        state.activeConvoId = null;
+        await newConversation(state.activePersonaId, state.temporaryChat);
+      }
+      await loadConversationHistory();
+      renderAll();
+      return;
+    }
     if(!conversation.id || !window.confirm(`Supprimer « ${conversation.title} » ?`)) return;
     const response = await fetch(`/chat/api/conversations/${conversation.id}/delete/`, {
       method: "DELETE",
@@ -424,9 +644,50 @@ let state = {
     renderAll();
   }
 
+  async function syncLocalConversation(conversation){
+    if(state.sending || !conversation.localOnly || !state.isAuthenticated) return;
+    const messages = conversation.messages
+      .filter(message => !message.streaming && ["user", "bot"].includes(message.role))
+      .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content }));
+    const unsyncedMessages = messages.slice(conversation.syncedMessageCount || 0);
+    if(!unsyncedMessages.length){
+      showChatNotice("Cette conversation est déjà synchronisée avec le compte.");
+      return;
+    }
+    try{
+      const response = await fetch("/chat/api/conversations/sync-local/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        },
+        body: JSON.stringify({
+          conversation_id: conversation.syncedConversationId,
+          title: conversation.title,
+          persona_id: typeof conversation.personaId === "number" ? conversation.personaId : null,
+          messages: unsyncedMessages
+        })
+      });
+      const data = await response.json();
+      if(!response.ok) throw new Error(data.error?.message || "Synchronisation impossible.");
+      conversation.syncedConversationId = data.conversation_id;
+      conversation.syncedMessageCount = messages.length;
+      persistLocalConversations();
+      await loadConversationHistory();
+      showChatNotice("Copie de la conversation mise à jour dans ton compte.");
+      renderAll();
+    }catch(error){
+      showChatNotice(error.message);
+    }
+  }
+
   const personaSwitchTimers = new Map();
   const personaSaveStates = new Map();
   function saveConversationPersona(convo, personaId, previousPersonaId){
+    if(convo.localOnly){
+      persistLocalConversations();
+      return;
+    }
     if(!state.isAuthenticated || !convo.id) return;
     const conversationId = convo.id;
     let saveState = personaSaveStates.get(conversationId);
@@ -561,14 +822,17 @@ function renderHeader(){
   el("temporaryBadge").hidden = !convo?.temporary;
   const memoryButton = el("memorySuggestBtn");
   if(memoryButton){
-    memoryButton.disabled = !convo || !convo.messages?.some(message => message.role === "user") || state.sending;
+    memoryButton.disabled = !convo || convo.localOnly || !convo.messages?.some(message => message.role === "user") || state.sending;
+    memoryButton.title = convo?.localOnly
+      ? "La suggestion de mémoire enverrait la conversation au serveur et est désactivée en mode local."
+      : "Proposer une mémoire pour ce persona";
   }
 
   const appearance =
     window.AI2AIAppearance
       ? window.AI2AIAppearance.get()
       : {
-          botName: "Le Comptoir",
+          botName: "2AI",
           botAvatar: "🐘"
         };
 
@@ -831,7 +1095,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     if(creditText) creditText.textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR") + " jetons";
     if(creditBar) creditBar.style.width = (pct * 100) + "%";
     if(lowWarning) lowWarning.classList.toggle("show", pct < 0.15);
-    if(sendButton) sendButton.disabled = (state.isAuthenticated && state.credits <= 0) || state.sending;
+    if(sendButton) sendButton.disabled = (state.isAuthenticated && state.credits <= 0 && !isLocalModelSelected()) || state.sending;
   }
 
   function ensureCreditAccess(){
@@ -864,12 +1128,26 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     renderWorkspaceSelector();
     renderMessages();
     renderCredits();
+    const conversation = activeConvo();
+    const localConversation = Boolean(conversation?.localOnly && !conversation.temporary);
+    el("localChatNotice").hidden = !localConversation;
+    el("syncLocalConversationBtn").hidden = !localConversation || !state.isAuthenticated;
+    if(localConversation){
+      el("localChatNotice").firstChild.textContent = conversation.syncedConversationId
+        ? "Original dans le navigateur, avec une copie sur le compte. "
+        : "Cette conversation reste dans le navigateur. ";
+      el("syncLocalConversationBtn").textContent = conversation.syncedConversationId
+        ? "Mettre à jour la copie du compte"
+        : "Copier dans mon compte";
+    }
+    renderModelPickerState();
   }
 
   function renderWorkspaceSelector(){
     const select = el("workspaceSelect");
     if(!select) return;
     const convo = activeConvo();
+    const localOnly = Boolean(convo?.localOnly);
     const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
     const emptyOption = new Option(
       state.workspaces.length ? "Désactivés" : "Aucun espace disponible",
@@ -881,6 +1159,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       select.add(new Option(workspace.title, String(workspace.id)));
     });
     select.value = workspaceId ? String(workspaceId) : "";
+    select.disabled = localOnly;
+    el("createWorkspaceBtn").disabled = localOnly;
+    el("workspaceOpen").hidden = localOnly;
     const openLink = el("workspaceOpen");
     if(openLink){
       openLink.href = workspaceId ? `/bara/${workspaceId}/` : "/dap/";
@@ -960,7 +1241,6 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           .map(message => ({ role: message.role === "bot" ? "assistant" : message.role, content: message.content })) : [],
         content: userText,
         kind: isMediaMode ? mode : null,
-        provider_slug: isMediaMode ? el("mediaProviderSelect").value : null,
         generation_options: isMediaMode ? collectMediaOptions(mode) : null,
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
@@ -994,7 +1274,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       const event = JSON.parse(dataLine.slice(5).trim());
       if(event.type === "delta") onDelta(event.content || "");
       if(event.type === "done") result = event;
-      if(event.type === "error") throw new Error(event.error?.message || "Erreur du fournisseur.");
+      if(event.type === "error") throw new Error(event.error?.message || "La génération a échoué.");
     };
 
     while(true){
@@ -1013,8 +1293,107 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return result;
   }
 
+  function normalizeLocalBaseUrl(value){
+    let url;
+    try{
+      url = new URL(value);
+    }catch(_error){
+      throw new Error("L’adresse de l’API locale est invalide.");
+    }
+    if(!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash){
+      throw new Error("L’adresse locale doit être une URL HTTP(S) sans identifiant ni paramètre.");
+    }
+    const path = url.pathname.replace(/\/+$/, "");
+    url.pathname = path.endsWith("/v1") ? path : `${path}/v1`;
+    return url.toString().replace(/\/+$/, "");
+  }
+
+  async function callLocalModel(persona, convo, onDelta){
+    const localModel = convo.localModel || state.localAI;
+    if(!localModel?.modelId || !localModel.baseUrl) throw new Error("Configure d’abord ton modèle local.");
+    const baseUrl = normalizeLocalBaseUrl(localModel.baseUrl);
+    const messages = convo.messages
+      .filter(message => !message.streaming && ["user", "bot"].includes(message.role))
+      .slice(-40)
+      .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content }));
+    if(persona?.prompt) messages.unshift({ role: "system", content: persona.prompt });
+
+    let response;
+    try{
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "text/event-stream, application/json" },
+        body: JSON.stringify({
+          model: localModel.modelId,
+          messages,
+          temperature: state.temperatureOverride ?? Number(el("temperatureControl").value),
+          top_p: Number(el("topPControl").value),
+          max_tokens: Number(el("maxTokensControl").value),
+          stream: true
+        })
+      });
+    }catch(error){
+      if(error instanceof TypeError){
+        throw new Error("Connexion locale bloquée. Vérifie que le serveur IA tourne et autorise ce site avec CORS (OLLAMA_ORIGINS pour Ollama).");
+      }
+      throw error;
+    }
+    if(!response.ok){
+      const detail = (await response.text()).slice(0, 300);
+      throw new Error(`Le modèle local a renvoyé une erreur (${response.status})${detail ? ` : ${detail}` : "."}`);
+    }
+    if(response.headers.get("Content-Type")?.includes("application/json")){
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content;
+      if(typeof reply !== "string") throw new Error("Le serveur local a renvoyé une réponse non reconnue.");
+      onDelta(reply);
+      return {
+        reply,
+        prompt_tokens: data.usage?.prompt_tokens,
+        completion_tokens: data.usage?.completion_tokens
+      };
+    }
+    if(!response.body) throw new Error("Le serveur local n’a pas fourni de flux de réponse.");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let reply = "";
+    let usage = {};
+    const handleEvent = eventText => {
+      const dataLine = eventText.split("\n").find(line => line.startsWith("data:"));
+      if(!dataLine) return;
+      const payload = dataLine.slice(5).trim();
+      if(!payload || payload === "[DONE]") return;
+      const event = JSON.parse(payload);
+      if(event.error) throw new Error(event.error.message || "Erreur du modèle local.");
+      const delta = event.choices?.[0]?.delta?.content;
+      if(typeof delta === "string" && delta){
+        reply += delta;
+        onDelta(delta);
+      }
+      if(event.usage) usage = event.usage;
+    };
+
+    while(true){
+      const { value, done } = await reader.read();
+      buffer = (buffer + decoder.decode(value || new Uint8Array(), { stream: !done })).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while(boundary !== -1){
+        handleEvent(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+      }
+      if(done) break;
+    }
+    if(buffer.trim()) handleEvent(buffer);
+    if(!reply) throw new Error("Le modèle local a terminé sans renvoyer de texte.");
+    return { reply, prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens };
+  }
+
   async function sendMessage(text, reuseLastUser = false, editTarget = null){
-    if(state.sending || !ensureCreditAccess()) return;
+    const localModelSelected = isLocalModelSelected();
+    if(state.sending || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
     state.sending = true;
     renderCredits();
     let convo = activeConvo();
@@ -1062,7 +1441,15 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     try{
       let data;
       const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
-      if(state.hasActiveModels || ["image", "video", "audio"].includes(selectedMode)){
+      if(localModelSelected){
+        if(selectedMode !== "chat" || el("teamModeBtn").classList.contains("active") || convo.workspaceId){
+          throw new Error("L’IA locale est disponible en chat simple, sans recherche web, équipe IA ni fichiers Bara.");
+        }
+        data = await callLocalModel(persona, convo, chunk => {
+          streamingMessage.content += chunk;
+          renderStreamingMessage();
+        });
+      }else if(state.hasActiveModels || ["image", "video", "audio"].includes(selectedMode)){
         data = await callBackend(persona, text, convo, chunk => {
           streamingMessage.content += chunk;
           renderStreamingMessage();
@@ -1096,6 +1483,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       streamingMessage.routingObservationId = data.routing_observation_id || null;
       streamingMessage.feedback = data.routing_feedback || null;
       streamingMessage.streaming = false;
+      if(convo.localOnly && !convo.temporary){
+        if(convo.title === "Nouvelle conversation") convo.title = text.slice(0, 200);
+        persistLocalConversations();
+      }
       const newCredits = Number(data.remaining_balance);
         if (Number.isFinite(newCredits)) {
             state.credits = newCredits;
@@ -1111,6 +1502,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
         streamingMessage.content = (streamingMessage.content ? streamingMessage.content + "\n\n" : "") + "⚠ " + err.message;
         streamingMessage.streaming = false;
       }
+      if(convo.localOnly && !convo.temporary) persistLocalConversations();
       renderAll();
     } finally {
       state.sending = false;
@@ -1188,6 +1580,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     async function proposePersonaMemory(){
       const convo = activeConvo();
       const persona = activePersona();
+        if(convo?.localOnly){
+          showChatNotice("Cette action enverrait l’historique au serveur; elle est désactivée pour une conversation locale.");
+          return;
+        }
       if(!convo || !persona || !convo.messages?.some(message => message.role === "user")) return;
       memoryDialog.hidden = false;
       memoryText.value = "";
@@ -1493,59 +1889,170 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       window.setTimeout(() => notice.classList.remove("show"), 3000);
     }
   });
+  async function switchModel(modelId){
+    const localSelection = modelId.startsWith("local:");
+    const conversation = activeConvo();
+    const localModelChanged = localSelection && conversation?.localOnly && conversation.localModel &&
+      (conversation.localModel.modelId !== modelId.slice("local:".length) ||
+        conversation.localModel.baseUrl !== state.localAI?.baseUrl);
+    const needsNewConversation = conversation &&
+      (Boolean(conversation.localOnly) !== localSelection || localModelChanged) &&
+      (conversation.id || conversation.messages?.length);
+    if(needsNewConversation){
+      state.modelId = modelId;
+      await newConversation(state.activePersonaId, state.temporaryChat);
+    }else if(conversation && !conversation.id && !conversation.messages?.length){
+      conversation.localOnly = localSelection;
+      conversation.localId = localSelection && !conversation.temporary ? uid("local") : null;
+      conversation.localModel = localSelection ? { ...state.localAI } : null;
+      conversation.workspaceId = localSelection ? null : state.selectedWorkspaceId;
+    }
+    state.modelId = modelId;
+    if(localSelection){
+      el("teamModeBtn").classList.remove("active");
+      el("teamOptions").hidden = true;
+    }
+    renderAll();
+  }
+
+  async function discoverLocalModels(){
+    const status = el("localModelStatus");
+    const button = el("discoverLocalModelsBtn");
+    const select = el("localModelSelect");
+    button.disabled = true;
+    status.textContent = "Connexion au serveur local…";
+    try{
+      const baseUrl = normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim());
+      const response = await fetch(`${baseUrl}/models`, { headers: { "Accept": "application/json" } });
+      if(!response.ok) throw new Error(`Le serveur local a renvoyé une erreur (${response.status}).`);
+      const data = await response.json();
+      const models = Array.isArray(data.data) ? data.data.map(item => item?.id).filter(id => typeof id === "string" && id) : [];
+      if(!models.length) throw new Error("Aucun modèle compatible n’a été trouvé à cette adresse.");
+      select.replaceChildren(...models.map(modelId => new Option(modelId, modelId)));
+      if(state.localAI?.modelId && models.includes(state.localAI.modelId)) select.value = state.localAI.modelId;
+      select.disabled = false;
+      el("saveLocalModelBtn").disabled = false;
+      status.textContent = `${models.length} modèle${models.length > 1 ? "s" : ""} détecté${models.length > 1 ? "s" : ""}.`;
+    }catch(error){
+      status.textContent = error instanceof TypeError
+        ? "Connexion bloquée : vérifie que l’IA locale est lancée et autorise ce site dans sa configuration CORS."
+        : error.message;
+      select.replaceChildren(new Option("Teste la connexion pour charger les modèles", ""));
+      select.disabled = true;
+      el("saveLocalModelBtn").disabled = true;
+    }finally{
+      button.disabled = false;
+    }
+  }
+
+  function openLocalModelDialog(){
+    if(state.localAI){
+      el("localModelBaseUrl").value = state.localAI.baseUrl;
+      el("localModelSelect").replaceChildren(new Option(state.localAI.modelId, state.localAI.modelId));
+      el("localModelSelect").disabled = false;
+      el("saveLocalModelBtn").disabled = false;
+      el("localModelStatus").textContent = "Modèle enregistré sur cet appareil.";
+    }else{
+      el("localModelStatus").textContent = "";
+      el("localModelSelect").replaceChildren(new Option("Teste la connexion pour charger les modèles", ""));
+      el("localModelSelect").disabled = true;
+      el("saveLocalModelBtn").disabled = true;
+    }
+    el("localModelDialog").showModal();
+  }
+
 el("modelChips").addEventListener("click", (e) => {
   const autoButton = e.target.closest("#autoModelBtn");
-  const toggle = e.target.closest(".provider-toggle");
-  const item = e.target.closest(".provider-menu-item");
+  const pickerButton = e.target.closest("#modelPickerBtn");
 
   if(autoButton){
     e.stopPropagation();
-    state.modelId = "auto";
-    autoButton.classList.add("active");
-    document.querySelectorAll(".provider-menu").forEach(menu => { menu.hidden = true; });
-    document.querySelectorAll(".provider-menu-item").forEach(menuItem => menuItem.classList.remove("active"));
-    document.querySelectorAll(".provider-toggle").forEach(provider => provider.classList.remove("has-selection"));
     el("teamModeBtn").classList.remove("active");
     el("teamOptions").hidden = true;
+    switchModel("auto");
     return;
   }
 
-  if (toggle) {
+  if(pickerButton){
     e.stopPropagation();
-    const menu = toggle.closest(".provider-dropdown").querySelector(".provider-menu");
-    const wasOpen = !menu.hidden;
-
-    document.querySelectorAll(".provider-menu").forEach(m => { m.hidden = true; });
-    el("teamModeBtn").classList.remove("active");
-    el("teamOptions").hidden = true;
-
-    menu.hidden = wasOpen;
-    return;
-  }
-
-  if (item) {
-    e.stopPropagation();
-    state.modelId = item.dataset.modelId;
-    if(autoModelBtn) autoModelBtn.classList.remove("active");
-    item.closest(".provider-menu").querySelectorAll(".provider-menu-item")
-      .forEach(i => i.classList.toggle("active", i === item));
-
-    document.querySelectorAll(".provider-toggle").forEach(t => t.classList.remove("has-selection"));
-    const parentToggle = item.closest(".provider-dropdown").querySelector(".provider-toggle");
-    parentToggle.classList.add("has-selection");
-    parentToggle.querySelector(".provider-toggle-label").textContent = item.dataset.modelName;
-
-    item.closest(".provider-menu").hidden = true;
+    el("modelPickerSearch").value = "";
+    document.querySelectorAll(".model-picker-item").forEach(item => { item.hidden = false; });
+    el("modelPickerDialog").showModal();
+    el("modelPickerSearch").focus();
   }
 });
 
+el("modelPickerList").addEventListener("click", event => {
+  const item = event.target.closest(".model-picker-item");
+  if(!item) return;
+  event.stopPropagation();
+  if(item.id === "localModelDialogBtn"){
+    el("modelPickerDialog").close();
+    el("teamModeBtn").classList.remove("active");
+    el("teamOptions").hidden = true;
+    if(state.localAI) switchModel(`local:${state.localAI.modelId}`);
+    else openLocalModelDialog();
+    return;
+  }
+  el("modelPickerDialog").close();
+  el("teamModeBtn").classList.remove("active");
+  el("teamOptions").hidden = true;
+  switchModel(item.dataset.modelId);
+});
 
-// ferme les menus ouverts si on clique ailleurs
-document.addEventListener("click", () => {
-  document.querySelectorAll(".provider-menu").forEach(m => { m.hidden = true; });
+el("modelPickerSearch").addEventListener("input", event => {
+  const query = event.target.value.trim().toLocaleLowerCase();
+  document.querySelectorAll(".model-picker-item").forEach(item => {
+    item.hidden = !item.textContent.toLocaleLowerCase().includes(query);
+  });
+});
+el("modelTaskCategory").addEventListener("change", event => {
+  sortModelsForTask(event.target.value);
+});
+el("closeModelPickerBtn").addEventListener("click", () => el("modelPickerDialog").close());
+el("modelPickerDialog").addEventListener("click", event => {
+  if(event.target === el("modelPickerDialog")) el("modelPickerDialog").close();
+});
+
+el("discoverLocalModelsBtn").addEventListener("click", discoverLocalModels);
+el("localModelBaseUrl").addEventListener("input", () => {
+  let editedBaseUrl = "";
+  try{
+    editedBaseUrl = normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim());
+  }catch(_error){
+    editedBaseUrl = "";
+  }
+  if(editedBaseUrl !== state.localAI?.baseUrl){
+    el("localModelSelect").replaceChildren(new Option("Teste la connexion pour charger les modèles", ""));
+    el("localModelSelect").disabled = true;
+    el("saveLocalModelBtn").disabled = true;
+    el("localModelStatus").textContent = "";
+  }
+});
+el("cancelLocalModelBtn").addEventListener("click", () => el("localModelDialog").close());
+el("saveLocalModelBtn").addEventListener("click", async () => {
+  const modelId = el("localModelSelect").value;
+  if(!modelId) return;
+  try{
+    const settings = { baseUrl: normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim()), modelId };
+    localStorage.setItem(localAISettingsKey, JSON.stringify(settings));
+    state.localAI = settings;
+    el("localModelDialog").close();
+    await switchModel(`local:${modelId}`);
+  }catch(error){
+    showChatNotice(error.message);
+  }
+});
+el("syncLocalConversationBtn").addEventListener("click", () => {
+  const conversation = activeConvo();
+  if(conversation) syncLocalConversation(conversation);
 });
 
   el("teamModeBtn").addEventListener("click", () => {
+    if(isLocalModelSelected()){
+      showChatNotice("L’équipe IA utilise les modèles cloud. Reviens à un modèle cloud pour l’activer.");
+      return;
+    }
     const active = el("teamModeBtn").classList.toggle("active");
     if(active && autoModelBtn) autoModelBtn.classList.remove("active");
     if(!active && autoModelBtn && state.modelId === "auto") autoModelBtn.classList.add("active");
@@ -1570,33 +2077,13 @@ document.addEventListener("click", () => {
     button.classList.toggle("selected", option.selected);
     el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
   });
-  const mediaProviderSelect = el("mediaProviderSelect");
   const mediaOptionsPanel = el("mediaOptionsPanel");
-  function setAvailableOptions(select, values, fallback){
-    const allowed = new Set(values);
-    Array.from(select.options).forEach(option => {
-      option.hidden = !allowed.has(option.value);
-      option.disabled = option.hidden;
-    });
-    if(!allowed.has(select.value)) select.value = fallback;
-    select.disabled = allowed.size <= 1;
-  }
   function updateMediaOptionControls(mode){
     const mediaMode = ["image", "video", "audio"].includes(mode);
     mediaOptionsPanel.hidden = !mediaMode;
     el("imageOptions").hidden = mode !== "image";
     el("videoOptions").hidden = mode !== "video";
     el("audioOptions").hidden = mode !== "audio";
-    const provider = mediaProviderSelect.value;
-    if(mode === "video"){
-      const isReplicate = provider === "replicate";
-      const isFal = provider === "fal";
-      setAvailableOptions(el("videoDuration"), isReplicate ? ["6"] : isFal ? ["4", "6", "8"] : ["4", "6", "8", "10", "15", "30"], isReplicate ? "6" : isFal ? "8" : "8");
-      setAvailableOptions(el("videoResolution"), isReplicate || isFal ? ["720p"] : ["480p", "720p"], "720p");
-      setAvailableOptions(el("videoAspectRatio"), isReplicate ? ["16:9"] : ["16:9", "9:16", "1:1"], "16:9");
-      el("videoGenerateAudio").disabled = isReplicate;
-      if(isReplicate) el("videoGenerateAudio").checked = false;
-    }
   }
   function collectMediaOptions(mode){
     if(mode === "image") return { image_size: el("imageSizeSelect").value };
@@ -1611,27 +2098,7 @@ document.addEventListener("click", () => {
       instrumental: el("audioInstrumental").checked,
     };
   }
-  function updateMediaProviderSelection(mode){
-    const isMediaMode = ["image", "video", "audio"].includes(mode);
-    const options = Array.from(mediaProviderSelect.options);
-    options.forEach(option => {
-      const modalities = (option.dataset.modalities || "").split(",");
-      option.hidden = isMediaMode && !modalities.includes(mode);
-      option.disabled = option.hidden;
-    });
-    const firstAvailable = options.find(option => isMediaMode && (option.dataset.modalities || "").split(",").includes(mode));
-    if(firstAvailable && !options.find(option => option.value === mediaProviderSelect.value && !option.disabled)){
-      mediaProviderSelect.value = firstAvailable.value;
-    }
-    mediaProviderSelect.hidden = !isMediaMode;
-    mediaProviderSelect.disabled = isMediaMode && !firstAvailable;
-    updateMediaOptionControls(mode);
-  }
-  updateMediaProviderSelection("chat");
-  mediaProviderSelect.addEventListener("change", () => {
-    const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
-    updateMediaOptionControls(mode);
-  });
+  updateMediaOptionControls("chat");
   document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tool-btn[data-mode]").forEach(item => {
@@ -1640,7 +2107,7 @@ document.addEventListener("click", () => {
       });
       button.classList.add("active");
       button.setAttribute("aria-pressed", "true");
-      updateMediaProviderSelection(button.dataset.mode);
+      updateMediaOptionControls(button.dataset.mode);
     });
   });
 const fileInput = document.createElement("input");
@@ -1698,7 +2165,6 @@ fileInput.addEventListener("change", async () => {
       headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value },
       body: formData
     });
-    updateMediaProviderSelection("image");
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || "Erreur d'upload");
 
@@ -1778,7 +2244,8 @@ fileInput.addEventListener("change", async () => {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if(!ensureCreditAccess() || !text) return;
+    const localModelSelected = isLocalModelSelected();
+    if((localModelSelected ? !state.isAuthenticated : !ensureCreditAccess()) || !text) return;
     if(el("teamModeBtn").classList.contains("active") && el("teamModelSelect").selectedOptions.length === 0){
       el("creditNotice").textContent = "Choisis au moins une IA pour former ton équipe.";
       el("creditNotice").classList.add("show");
@@ -1788,6 +2255,10 @@ fileInput.addEventListener("change", async () => {
     }
     const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
     const activeConversation = activeConvo();
+    if((localModelSelected || activeConversation?.localOnly) && selectedMode !== "chat"){
+      showChatNotice("Une conversation locale ne peut pas utiliser les outils hébergés. Reviens au mode chat simple.");
+      return;
+    }
     if(["video", "audio"].includes(selectedMode) && (state.temporaryChat || activeConversation?.temporary)){
       el("creditNotice").textContent = "Les vidéos et audios doivent être générés dans une conversation enregistrée.";
       el("creditNotice").classList.add("show");
@@ -1843,7 +2314,11 @@ fileInput.addEventListener("change", async () => {
     function selectOperator(operator, manual = false){
       if(operatorInput) operatorInput.value = operator;
       if(manual) waveChosenManually = operator === "wave";
-      operatorChoices.forEach(choice => choice.classList.toggle("active", choice.dataset.operator === operator));
+      operatorChoices.forEach(choice => {
+        const selected = choice.dataset.operator === operator;
+        choice.classList.toggle("active", selected);
+        choice.setAttribute("aria-pressed", String(selected));
+      });
     }
     operatorChoices.forEach(choice => choice.addEventListener("click", () => selectOperator(choice.dataset.operator, true)));
     if(phoneInput) phoneInput.addEventListener("input", () => {
@@ -1855,6 +2330,92 @@ fileInput.addEventListener("change", async () => {
       if(prefix === "07") selectOperator("orange");
     });
 
+    const formatCredits = value => new Intl.NumberFormat("fr-FR").format(value);
+    const stripeAmountInput = document.getElementById("stripe-amount");
+    const stripeCreditsOutput = document.getElementById("stripeCreditsEstimate");
+    function updateStripeCredits(){
+      if(!stripeAmountInput || !stripeCreditsOutput) return;
+      const amount = Number(stripeAmountInput.value);
+      const creditsPerDollar = Number(stripeCreditsOutput.dataset.creditsPerDollar);
+      if(!Number.isFinite(amount) || amount < Number(stripeAmountInput.min)){
+        stripeCreditsOutput.textContent = `Minimum ${stripeAmountInput.min} USD`;
+        return;
+      }
+      stripeCreditsOutput.textContent = `${formatCredits(Math.floor(amount * creditsPerDollar))} jetons`;
+    }
+    stripeAmountInput?.addEventListener("input", updateStripeCredits);
+    updateStripeCredits();
+
+    const mobileMoneyAmountInput = document.getElementById("mobile-amount");
+    const mobileMoneyCreditsOutput = document.getElementById("mobileMoneyCreditsEstimate");
+    function updateMobileMoneyCredits(){
+      if(!mobileMoneyAmountInput || !mobileMoneyCreditsOutput) return;
+      const amount = Number(mobileMoneyAmountInput.value);
+      const xofPerUsd = Number(mobileMoneyCreditsOutput.dataset.xofPerUsd);
+      const creditsPerDollar = Number(mobileMoneyCreditsOutput.dataset.creditsPerDollar);
+      if(!Number.isFinite(xofPerUsd) || xofPerUsd <= 0){
+        mobileMoneyCreditsOutput.textContent = "Indisponible";
+        return;
+      }
+      if(!Number.isFinite(amount) || amount < Number(mobileMoneyAmountInput.min)){
+        mobileMoneyCreditsOutput.textContent = `Minimum ${new Intl.NumberFormat("fr-FR").format(Number(mobileMoneyAmountInput.min))} FCFA`;
+        return;
+      }
+      mobileMoneyCreditsOutput.textContent = `${formatCredits(Math.floor(amount / xofPerUsd * creditsPerDollar))} jetons`;
+    }
+    mobileMoneyAmountInput?.addEventListener("input", updateMobileMoneyCredits);
+    updateMobileMoneyCredits();
+
+    document.querySelectorAll("[data-set-amount]").forEach(button => {
+      button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.setAmount);
+        if(!input || input.disabled) return;
+        input.value = button.dataset.amount;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+
+    const mobileMoneyForm = document.getElementById("mobileMoneyForm");
+    const mobileMoneySubmit = document.getElementById("mobileMoneySubmit");
+    const mobileMoneyStatus = document.getElementById("mobileMoneyStatus");
+    mobileMoneyForm?.addEventListener("submit", async event => {
+      event.preventDefault();
+      if(!mobileMoneySubmit || mobileMoneySubmit.disabled) return;
+      mobileMoneySubmit.disabled = true;
+      mobileMoneyStatus.textContent = "Préparation du paiement…";
+      let redirecting = false;
+      try{
+        const response = await fetch(mobileMoneyForm.action, {
+          method: "POST",
+          headers: { "Accept": "application/json" },
+          body: new FormData(mobileMoneyForm),
+        });
+        let result;
+        try{
+          result = await response.json();
+        }catch(_error){
+          throw new Error("Réponse de paiement invalide. Réessaie dans quelques instants.");
+        }
+        if(!response.ok){
+          throw new Error(result.error || "Le paiement n’a pas pu être préparé.");
+        }
+        if(typeof result.payment_url !== "string"){
+          throw new Error("Le prestataire n’a pas fourni de lien de paiement.");
+        }
+        const paymentUrl = new URL(result.payment_url, window.location.href);
+        if(paymentUrl.protocol !== "https:"){
+          throw new Error("Le lien de paiement sécurisé est invalide.");
+        }
+        redirecting = true;
+        window.location.assign(paymentUrl.href);
+      }catch(error){
+        mobileMoneyStatus.textContent = error instanceof TypeError
+          ? "Connexion impossible au prestataire. Vérifie ta connexion et réessaie."
+          : error.message || "Le paiement a échoué. Réessaie.";
+      }finally{
+        if(!redirecting) mobileMoneySubmit.disabled = false;
+      }
+    });
 
 
 

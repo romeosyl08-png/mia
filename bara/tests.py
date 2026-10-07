@@ -2,14 +2,14 @@ import os
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from api.models import AIModel, APIProvider
 from bara.models import ToolExecution, WorkConversation, WorkFile, Workspace, WorkspaceMCPServer
 from bara.mcp_client import validate_mcp_endpoint
-from bara.services import call_llm_with_tools_stream, get_workspace_context
-from bara.tools.definitions import run_command, search_code
+from bara.services import actual_cost_credits, call_llm_with_tools_stream, get_workspace_context
+from bara.tools.definitions import compare_files, read_file_lines, run_command, search_code
 from bara.tools.sandbox import run_sandbox_command
 from bara.views import _tools_schema
 from chat.services import ProviderError
@@ -66,6 +66,99 @@ class WorkspaceToolTests(TestCase):
         self.assertEqual(result["results"][0]["line"], 2)
         self.assertEqual(result["results"][0]["file"], "app.py")
 
+    def test_read_file_lines_returns_bounded_requested_range(self):
+        work_file = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="app.py",
+            content_type="text/plain",
+            size_bytes=18,
+            extracted_text="one\ntwo\nthree\nfour\n",
+        )
+
+        result = read_file_lines(self.workspace, work_file.id, 2, 3)
+
+        self.assertEqual(result["content"], "two\nthree")
+        self.assertEqual(result["start_line"], 2)
+        self.assertEqual(result["end_line"], 3)
+        self.assertEqual(result["total_lines"], 4)
+        self.assertFalse(result["truncated"])
+
+    def test_read_file_lines_rejects_invalid_or_oversized_ranges(self):
+        work_file = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="app.py",
+            content_type="text/plain",
+            size_bytes=5,
+            extracted_text="one\n",
+        )
+
+        self.assertIn("Plage invalide", read_file_lines(self.workspace, work_file.id, 0, 1)["error"])
+        self.assertIn("Plage invalide", read_file_lines(self.workspace, work_file.id, 1.5, 2)["error"])
+        self.assertIn("500 lignes maximum", read_file_lines(self.workspace, work_file.id, 1, 501)["error"])
+        self.assertIn("n'existe pas", read_file_lines(self.workspace, work_file.id, 2, 2)["error"])
+
+    def test_read_file_lines_caps_long_line_output(self):
+        work_file = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="large.txt",
+            content_type="text/plain",
+            size_bytes=20_001,
+            extracted_text="x" * 20_001,
+        )
+
+        result = read_file_lines(self.workspace, work_file.id, 1, 1)
+
+        self.assertEqual(len(result["content"]), 20_000)
+        self.assertTrue(result["truncated"])
+
+    def test_compare_files_returns_read_only_unified_diff(self):
+        first = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="before.py",
+            content_type="text/plain",
+            size_bytes=10,
+            extracted_text="value = 1\n",
+        )
+        second = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="after.py",
+            content_type="text/plain",
+            size_bytes=10,
+            extracted_text="value = 2\n",
+        )
+
+        result = compare_files(self.workspace, first.id, second.id)
+
+        self.assertFalse(result["identical"])
+        self.assertIn("-value = 1", result["diff"])
+        self.assertIn("+value = 2", result["diff"])
+        self.assertLessEqual(len(result["diff"]), 20_000)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.extracted_text, "value = 1\n")
+        self.assertEqual(second.extracted_text, "value = 2\n")
+
+    def test_compare_files_caps_large_diff_output(self):
+        first = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="before.txt",
+            content_type="text/plain",
+            size_bytes=25_000,
+            extracted_text="a" * 25_000,
+        )
+        second = WorkFile.objects.create(
+            workspace=self.workspace,
+            original_name="after.txt",
+            content_type="text/plain",
+            size_bytes=25_000,
+            extracted_text="b" * 25_000,
+        )
+
+        result = compare_files(self.workspace, first.id, second.id)
+
+        self.assertEqual(len(result["diff"]), 20_000)
+        self.assertTrue(result["truncated"])
+
     def test_workspace_context_selects_only_relevant_passages(self):
         WorkFile.objects.create(
             workspace=self.workspace,
@@ -84,20 +177,28 @@ class WorkspaceToolTests(TestCase):
 
     def test_bara_agent_records_shadow_route_without_changing_selected_model(self):
         provider = APIProvider.objects.create(name="Bara router provider", slug="bara-router", base_url="https://provider.example.test")
-        model = AIModel.objects.create(provider=provider, name="Workspace model", model_id="bara-router-model")
+        model = AIModel.objects.create(
+            provider=provider,
+            name="Workspace model",
+            model_id="bara-router-model",
+            input_price_per_million=1000,
+            output_price_per_million=2000,
+        )
         provider.keys.create(name="server-key", key="server-secret")
         self.workspace.active_model = model
         self.workspace.save(update_fields=["active_model"])
         conversation = WorkConversation.objects.create(workspace=self.workspace)
-        self.user.credit_account.balance = 10000
+        self.user.credit_account.balance = 100000
         self.user.credit_account.save(update_fields=["balance"])
         self.client.force_login(self.user)
 
         events = [
             {"type": "delta", "content": "Réponse Bara."},
-            {"type": "done", "usage": {"prompt_tokens": 12, "completion_tokens": 8}},
+            {"type": "done", "usage": {"prompt_tokens": 1200, "completion_tokens": 800}},
         ]
-        with patch("bara.views.call_llm_with_tools_stream", return_value=iter(events)) as provider_call:
+        with patch("bara.views.estimate_cost", return_value=(1, 1)), patch(
+            "bara.views.call_llm_with_tools_stream", return_value=iter(events)
+        ) as provider_call:
             response = self.client.post(
                 reverse("bara:message", args=[self.workspace.id, conversation.id]),
                 {"content": "Analyse ce projet"},
@@ -113,6 +214,123 @@ class WorkspaceToolTests(TestCase):
         self.assertEqual(observation.model_id, model.model_id)
         self.assertEqual(observation.task_category, "coding")
         self.assertEqual(observation.outcome, "success")
+        self.user.credit_account.refresh_from_db()
+        self.assertEqual(
+            self.user.credit_account.balance,
+            100000 - actual_cost_credits(model, 1200, 800),
+        )
+
+    def test_message_requires_an_explicit_model_or_auto_route(self):
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 100
+        self.user.credit_account.save(update_fields=["balance"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("bara:message", args=[self.workspace.id, conversation.id]),
+            {"content": "Bonjour"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Choisis un modèle", response.json()["error"])
+        self.user.credit_account.refresh_from_db()
+        self.assertEqual(self.user.credit_account.balance, 100)
+        self.assertFalse(conversation.messages.exists())
+
+    @override_settings(BARA_CODE_EXECUTION_ENABLED=False)
+    def test_disabled_code_execution_tools_are_not_offered_or_saved_as_enabled(self):
+        schemas, _ = _tools_schema(self.workspace)
+        names = {item["function"]["name"] for item in schemas}
+        self.assertNotIn("run_python", names)
+        self.assertNotIn("run_command", names)
+        self.assertIn("read_file", names)
+
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("bara:update-tools", args=[self.workspace.id]),
+            {"enabled_tools": ["list_files", "run_python", "run_command"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.workspace.refresh_from_db()
+        self.assertIn("run_python", self.workspace.disabled_tools)
+        self.assertIn("run_command", self.workspace.disabled_tools)
+
+    @override_settings(BARA_CODE_EXECUTION_ENABLED=False)
+    def test_disabled_execution_tool_call_from_model_is_rejected(self):
+        provider = APIProvider.objects.create(
+            name="Workspace provider", base_url="https://provider.example.test"
+        )
+        model = AIModel.objects.create(provider=provider, name="Workspace model", model_id="workspace-model")
+        provider.keys.create(name="server-key", key="server-secret")
+        self.workspace.active_model = model
+        self.workspace.save(update_fields=["active_model"])
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 1000
+        self.user.credit_account.save(update_fields=["balance"])
+        self.client.force_login(self.user)
+        tool_call = [
+            {"type": "tool_call_delta", "index": 0, "id": "call-1", "name": "run_command",
+             "arguments_delta": '{"command":["python3","-c","print(1)"]}'},
+            {"type": "done", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        ]
+        final_answer = [
+            {"type": "delta", "content": "Cet outil n'est pas autorisé."},
+            {"type": "done", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        ]
+
+        with patch(
+            "bara.views.call_llm_with_tools_stream",
+            side_effect=[iter(tool_call), iter(final_answer)],
+        ) as provider_call, patch("bara.views.execute_tool") as execute_tool:
+            response = self.client.post(
+                reverse("bara:message", args=[self.workspace.id, conversation.id]),
+                {"content": "Lance une commande"},
+                HTTP_ACCEPT="text/event-stream",
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'"status": "tool_blocked"', body)
+        tool_messages = [
+            message for message in provider_call.call_args_list[1].kwargs["messages"]
+            if message.get("role") == "tool"
+        ]
+        self.assertTrue(tool_messages)
+        self.assertIn("Cet outil n'est pas activé", tool_messages[-1]["content"])
+        execute_tool.assert_not_called()
+
+    def test_unpaid_cost_over_reserve_is_reported_to_user(self):
+        provider = APIProvider.objects.create(
+            name="Workspace provider", base_url="https://provider.example.test"
+        )
+        model = AIModel.objects.create(provider=provider, name="Workspace model", model_id="workspace-model")
+        provider.keys.create(name="server-key", key="server-secret")
+        self.workspace.active_model = model
+        self.workspace.save(update_fields=["active_model"])
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 5
+        self.user.credit_account.save(update_fields=["balance"])
+        self.client.force_login(self.user)
+
+        with patch("bara.views.estimate_cost", return_value=(1, 1)), patch(
+            "bara.views.actual_cost_credits", return_value=20
+        ), patch("bara.views.call_llm_with_tools_stream", return_value=iter([
+            {"type": "delta", "content": "Réponse"},
+            {"type": "done", "usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+        ])):
+            response = self.client.post(
+                reverse("bara:message", args=[self.workspace.id, conversation.id]),
+                {"content": "Bonjour"},
+                HTTP_ACCEPT="text/event-stream",
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Solde insuffisant", body)
+        self.assertIn(b"15 jetons", body)
+        self.user.credit_account.refresh_from_db()
+        self.assertEqual(self.user.credit_account.balance, 0)
 
     def test_bara_auto_workspace_routes_to_observed_model_and_keeps_fallback(self):
         fallback_provider = APIProvider.objects.create(
@@ -217,7 +435,7 @@ class WorkspaceMCPTests(TestCase):
         provider = APIProvider(name="Groq", slug="groq", base_url="sk-test-key")
 
         with patch("bara.services.urlopen") as urlopen:
-            with self.assertRaisesRegex(ProviderError, "URL de base du fournisseur"):
+            with self.assertRaisesRegex(ProviderError, "URL de connexion"):
                 list(call_llm_with_tools_stream(provider, "sk-test-key", "model", []))
 
         urlopen.assert_not_called()
@@ -255,6 +473,8 @@ class WorkspaceMCPTests(TestCase):
         schemas, mcp_map = _tools_schema(self.workspace)
         names = {item["function"]["name"] for item in schemas}
         self.assertNotIn("read_file", names)
+        self.assertIn("read_file_lines", names)
+        self.assertIn("compare_files", names)
         self.assertIn(f"mcp_{server.id}_0", names)
         self.assertEqual(mcp_map[f"mcp_{server.id}_0"], (server, "lookup"))
 
@@ -274,10 +494,17 @@ class WorkspaceMCPTests(TestCase):
     def test_workspace_detail_renders_tool_and_mcp_controls(self):
         self.client.force_login(self.user)
         conversation = WorkConversation.objects.create(workspace=self.workspace)
-        response = self.client.get(reverse("bara:conversation", args=[self.workspace.id, conversation.id]))
+        with override_settings(BARA_CODE_EXECUTION_ENABLED=False):
+            response = self.client.get(reverse("bara:conversation", args=[self.workspace.id, conversation.id]))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Outils &amp; Model Context Protocol")
-        self.assertContains(response, "Connecter le serveur MCP")
+        self.assertContains(response, "Outils intégrés")
+        self.assertContains(response, "AUTOMATISATIONS")
+        self.assertRegex(response.content.decode(), r'aria-label="(?:Connecter Gmail|Gmail OAuth non configuré|Gmail connecté)"')
+        self.assertRegex(response.content.decode(), r'aria-label="(?:Connecter Outlook|Outlook OAuth non configuré|Outlook connecté)"')
+        self.assertRegex(response.content.decode(), r'aria-label="(?:Connecter|Renouveler) (?:la connexion )?Blender"')
+        self.assertContains(response, "Connecter l'automatisation")
+        self.assertContains(response, "transmet le code au service tiers Piston")
+        self.assertContains(response, "désactivé côté serveur")
 
     def test_workspace_tool_preferences_are_saved(self):
         self.client.force_login(self.user)

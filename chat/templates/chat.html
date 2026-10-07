@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}AI 2 AI{% endblock %}
+{% block title %}2AI{% endblock %}
 
 {% load static %}
 
@@ -105,7 +105,7 @@
           <button type="button" class="composer-icon composer-plus" id="attachBtn" title="Ajouter au message" aria-label="Ajouter au message" aria-controls="composerPlusMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
           <div class="composer-plus-menu" id="composerPlusMenu" hidden>
             <button type="button" class="plus-menu-item" id="plusFilesBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg><span>Joindre un fichier</span></button>
-            {% if chat_config.imageProviderAvailable %}
+            {% if chat_config.imageGenerationAvailable %}
             <button type="button" class="plus-menu-item" id="plusImageBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Générer une image</span></button>
             {% else %}
             <button type="button" class="plus-menu-item" id="plusImageBtn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Génération d’image indisponible</span></button>
@@ -118,12 +118,12 @@
       </div>
       <div class="composer-tools" aria-label="Outils du message">
         <button type="button" class="tool-btn active" id="chatModeBtn" data-mode="chat" aria-pressed="true" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
-        {% if chat_config.imageProviderAvailable %}
+        {% if chat_config.imageGenerationAvailable %}
         <button type="button" class="tool-btn" id="imageModeBtn" data-mode="image" title="Générer une image" aria-label="Générer une image" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
         {% else %}
         <button type="button" class="tool-btn unavailable-tool" id="imageModeBtn" title="Génération d’images non configurée" aria-label="Génération d’images non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
         {% endif %}
-        {% if chat_config.videoProviderAvailable %}
+        {% if chat_config.videoGenerationAvailable %}
         <button type="button" class="tool-btn" id="videoModeBtn" data-mode="video" aria-pressed="false" title="Générer une vidéo" aria-label="Générer une vidéo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
         {% else %}
         <button type="button" class="tool-btn unavailable-tool" id="videoModeBtn" title="Génération vidéo non configurée" aria-label="Génération vidéo non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
@@ -137,10 +137,6 @@
         <button type="button" class="tool-btn" id="deepModeBtn" data-mode="deep" aria-pressed="false" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
         <button type="button" class="tool-btn" id="generationControlsBtn" title="Contrôles de génération" aria-label="Contrôles de génération" aria-controls="generationControlsPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="8" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="10" cy="18" r="2"></circle></svg></button>
         <span class="tool-spacer"></span>
-        <label class="sr-only" for="mediaProviderSelect">Fournisseur média</label>
-        <select id="mediaProviderSelect" hidden aria-label="Fournisseur média">
-          {% for provider in media_providers %}<option value="{{ provider.slug }}" data-modalities="{{ provider.modalities|join:',' }}">{{ provider.name }}</option>{% endfor %}
-        </select>
         <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
       <div class="media-options" id="mediaOptionsPanel" hidden>
@@ -196,7 +192,7 @@
           </label>
           <label class="media-option-check"><input id="audioInstrumental" type="checkbox"><span>Instrumental, sans voix</span></label>
         </div>
-        <span class="media-options-note">Options disponibles selon le fournisseur et le modèle actifs.</span>
+        <span class="media-options-note">Les formats proposés dépendent du mode de génération.</span>
       </div>
       <div class="generation-controls" id="generationControlsPanel" hidden>
         <label class="generation-control">
@@ -223,26 +219,15 @@
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
   {% if ai_models %}
   <button type="button" class="model-chip auto-model-chip" id="autoModelBtn" data-model-id="auto" aria-label="Choix automatique du modèle">✦ Auto 2AI</button>
+  {% else %}
+  <button type="button" class="model-chip active" data-model-id="demo-mistral"><span class="model-dot" aria-hidden="true">✦</span>Mistral</button>
   {% endif %}
+  <button type="button" class="model-chip model-picker-trigger" id="modelPickerBtn" aria-haspopup="dialog" aria-controls="modelPickerDialog">
+    <span class="model-dot" aria-hidden="true">✦</span>Choisir une IA
+  </button>
   <button type="button" class="model-chip team-chip" id="teamModeBtn" data-team="true">
     <span class="model-dot" aria-hidden="true">✦</span>Équipe IA
   </button>
-  {% for group in models_by_provider %}
-    <div class="provider-dropdown">
-      <button type="button" class="model-chip provider-toggle" data-provider="{{ group.provider_name|escape }}">
-        <span class="model-dot" aria-hidden="true">✦</span><span class="provider-toggle-label">{{ group.provider_name }}</span>
-      </button>
-      <div class="provider-menu" hidden>
-        {% for ai_model in group.models %}
-          <button type="button" class="provider-menu-item{% if forloop.first and forloop.parentloop.first %} active{% endif %}" data-model-id="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}">
-            {{ ai_model.name }}
-          </button>
-        {% endfor %}
-      </div>
-    </div>
-  {% empty %}
-    <button type="button" class="model-chip active" data-model-id="demo-mistral"><span class="model-dot" aria-hidden="true">✦</span>Mistral</button>
-  {% endfor %}
 </div>
 
       <div class="team-options" id="teamOptions" hidden>
@@ -259,30 +244,27 @@
           <option value="plan_execute_verify">Planifier, réaliser, vérifier</option>
         </select>
         <div class="team-model-grid" id="teamModelGrid">
-  {% for group in models_by_provider %}
-    <div class="team-model-group">
-      <span class="team-model-group-label">{{ group.provider_name }}</span>
-      {% for ai_model in group.models %}
+  {% for ai_model in ai_models %}
         <button type="button" class="team-model-option" data-model-id="{{ ai_model.model_id|escape }}">
           <span class="team-model-check">✓</span>
           <span class="team-model-copy">
             <strong>{{ ai_model.name }}</strong>
+            <span>{{ ai_model.output_price_per_million|floatformat:4 }} $ / 1M tokens de sortie</span>
           </span>
         </button>
-      {% endfor %}
-    </div>
   {% endfor %}
 </div>
 <select id="teamModelSelect" multiple hidden aria-hidden="true">
-  {% for group in models_by_provider %}
-    {% for ai_model in group.models %}
-      <option value="{{ ai_model.model_id|escape }}">
-        {{ ai_model.name }} — {{ ai_model.provider.name }}
-      </option>
-    {% endfor %}
+  {% for ai_model in ai_models %}
+    <option value="{{ ai_model.model_id|escape }}">
+      {{ ai_model.name }}
+    </option>
   {% endfor %}
 </select>
       </div>
+<div class="local-chat-notice" id="localChatNotice" hidden>
+  Cette conversation reste dans le navigateur. <button type="button" id="syncLocalConversationBtn">Copier dans mon compte</button>
+</div>
     </form>
   </main>
 
@@ -304,6 +286,67 @@
       <div class="image-gallery-grid" id="imageGalleryGrid"></div>
     </section>
   </div>
+
+  <dialog class="local-model-dialog" id="localModelDialog" aria-labelledby="localModelTitle">
+    <form method="dialog" id="localModelForm">
+      <h2 id="localModelTitle">Connecter une IA locale</h2>
+      <p>Connexion directe depuis ce navigateur à Ollama ou à un serveur compatible OpenAI sur ton appareil. Les conversations restent ici par défaut.</p>
+      <label for="localModelBaseUrl">Adresse locale de l’API</label>
+      <input id="localModelBaseUrl" type="url" value="http://localhost:11434/v1" autocomplete="url" required>
+      <button type="button" id="discoverLocalModelsBtn">Tester et charger les modèles</button>
+      <label for="localModelSelect">Modèle</label>
+      <select id="localModelSelect" required disabled>
+        <option value="">Teste la connexion pour charger les modèles</option>
+      </select>
+      <p class="local-model-help">Ollama peut nécessiter l’autorisation CORS de ce site dans OLLAMA_ORIGINS. Les échanges locaux restent sur ton appareil.</p>
+      <p id="localModelStatus" role="status" aria-live="polite"></p>
+      <footer>
+        <button type="button" id="cancelLocalModelBtn">Annuler</button>
+        <button type="button" id="saveLocalModelBtn" disabled>Utiliser ce modèle</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="model-picker-dialog" id="modelPickerDialog" aria-labelledby="modelPickerTitle">
+    <header class="model-picker-header">
+      <div>
+        <h2 id="modelPickerTitle">Choisir une IA</h2>
+        <p>Classement des IA de chat selon leur popularité d’usage. Il concerne les modèles de conversation.</p>
+      </div>
+      <button type="button" class="model-picker-close" id="closeModelPickerBtn" aria-label="Fermer">×</button>
+    </header>
+    <label class="model-picker-category-label" for="modelTaskCategory">Pour quelle tâche texte ?</label>
+    <select class="model-picker-category" id="modelTaskCategory">
+      {% for option in model_ranking_options %}
+      <option value="{{ option.value|escape }}" data-as-of="{{ option.as_of|escape }}">{{ option.label }}</option>
+      {% endfor %}
+    </select>
+    <p class="model-picker-ranking-status" id="modelRankingStatus" role="status" aria-live="polite"></p>
+    <p class="model-picker-attribution" id="modelRankingAttribution"></p>
+    <label class="sr-only" for="modelPickerSearch">Rechercher une IA</label>
+    <input class="model-picker-search" id="modelPickerSearch" type="search" placeholder="Rechercher un modèle">
+    <div class="model-picker-list" id="modelPickerList">
+      {% for ai_model in ai_models %}
+      <button type="button" class="model-picker-item" data-model-id="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" data-output-price="{{ ai_model.output_price_per_million }}">
+        <span class="model-picker-copy">
+          <strong>{{ ai_model.name }}</strong>
+          <span class="model-picker-ranking" hidden></span>
+        </span>
+        <span class="model-picker-price">{{ ai_model.output_price_per_million|floatformat:4 }} $ / 1M tokens de sortie</span>
+      </button>
+      {% empty %}
+      <p class="model-picker-empty">Aucun modèle cloud disponible pour le moment.</p>
+      {% endfor %}
+      <button type="button" class="model-picker-item local-model-picker-item" id="localModelDialogBtn" data-model-id="local">
+        <span class="model-picker-copy">
+          <strong>IA locale</strong>
+          <span id="localModelLabel">Configurer ou utiliser un modèle sur ton appareil</span>
+        </span>
+        <span class="model-picker-price">Locale · non tarifée</span>
+      </button>
+    </div>
+    {{ model_rankings_by_id|json_script:"openrouterModelRankings" }}
+  </dialog>
 
   {% if is_authenticated %}
   <div class="memory-suggestion-overlay" id="memorySuggestionDialog" hidden>
@@ -331,5 +374,3 @@
 </div>
 
 {% endblock %}
-
-

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Tarifs des IA — 2AI{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/tariffs.css' %}?v=tariffs-1">
+{% endblock %}
+
+{% block body %}
+<main class="tariffs-page">
+  <nav class="tariffs-nav" aria-label="Navigation des tarifs">
+    <a href="{% url 'recharge-page' %}">← Retour à la recharge</a>
+    <span>2AI <span aria-hidden="true">/</span> TARIFS</span>
+  </nav>
+
+  <header class="tariffs-hero">
+    <p class="tariffs-eyebrow">Tarification transparente</p>
+    <h1>Combien coûte chaque IA ?</h1>
+    <p>Les jetons sont calculés selon les tokens réellement utilisés en entrée et en sortie.</p>
+    <div class="tariffs-equivalence">
+      {% if conversion_rate_display %}
+      <strong>{{ conversion_rate_display }} FCFA = 1 USD = {{ credits_per_dollar_display }} jetons</strong>
+      {% else %}
+      <strong>1 USD = {{ credits_per_dollar_display }} jetons</strong>
+      {% endif %}
+      <span>{{ model_count }} modèle{{ model_count|pluralize }} cloud disponible{{ model_count|pluralize }}</span>
+    </div>
+  </header>
+
+  <section class="tariffs-panel" aria-labelledby="modelTariffsHeading">
+    <div class="tariffs-panel-heading">
+      <div>
+        <p class="tariffs-eyebrow">Catalogue cloud</p>
+        <h2 id="modelTariffsHeading">Tarif en jetons par million de tokens</h2>
+      </div>
+      <label class="tariffs-search">
+        <span>Rechercher une IA</span>
+        <input id="tariffsSearch" type="search" placeholder="Nom ou identifiant…" autocomplete="off">
+      </label>
+    </div>
+
+    <p class="tariffs-explanation">
+      Le tarif inclut le multiplicateur actuel de {{ margin_multiplier }}×. Les tokens du message et de l’historique
+      sont facturés au tarif « entrée » ; la réponse est facturée au tarif « sortie ».
+      Les montants sont arrondis au jeton le plus proche.
+    </p>
+
+    <div class="tariffs-table-wrap" role="region" aria-label="Tarifs des modèles IA" tabindex="0">
+      <table class="tariffs-table">
+        <thead>
+          <tr>
+            <th scope="col">IA / modèle</th>
+            <th scope="col">Entrée<br><span>jetons / 1M tokens</span></th>
+            <th scope="col">Sortie<br><span>jetons / 1M tokens</span></th>
+          </tr>
+        </thead>
+        <tbody id="tariffsTableBody">
+          {% for tariff in tariffs %}
+          <tr data-search="{{ tariff.name|lower }} {{ tariff.model_id|lower }}">
+            <th scope="row">
+              <span class="tariffs-model-name">{{ tariff.name }}</span>
+              <code>{{ tariff.model_id }}</code>
+            </th>
+            <td>{{ tariff.input_credits }}</td>
+            <td>{{ tariff.output_credits }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" class="tariffs-empty">Aucun modèle cloud actif n’est disponible pour le moment.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="tariffs-result-count" id="tariffsResultCount" aria-live="polite">{{ model_count }} modèle{{ model_count|pluralize }}</p>
+    <p class="tariffs-no-results" id="tariffsNoResults" hidden>Aucun modèle ne correspond à cette recherche.</p>
+  </section>
+
+  <aside class="tariffs-local-note">
+    <strong>Tu utilises une IA locale ?</strong>
+    <p>Les modèles Ollama et autres IA locales ne sont pas facturés par 2AI. Leur coût dépend de ton matériel et n’apparaît pas dans ce catalogue cloud.</p>
+  </aside>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'app/js/tariffs.js' %}?v=tariffs-1"></script>
+{% endblock %}

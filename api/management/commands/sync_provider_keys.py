@@ -6,6 +6,7 @@ from api.models import APIKey, APIProvider
 
 # slug du fournisseur -> variable d'environnement qui contient sa clé
 KEY_ENV_VARS = {
+    "openrouter": "OPENROUTER_API_KEY",
     "groq": "GROQ_API_KEY",
     "together": "TOGETHER_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",

@@ -18,6 +18,7 @@ urlpatterns = [
 	path('juridique/', views.legal_page, name='legal'),
 
 	path('api/conversations/', views.ConversationListView.as_view(), name='conversation-list'),
+	path('chat/api/conversations/sync-local/', views.LocalConversationSyncView.as_view(), name='chat-sync-local-conversation'),
 	path('api/conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
 	path('api/conversations/<int:pk>/delete/', views.ConversationDeleteView.as_view(), name='conversation-delete'),
 	path('chat/api/conversations/', views.ConversationListView.as_view(), name='chat-conversation-list'),

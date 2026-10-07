@@ -55,6 +55,9 @@
   .tool-option input{margin:2px 0 0;accent-color:var(--accent);}
   .tool-option strong{display:block;font-size:11.5px;}
   .tool-option small{display:block;opacity:.6;line-height:1.35;margin-top:2px;}
+  .tool-warning,.workspace-notice{border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:11.5px;line-height:1.45;margin:8px 0;background:var(--paper);}
+  .tool-warning{border-color:#d79a35;}
+  .workspace-notice{border-color:#d79a35;margin:0 0 16px;}
   .mcp-heading{font-size:11px;font-weight:700;margin:16px 0 8px;}
   .mcp-server{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;background:var(--paper);}
   .mcp-server-head{display:flex;align-items:center;gap:6px;}
@@ -63,6 +66,28 @@
   .mcp-server-actions{display:flex;gap:5px;margin-top:7px;}
   .mcp-server-actions button,.mcp-add-form button{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--paper);color:var(--ink);font-size:10.5px;cursor:pointer;}
   .mcp-server-actions .mcp-remove{color:var(--danger);}
+  .automation-intro{font-size:11.5px;line-height:1.45;opacity:.75;margin:8px 0;}
+  .automation-examples{display:grid;gap:7px;margin:10px 0;}
+  .automation-card{border:1px solid var(--line);border-radius:8px;padding:8px 9px;background:var(--paper);}
+  .automation-card strong{display:block;font-size:11.5px;}
+  .automation-card small{display:block;font-size:10.5px;opacity:.65;line-height:1.35;margin-top:2px;}
+  .automation-plugins{display:flex;gap:10px;align-items:center;margin:12px 0;}
+  .automation-plugins>div{position:relative;display:inline-flex;}
+  .automation-plugins>div>form{margin:0;}
+  .automation-plugin{position:relative;width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink);text-decoration:none;cursor:pointer;}
+  .side-details .automation-plugin{margin-top:0;padding:0;border:1px solid var(--line);background:var(--paper);}
+  .automation-plugin svg{width:24px;height:24px;}
+  .automation-plugin .plugin-letter{font-size:19px;font-weight:700;}
+  .automation-plugin:disabled{opacity:.4;cursor:not-allowed;}
+  .plugin-status-dot{position:absolute;width:9px;height:9px;right:3px;bottom:3px;border:1px solid var(--paper);border-radius:50%;background:#999;}
+  .plugin-status-dot.online{background:#20a464;}
+  .plugin-disconnect{position:absolute;right:-5px;top:-6px;width:17px;height:17px;border:0;border-radius:50%;background:var(--danger);color:#fff;font-size:12px;line-height:16px;cursor:pointer;}
+  .side-details .plugin-disconnect{margin:0;padding:0;border:0;background:var(--danger);}
+  .automation-feedback{font-size:11px;line-height:1.4;margin:7px 0;}
+  .blender-pairing{border:1px solid var(--line);border-radius:8px;padding:9px;margin:8px 0;font-size:11px;line-height:1.45;}
+  .blender-pairing code{display:block;overflow-wrap:anywhere;padding:6px;margin:5px 0;background:var(--hover);user-select:all;}
+  .blender-pairing .pair-label{font-weight:600;margin-top:7px;}
+  .blender-pairing button,.blender-pairing a{display:inline-flex;margin:3px 5px 0 0;border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--paper);color:var(--ink);font-size:10.5px;text-decoration:none;cursor:pointer;}
   .mcp-add-form{display:grid;gap:7px;margin-top:8px;}
   .mcp-add-form input{width:100%;min-width:0;border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:var(--paper);color:var(--ink);font:inherit;font-size:11px;}
   .mcp-status{min-height:15px;font-size:10.5px;opacity:.7;margin-top:5px;}
@@ -107,7 +132,23 @@
   #preview-panel{display:none;border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden;}
   #preview-panel .bar{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel);font-size:12px;}
   #preview-panel button{border:0;background:none;cursor:pointer;color:var(--ink);opacity:.6;}
+  #site-preview-form{display:flex;gap:6px;align-items:center;flex:1;margin:0 12px;}
+  #site-preview-url{min-width:0;flex:1;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--paper);color:var(--ink);font:inherit;font-size:11px;}
+  #site-preview-form button,#site-open-new-tab{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:var(--paper);color:var(--ink);font-size:11px;text-decoration:none;white-space:nowrap;}
+  #site-preview-notice{padding:7px 12px;background:var(--paper);font-size:10.5px;line-height:1.4;opacity:.7;}
   #preview-iframe{width:100%;height:340px;border:0;background:#fff;}
+  .visualization-shortcuts{display:flex;gap:9px;margin:10px 0;}
+  .side-details .visualization-button{width:42px;height:42px;margin:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;}
+  .visualization-button svg{width:22px;height:22px;}
+  .visualization-help{font-size:10.5px;line-height:1.4;opacity:.65;}
+  .bara-chart-card{align-self:stretch;max-width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);}
+  .bara-chart-card h3{margin:0 0 8px;font-size:14px;}
+  .bara-chart-card figure{margin:0;}
+  .bara-chart-card svg{display:block;width:100%;height:auto;max-height:380px;overflow:visible;}
+  .bara-chart-card .chart-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11px;}
+  .chart-legend-item{display:inline-flex;align-items:center;gap:5px;}
+  .chart-legend-swatch{width:10px;height:10px;border-radius:2px;}
+  .chart-data-table{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
   .file-publish-btn{opacity:0;border:0;background:none;cursor:pointer;font-size:12px;padding:0 2px;flex:none;}
 .file-item:hover .file-publish-btn{opacity:.6;}
 .file-publish-btn.is-public{opacity:1;}
@@ -149,7 +190,7 @@
     <input type="text" name="title" placeholder="Nom du workspace" required>
     <select name="active_model_id">
       {% for model in available_models %}
-        <option value="{{ model.id }}">{{ model.name }} — {{ model.provider.name }}</option>
+        <option value="{{ model.id }}">{{ model.name }}</option>
       {% empty %}
         <option value="">Aucun modèle disponible</option>
       {% endfor %}
@@ -184,9 +225,9 @@
           {% csrf_token %}
           <select name="active_model_id" onchange="this.form.submit()" style="font-size:11px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);">
             <option value="auto" {% if workspace.auto_route %}selected{% endif %}>Auto 2AI</option>
-            <option value="" {% if not workspace.auto_route and not workspace.active_model_id %}selected{% endif %}>Aucun modèle</option>
+            <option value="" {% if not workspace.auto_route and not workspace.active_model_id %}selected{% endif %}>Choisir une IA…</option>
             {% for model in available_models %}
-              <option value="{{ model.id }}" {% if not workspace.auto_route and workspace.active_model_id == model.id %}selected{% endif %}>{{ model.name }} — {{ model.provider.name }}</option>
+              <option value="{{ model.id }}" {% if not workspace.auto_route and workspace.active_model_id == model.id %}selected{% endif %}>{{ model.name }}</option>
             {% endfor %}
           </select>
         </form>
@@ -202,6 +243,12 @@
       </form>
     </div>
   </div>
+
+  {% if not workspace.auto_route and not workspace.active_model_id %}
+    <div class="workspace-notice" role="status">
+      Choisis une IA dans le menu avant d'envoyer un message. Aucun modèle ne sera sélectionné en secret et aucun crédit ne sera débité.
+    </div>
+  {% endif %}
 
   <div class="bara-main">
     <aside class="bara-sidebar">
@@ -234,19 +281,106 @@
       </details>
 
       <details class="side-details side-block" id="workspace-tools-panel">
-        <summary>Outils &amp; Model Context Protocol</summary>
+        <summary>Outils intégrés</summary>
+        <div class="tool-warning" role="note">
+          <strong>Exécution de code :</strong> run_python transmet le code au service tiers Piston. run_command s'exécute sur le serveur de l'application et n'est pas isolé du système hôte.
+          {% if not code_execution_enabled %}<br>Ces outils sont désactivés par la configuration du serveur.{% else %}<br>N'active-les que si tu fais confiance aux demandes de l'IA et que le serveur est isolé des données sensibles.{% endif %}
+        </div>
         <form id="tool-selection-form" class="tool-options" action="{% url 'bara:update-tools' workspace.id %}">
           {% csrf_token %}
           {% for tool in builtin_tools %}
             <label class="tool-option">
-              <input type="checkbox" name="enabled_tools" value="{{ tool.name }}" {% if tool.name not in disabled_tools %}checked{% endif %}>
-              <span><strong>{{ tool.name }}</strong><small>{{ tool.description }}</small></span>
+              <input type="checkbox" name="enabled_tools" value="{{ tool.name }}" {% if tool.name not in disabled_tools and tool.name not in disabled_execution_tools %}checked{% endif %} {% if tool.name in disabled_execution_tools %}disabled{% endif %}>
+              <span><strong>{{ tool.name }}{% if tool.name in disabled_execution_tools %} — désactivé côté serveur{% endif %}</strong><small>{{ tool.description }}</small></span>
             </label>
           {% endfor %}
           <button type="submit">Enregistrer les outils</button>
         </form>
+      </details>
 
-        <div class="mcp-heading">Serveurs MCP (Streamable HTTP)</div>
+      <details class="side-details side-block" id="workspace-automations-panel">
+        <summary>AUTOMATISATIONS</summary>
+        <div class="automation-intro">
+          Connecte Gmail et Outlook par OAuth, ou Blender avec le module complémentaire 2AI. Les permissions OAuth incluent la création de brouillons ; l'envoi reste soumis à confirmation.
+        </div>
+        {% if automation_error %}<div class="automation-feedback" role="alert">{{ automation_error }}</div>{% endif %}
+        {% if automation_status %}<div class="automation-feedback" role="status">{{ automation_status }}</div>{% endif %}
+        <div class="automation-plugins" role="group" aria-label="Plugins d'automatisation">
+          <div>
+            {% if plugin_connections.google_mail %}
+              <button type="button" class="automation-plugin" title="Gmail — {{ plugin_connections.google_mail.account_email }}" aria-label="Gmail connecté">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5 12 13l9-6.5M4.5 5h15A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11A1.5 1.5 0 0 1 4.5 5Z" fill="none" stroke="#d93025" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="plugin-status-dot online"></span>
+              </button>
+              <form method="post" action="{% url 'bara:plugin-disconnect' workspace.id 'google_mail' %}">
+                {% csrf_token %}<button type="submit" class="plugin-disconnect" title="Déconnecter Gmail" aria-label="Déconnecter Gmail">×</button>
+              </form>
+            {% elif email_oauth_configured.google_mail %}
+              <a class="automation-plugin" href="{% url 'bara:plugin-email-connect' workspace.id 'google_mail' %}" title="Connecter Gmail" aria-label="Connecter Gmail">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5 12 13l9-6.5M4.5 5h15A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11A1.5 1.5 0 0 1 4.5 5Z" fill="none" stroke="#d93025" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="plugin-status-dot"></span>
+              </a>
+            {% else %}
+              <button type="button" class="automation-plugin" disabled title="Gmail — configure GOOGLE_CLIENT_ID et GOOGLE_CLIENT_SECRET" aria-label="Gmail OAuth non configuré">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5 12 13l9-6.5M4.5 5h15A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-11A1.5 1.5 0 0 1 4.5 5Z" fill="none" stroke="#d93025" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="plugin-status-dot"></span>
+              </button>
+            {% endif %}
+          </div>
+          <div>
+            {% if plugin_connections.microsoft_mail %}
+              <button type="button" class="automation-plugin" title="Outlook — {{ plugin_connections.microsoft_mail.account_email }}" aria-label="Outlook connecté">
+                <span class="plugin-letter" style="color:#0078d4;" aria-hidden="true">O</span>
+                <span class="plugin-status-dot online"></span>
+              </button>
+              <form method="post" action="{% url 'bara:plugin-disconnect' workspace.id 'microsoft_mail' %}">
+                {% csrf_token %}<button type="submit" class="plugin-disconnect" title="Déconnecter Outlook" aria-label="Déconnecter Outlook">×</button>
+              </form>
+            {% elif email_oauth_configured.microsoft_mail %}
+              <a class="automation-plugin" href="{% url 'bara:plugin-email-connect' workspace.id 'microsoft_mail' %}" title="Connecter Outlook" aria-label="Connecter Outlook">
+                <span class="plugin-letter" style="color:#0078d4;" aria-hidden="true">O</span>
+                <span class="plugin-status-dot"></span>
+              </a>
+            {% else %}
+              <button type="button" class="automation-plugin" disabled title="Outlook — configure MICROSOFT_CLIENT_ID et MICROSOFT_CLIENT_SECRET" aria-label="Outlook OAuth non configuré">
+                <span class="plugin-letter" style="color:#0078d4;" aria-hidden="true">O</span>
+                <span class="plugin-status-dot"></span>
+              </button>
+            {% endif %}
+          </div>
+          <div>
+            <button type="button" id="blender-pair-button" class="automation-plugin"
+                    data-pair-url="{% url 'bara:plugin-blender-pair' workspace.id %}"
+                    data-connected="{% if plugin_connections.blender %}true{% else %}false{% endif %}"
+                    title="{% if plugin_connections.blender %}Renouveler le jeton Blender{% else %}Connecter Blender{% endif %}"
+                    aria-label="{% if plugin_connections.blender %}Renouveler la connexion Blender{% else %}Connecter Blender{% endif %}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5Z" fill="none" stroke="#e87824" stroke-width="2" stroke-linejoin="round"/><path d="m3.5 7.3 8.5 5 8.5-5M12 12.3V22" fill="none" stroke="#e87824" stroke-width="2" stroke-linejoin="round"/></svg>
+              <span class="plugin-status-dot{% if blender_online %} online{% endif %}"></span>
+            </button>
+            {% if plugin_connections.blender %}
+              <form method="post" action="{% url 'bara:plugin-disconnect' workspace.id 'blender' %}">
+                {% csrf_token %}<button type="submit" class="plugin-disconnect" title="Déconnecter Blender" aria-label="Déconnecter Blender">×</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+        <div class="automation-feedback" id="blender-status" role="status" aria-live="polite"></div>
+        <div class="blender-pairing" id="blender-pairing" hidden aria-live="polite">
+          <strong>Jeton d'installation Blender</strong>
+          <p>Copie-le dans les préférences du module complémentaire. Il ne sera plus affiché après fermeture de cette page.</p>
+          <div class="pair-label">URL de 2AI</div>
+          <code id="blender-backend-url"></code>
+          <div class="pair-label">Jeton secret</div>
+          <code id="blender-pair-token"></code>
+          <div><button type="button" id="blender-copy-token">Copier le jeton</button><button type="button" id="blender-copy-url">Copier l'URL</button><a href="{% url 'bara:download-blender-addon' %}">Télécharger le module Blender</a></div>
+          <small>Dans Blender : Préférences → Extensions/Add-ons → Installer depuis le disque, puis renseigne l'URL et le jeton.</small>
+        </div>
+        <div class="tool-warning" role="note">
+          <strong>Permissions :</strong> le contenu des e-mails est non fiable. Gmail accorde une permission technique d'envoi ; Outlook demande <code>Mail.ReadWrite</code>, qui est plus large que les actions utilisées. Bara bloque l'envoi direct et exige ta confirmation.
+        </div>
+        <details class="side-details">
+          <summary>Serveurs MCP personnalisés</summary>
+          <div class="automation-intro">Les outils d'un serveur activé peuvent agir sans confirmation individuelle. N'ajoute que des serveurs de confiance.</div>
         <div id="mcp-server-list">
           {% for server in mcp_servers %}
             <div class="mcp-server" data-toggle-url="{% url 'bara:toggle-mcp-server' workspace.id server.id %}" data-refresh-url="{% url 'bara:refresh-mcp-server' workspace.id server.id %}" data-delete-url="{% url 'bara:delete-mcp-server' workspace.id server.id %}">
@@ -269,9 +403,23 @@
           <input type="text" name="name" maxlength="100" placeholder="Nom du serveur" required>
           <input type="url" name="endpoint" maxlength="500" placeholder="https://serveur.example/mcp" required>
           <input type="password" name="bearer_token" autocomplete="new-password" placeholder="Bearer token (facultatif)">
-          <button type="submit">Connecter le serveur MCP</button>
+          <button type="submit">Connecter l'automatisation</button>
         </form>
         <div class="mcp-status" id="mcp-status" role="status" aria-live="polite"></div>
+        </details>
+      </details>
+
+      <details class="side-details side-block" id="workspace-visualizations-panel">
+        <summary>VISUALISATIONS</summary>
+        <div class="visualization-shortcuts" role="group" aria-label="Outils de visualisation">
+          <button type="button" id="open-site-preview" class="visualization-button" title="Visualiser un site" aria-label="Visualiser un site">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 12h17M12 3c2.7 2.5 4 5.5 4 9s-1.3 6.5-4 9c-2.7-2.5-4-5.5-4-9s1.3-6.5 4-9Z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+          <button type="button" id="chart-prompt-button" class="visualization-button" title="Créer un graphique avec l'IA" aria-label="Préparer une demande de graphique">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V4M4 20h17M7 16l4-5 3 2 5-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="11" cy="11" r="1.2" fill="currentColor"/><circle cx="14" cy="13" r="1.2" fill="currentColor"/><circle cx="19" cy="6" r="1.2" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <div class="visualization-help">Prévisualise une URL dans un cadre isolé, ou demande un graphique à partir d'un fichier ou de données dans le chat.</div>
       </details>
 
       <div class="side-block">
@@ -319,8 +467,17 @@
 
     <section class="bara-chat">
       <div id="preview-panel">
-        <div class="bar"><span>Aperçu</span><button type="button" id="close-preview">✕</button></div>
-        <iframe id="preview-iframe" sandbox="allow-scripts"></iframe>
+        <div class="bar">
+          <span id="preview-title">Aperçu HTML</span>
+          <form id="site-preview-form">
+            <input type="url" id="site-preview-url" placeholder="https://example.com ou http://localhost:3000" aria-label="URL du site" autocomplete="url">
+            <button type="submit">Charger</button>
+            <a id="site-open-new-tab" href="#" target="_blank" rel="noopener noreferrer" hidden>Nouvel onglet ↗</a>
+          </form>
+          <button type="button" id="close-preview" aria-label="Fermer l'aperçu">✕</button>
+        </div>
+        <div id="site-preview-notice" hidden></div>
+        <iframe id="preview-iframe" title="Aperçu d'un site web ou d'un fichier HTML" sandbox="allow-scripts"></iframe>
       </div>
       <div id="publish-panel">
   <div class="bar"><span>Page publiée</span><button type="button" id="close-publish">✕</button></div>
@@ -431,6 +588,183 @@
     return div;
   }
 
+  function addChartCard(chart){
+    if(!chart || !Array.isArray(chart.labels) || !Array.isArray(chart.datasets)){
+      appendMessage('error', 'Les données du graphique reçu sont invalides.');
+      return;
+    }
+    clearEmptyState();
+    const colors = ['#3b82f6','#f97316','#10b981','#a855f7','#ef4444','#eab308','#06b6d4','#ec4899','#64748b','#84cc16','#8b5cf6','#14b8a6'];
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const card = document.createElement('article');
+    card.className = 'bara-chart-card';
+    const heading = document.createElement('h3');
+    heading.textContent = chart.title || 'Graphique';
+    const figure = document.createElement('figure');
+    const svg = document.createElementNS(svgNamespace, 'svg');
+    svg.setAttribute('viewBox', '0 0 760 360');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', heading.textContent);
+    const svgTitle = document.createElementNS(svgNamespace, 'title');
+    svgTitle.textContent = heading.textContent;
+    svg.appendChild(svgTitle);
+    const legend = document.createElement('div');
+    legend.className = 'chart-legend';
+
+    function addSvg(name, attributes, parent=svg){
+      const element = document.createElementNS(svgNamespace, name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      parent.appendChild(element);
+      return element;
+    }
+    function addText(text, x, y, attributes={}){
+      const element = addSvg('text', {x, y, fill:'currentColor', 'font-size':11, ...attributes});
+      element.textContent = text;
+      return element;
+    }
+    function addLegend(label, color){
+      const item = document.createElement('span');
+      item.className = 'chart-legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'chart-legend-swatch';
+      swatch.style.backgroundColor = color;
+      const text = document.createElement('span');
+      text.textContent = label;
+      item.append(swatch, text);
+      legend.appendChild(item);
+    }
+
+    if(chart.chart_type === 'pie'){
+      const labels = chart.labels;
+      const values = chart.datasets[0].values;
+      const total = values.reduce((sum, value) => sum + value, 0);
+      let angle = -Math.PI / 2;
+      labels.forEach((label, index) => {
+        const slice = values[index] / total * Math.PI * 2;
+        const nextAngle = angle + slice;
+        const startX = 380 + Math.cos(angle) * 125;
+        const startY = 175 + Math.sin(angle) * 125;
+        const endX = 380 + Math.cos(nextAngle) * 125;
+        const endY = 175 + Math.sin(nextAngle) * 125;
+        const largeArc = slice > Math.PI ? 1 : 0;
+        const color = colors[index % colors.length];
+        const sliceShape = values[index] === total
+          ? addSvg('circle', {cx:380, cy:175, r:125, fill:color, stroke:'var(--panel)', 'stroke-width':2})
+          : addSvg('path', {
+              d:`M 380 175 L ${startX} ${startY} A 125 125 0 ${largeArc} 1 ${endX} ${endY} Z`,
+              fill:color,
+              stroke:'var(--panel)',
+              'stroke-width':2
+            });
+        const tip = document.createElementNS(svgNamespace, 'title');
+        tip.textContent = `${label} : ${values[index].toLocaleString('fr-FR')}`;
+        sliceShape.appendChild(tip);
+        addLegend(`${label} — ${values[index].toLocaleString('fr-FR')}`, color);
+        angle = nextAngle;
+      });
+    } else {
+      const width = 760, height = 360;
+      const margin = {top:24, right:20, bottom:58, left:68};
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const allValues = chart.datasets.flatMap(dataset => dataset.values);
+      let minValue = Math.min(0, ...allValues);
+      let maxValue = Math.max(0, ...allValues);
+      if(minValue === maxValue) maxValue = minValue + 1;
+      const yFor = value => margin.top + (maxValue - value) / (maxValue - minValue) * plotHeight;
+
+      for(let tick = 0; tick <= 4; tick++){
+        const value = minValue + (maxValue - minValue) * tick / 4;
+        const y = yFor(value);
+        addSvg('line', {x1:margin.left, y1:y, x2:width-margin.right, y2:y, stroke:'currentColor', 'stroke-opacity':0.14});
+        addText(value.toLocaleString('fr-FR', {maximumFractionDigits:2}), margin.left-8, y+4, {'text-anchor':'end'});
+      }
+      addSvg('line', {x1:margin.left, y1:margin.top, x2:margin.left, y2:height-margin.bottom, stroke:'currentColor', 'stroke-opacity':0.45});
+      addSvg('line', {x1:margin.left, y1:yFor(0), x2:width-margin.right, y2:yFor(0), stroke:'currentColor', 'stroke-opacity':0.45});
+
+      const categoryWidth = plotWidth / chart.labels.length;
+      chart.labels.forEach((label, index) => {
+        addText(label.length > 15 ? `${label.slice(0,14)}…` : label, margin.left+(index+0.5)*categoryWidth, height-26, {'text-anchor':'middle'})
+          .appendChild(Object.assign(document.createElementNS(svgNamespace, 'title'), {textContent:label}));
+      });
+
+      chart.datasets.forEach((dataset, datasetIndex) => {
+        const color = colors[datasetIndex % colors.length];
+        addLegend(dataset.label, color);
+        if(chart.chart_type === 'bar'){
+          const groupWidth = categoryWidth * 0.76;
+          const barWidth = groupWidth / chart.datasets.length;
+          dataset.values.forEach((value, index) => {
+            const x = margin.left + index*categoryWidth + (categoryWidth-groupWidth)/2 + datasetIndex*barWidth;
+            const y = yFor(value);
+            const bar = addSvg('rect', {
+              x, y:Math.min(y, yFor(0)), width:Math.max(1, barWidth-2),
+              height:Math.max(1, Math.abs(y-yFor(0))), fill:color, rx:2
+            });
+            const tip = document.createElementNS(svgNamespace, 'title');
+            tip.textContent = `${chart.labels[index]} — ${dataset.label} : ${value.toLocaleString('fr-FR')}`;
+            bar.appendChild(tip);
+          });
+        } else {
+          const points = dataset.values.map((value, index) => ({
+            x:margin.left+(index+0.5)*categoryWidth,
+            y:yFor(value),
+            value
+          }));
+          addSvg('polyline', {
+            points:points.map(point => `${point.x},${point.y}`).join(' '),
+            fill:'none', stroke:color, 'stroke-width':3, 'stroke-linejoin':'round', 'stroke-linecap':'round'
+          });
+          points.forEach((point, index) => {
+            const marker = addSvg('circle', {cx:point.x, cy:point.y, r:4, fill:color, stroke:'var(--panel)', 'stroke-width':2});
+            const tip = document.createElementNS(svgNamespace, 'title');
+            tip.textContent = `${chart.labels[index]} — ${dataset.label} : ${point.value.toLocaleString('fr-FR')}`;
+            marker.appendChild(tip);
+          });
+        }
+      });
+    }
+
+    const table = document.createElement('table');
+    table.className = 'chart-data-table';
+    const caption = document.createElement('caption');
+    caption.textContent = `Données du graphique : ${heading.textContent}`;
+    table.appendChild(caption);
+    const tableHead = document.createElement('tr');
+    const categoryHeader = document.createElement('th');
+    categoryHeader.scope = 'col';
+    categoryHeader.textContent = 'Catégorie';
+    tableHead.appendChild(categoryHeader);
+    chart.datasets.forEach(dataset => {
+      const header = document.createElement('th');
+      header.scope = 'col';
+      header.textContent = dataset.label;
+      tableHead.appendChild(header);
+    });
+    const tableHeadSection = document.createElement('thead');
+    tableHeadSection.appendChild(tableHead);
+    table.appendChild(tableHeadSection);
+    const tableBody = document.createElement('tbody');
+    chart.labels.forEach((label, labelIndex) => {
+      const row = document.createElement('tr');
+      const rowHeader = document.createElement('th');
+      rowHeader.scope = 'row';
+      rowHeader.textContent = label;
+      row.appendChild(rowHeader);
+      chart.datasets.forEach(dataset => {
+        const cell = document.createElement('td');
+        cell.textContent = dataset.values[labelIndex].toLocaleString('fr-FR');
+        row.appendChild(cell);
+      });
+      tableBody.appendChild(row);
+    });
+    table.appendChild(tableBody);
+    figure.append(svg, table);
+    card.append(heading, figure, legend);
+    messagesDiv.appendChild(card);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
   // ---------- Saisie ----------
   textarea.addEventListener('input', () => {
     textarea.style.height = 'auto';
@@ -464,6 +798,7 @@
     label.textContent = 'Confirmation requise';
     const text = document.createElement('div');
     text.textContent = event.description + ' ?';
+    text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;';
 
     const actions = document.createElement('div');
     actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;';
@@ -488,10 +823,14 @@
           headers: { 'X-CSRFToken': csrfToken }
         });
         const data = await res.json().catch(() => ({}));
-        if(!res.ok) throw new Error(data.error || 'Échec de la confirmation.');
+        if(!res.ok){
+          const error = new Error(data.error || 'Échec de la confirmation.');
+          error.status = res.status;
+          throw error;
+        }
         actions.remove();
         if(decision === 'confirm'){
-          text.textContent = event.mcp
+          text.textContent = (event.mcp || event.plugin)
             ? event.description + ' : ' + JSON.stringify(data.result || {})
             : event.description + ' : fait.';
           if(event.file_id){
@@ -502,8 +841,13 @@
           text.textContent = event.description + ' : refusé.';
         }
       } catch(err){
-        yes.disabled = no.disabled = false;
-        text.textContent = event.description + ' ? (échec, réessaie)';
+        if((decision === 'confirm' && event.plugin) || err.status === 409){
+          actions.remove();
+          text.textContent = `${event.description} : ${err.message} Vérifie le résultat avant toute nouvelle action.`;
+        } else {
+          yes.disabled = no.disabled = false;
+          text.textContent = event.description + ' ? (échec, réessaie)';
+        }
       }
     }
     yes.addEventListener('click', () => resolveAction('confirm'));
@@ -575,12 +919,17 @@
             }
             stepEl.textContent = event.status === 'calling_tool'
               ? `Utilise l'outil « ${event.tool} »…`
+              : event.status === 'tool_blocked'
+                ? `Outil « ${event.tool} » bloqué : il n'est pas activé.`
               : `Outil « ${event.tool} » terminé.`;
           } else if(event.type === 'confirm'){
             addConfirmCard(event);
+          } else if(event.type === 'visualization'){
+            addChartCard(event.chart);
           } else if(event.type === 'error'){
             assistantDiv.remove();
             appendMessage('error', event.message);
+            if(event.billing_warning) appendMessage('error', event.billing_warning);
           } else if(event.type === 'done'){
             if(stepEl) stepEl.remove();
             if(rawText){ renderMarkdown(bodyEl, rawText); } else { assistantDiv.remove(); }
@@ -592,6 +941,7 @@
               const titleEl = document.querySelector('.conv-item.active .conv-title');
               if(titleEl) titleEl.textContent = event.title;
             }
+            if(event.billing_warning) appendMessage('error', event.billing_warning);
           }
         }
       }
@@ -665,7 +1015,13 @@
 
     const previewBtn = e.target.closest('.file-preview-btn');
     if(previewBtn){
-      document.getElementById('preview-iframe').src = previewBtn.dataset.previewUrl;
+      const previewFrame = document.getElementById('preview-iframe');
+      previewFrame.setAttribute('sandbox', 'allow-scripts');
+      previewFrame.src = previewBtn.dataset.previewUrl;
+      document.getElementById('preview-title').textContent = 'Aperçu HTML';
+      document.getElementById('site-preview-url').value = '';
+      document.getElementById('site-preview-notice').hidden = true;
+      document.getElementById('site-open-new-tab').hidden = true;
       document.getElementById('preview-panel').style.display = 'block';
       return;
     }
@@ -704,6 +1060,49 @@ if(publishBtn){
   document.getElementById('close-preview').addEventListener('click', () => {
     document.getElementById('preview-panel').style.display = 'none';
     document.getElementById('preview-iframe').src = 'about:blank';
+    document.getElementById('site-open-new-tab').hidden = true;
+    document.getElementById('site-preview-notice').hidden = true;
+  });
+
+  document.getElementById('open-site-preview').addEventListener('click', () => {
+    document.getElementById('preview-title').textContent = 'Aperçu de site web';
+    document.getElementById('preview-panel').style.display = 'block';
+    document.getElementById('site-preview-url').focus();
+  });
+
+  document.getElementById('site-preview-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const notice = document.getElementById('site-preview-notice');
+    const openLink = document.getElementById('site-open-new-tab');
+    let url;
+    try{
+      url = new URL(document.getElementById('site-preview-url').value.trim());
+      if(!['http:', 'https:'].includes(url.protocol) || url.username || url.password){
+        throw new Error('Saisis une URL HTTP ou HTTPS sans identifiant.');
+      }
+    }catch(error){
+      notice.textContent = error.message || 'URL invalide. Utilise une adresse HTTP ou HTTPS.';
+      notice.hidden = false;
+      openLink.hidden = true;
+      return;
+    }
+    const previewFrame = document.getElementById('preview-iframe');
+    previewFrame.setAttribute('sandbox', 'allow-scripts allow-forms');
+    previewFrame.src = url.href;
+    openLink.href = url.href;
+    openLink.hidden = false;
+    notice.textContent = 'Le site est chargé directement dans ton navigateur, sans passer par le serveur 2AI. Le cadre isole son contenu de 2AI ; l’authentification peut ne pas fonctionner et certains sites refusent l’intégration. Ouvre-les dans un nouvel onglet dans ce cas.';
+    notice.hidden = false;
+    document.getElementById('preview-title').textContent = url.hostname;
+  });
+
+  document.getElementById('chart-prompt-button').addEventListener('click', () => {
+    const prompt = 'Crée un graphique interactif à partir de ces données : ';
+    textarea.value = textarea.value.trim()
+      ? `${textarea.value.trim()}\n${prompt}`
+      : prompt;
+    textarea.dispatchEvent(new Event('input', {bubbles:true}));
+    textarea.focus();
   });
 
   // ---------- Instructions par workspace ----------
@@ -726,6 +1125,53 @@ if(publishBtn){
   const toolSelectionForm = document.getElementById('tool-selection-form');
   const mcpAddForm = document.getElementById('mcp-add-form');
   const mcpStatus = document.getElementById('mcp-status');
+  const blenderPairButton = document.getElementById('blender-pair-button');
+  const blenderStatus = document.getElementById('blender-status');
+  const blenderPairing = document.getElementById('blender-pairing');
+  const blenderToken = document.getElementById('blender-pair-token');
+  const blenderBackendUrl = document.getElementById('blender-backend-url');
+
+  blenderPairButton.addEventListener('click', async () => {
+    if(blenderPairButton.dataset.connected === 'true' &&
+       !window.confirm('Renouveler le jeton ? Le module Blender actuellement connecté sera déconnecté.')) return;
+    blenderPairButton.disabled = true;
+    blenderStatus.textContent = 'Préparation de la connexion Blender…';
+    try{
+      const response = await fetch(blenderPairButton.dataset.pairUrl, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken }
+      });
+      const data = await response.json().catch(() => ({}));
+      if(!response.ok) throw new Error(data.error || 'Connexion Blender impossible.');
+      blenderToken.textContent = data.token;
+      blenderBackendUrl.textContent = data.backend_url;
+      blenderPairing.hidden = false;
+      blenderPairButton.dataset.connected = 'true';
+      blenderStatus.textContent = 'Jeton créé. Il est visible uniquement sur cette page ; configure le module Blender puis connecte-le.';
+    }catch(error){
+      blenderStatus.textContent = error.message;
+    }finally{
+      blenderPairButton.disabled = false;
+    }
+  });
+
+  document.getElementById('blender-copy-token').addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(blenderToken.textContent);
+      blenderStatus.textContent = 'Jeton copié.';
+    }catch(error){
+      blenderStatus.textContent = 'Copie impossible dans ce navigateur. Sélectionne le jeton affiché et copie-le manuellement.';
+    }
+  });
+
+  document.getElementById('blender-copy-url').addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(blenderBackendUrl.textContent);
+      blenderStatus.textContent = 'URL copiée.';
+    }catch(error){
+      blenderStatus.textContent = 'Copie impossible dans ce navigateur. Sélectionne l’URL affichée et copie-la manuellement.';
+    }
+  });
 
   toolSelectionForm.addEventListener('submit', async event => {
     event.preventDefault();

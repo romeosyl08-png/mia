@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}À propos de 2AI — Le Comptoir{% endblock %}
+{% block title %}À propos de 2AI{% endblock %}
 {% block extra_head %}
 <style>
   html,body{height:auto!important;min-height:100%;overflow-x:hidden;overflow-y:auto!important;}
@@ -44,13 +44,13 @@
   @media(max-width:420px){.about-nav{gap:10px}.about-nav a{font-size:12px}.about-nav a:last-child{display:none;}}
 </style>
 {% endblock %}
-{% block extra_js %}<script>document.title = "À propos de 2AI — Le Comptoir";</script>{% endblock %}
+{% block extra_js %}<script>document.title = "À propos de 2AI";</script>{% endblock %}
 {% block body %}
 <div class="about-page">
   <header class="about-topbar">
     <a class="about-brand" href="/" aria-label="2AI, accueil">
       <span class="about-mark" aria-hidden="true">2AI</span>
-      <span>Le Comptoir</span>
+      <span>2AI</span>
     </a>
     <nav class="about-nav" aria-label="Navigation">
       <a href="/">Le chat</a>
@@ -63,7 +63,7 @@
     <section class="about-intro" aria-labelledby="aboutTitle">
       <p class="about-kicker">À propos de 2AI</p>
       <h1 id="aboutTitle">Un espace pour faire avancer tes idées avec l’IA.</h1>
-      <p>2AI, c’est un comptoir de travail où tu peux choisir un modèle, créer des assistants adaptés à tes besoins et retrouver tes outils au même endroit.</p>
+      <p>2AI, c’est un espace de travail où tu peux choisir un modèle, créer des assistants adaptés à tes besoins et retrouver tes outils au même endroit.</p>
     </section>
 
     <section aria-labelledby="capabilitiesTitle">
@@ -74,7 +74,7 @@
       <div class="about-capabilities">
         <article class="about-capability">
           <span class="about-number">01</span>
-          <div><h3>Discuter avec plusieurs modèles</h3><p>Choisis parmi les modèles proposés sur ton compte pour rédiger, apprendre, réfléchir ou coder. Le choix dépend des fournisseurs activés.</p></div>
+          <div><h3>Discuter avec plusieurs modèles</h3><p>Choisis parmi les modèles proposés sur ton compte pour rédiger, apprendre, réfléchir ou coder.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">02</span>
@@ -90,7 +90,7 @@
         </article>
         <article class="about-capability">
           <span class="about-number">05</span>
-          <div><h3>Générer et retrouver des images</h3><p>Crée des images avec le fournisseur compatible configuré, puis retrouve les créations dans la galerie associée à ton compte.</p></div>
+          <div><h3>Générer et retrouver des images</h3><p>Crée des images, puis retrouve les créations dans la galerie associée à ton compte.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">06</span>
@@ -102,17 +102,17 @@
     <section class="about-note" aria-labelledby="aboutNoteTitle">
       <div>
         <h2 id="aboutNoteTitle">Des outils selon ta configuration</h2>
-        <p>Les modèles et la génération d’images, de vidéos ou d’audio dépendent des services activés et consomment des jetons. Les échanges temporaires restent facturés selon le modèle utilisé, comme les autres échanges.</p>
+        <p>Les modèles et la génération d’images, de vidéos ou d’audio consomment des jetons. Les échanges temporaires restent facturés selon le modèle utilisé, comme les autres échanges.</p>
       </div>
       <div class="about-actions">
         <a class="about-action" href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
-        <a class="about-action primary" href="{% if is_authenticated %}/{% else %}/auth/?next=/{% endif %}">Ouvrir le Comptoir</a>
+        <a class="about-action primary" href="{% if is_authenticated %}/{% else %}/auth/?next=/{% endif %}">Ouvrir 2AI</a>
       </div>
     </section>
   </main>
 
   <footer class="about-footer">
-    <span>2AI · Le Comptoir</span>
+    <span>2AI</span>
     <span>Un espace de travail avec des outils d’intelligence artificielle. <a href="{% url 'chat:legal' %}">Informations juridiques</a></span>
   </footer>
 </div>

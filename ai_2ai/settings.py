@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from decimal import Decimal
 import environ
 import dj_database_url
 
@@ -23,19 +24,26 @@ SECRET_KEY = env(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", default=True)
+BARA_CODE_EXECUTION_ENABLED = env.bool("BARA_CODE_EXECUTION_ENABLED", default=False)
 
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '')
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID",default="")
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET",default="")
+MICROSOFT_CLIENT_ID = env("MICROSOFT_CLIENT_ID", default="")
+MICROSOFT_CLIENT_SECRET = env("MICROSOFT_CLIENT_SECRET", default="")
+MICROSOFT_TENANT_ID = env("MICROSOFT_TENANT_ID", default="common")
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 STRIPE_CURRENCY = 'usd'
 CINETPAY_API_KEY = env('CINETPAY_API_KEY', default='')
 CINETPAY_SITE_ID = env('CINETPAY_SITE_ID', default='')
+CINETPAY_XOF_PER_USD = Decimal(env('CINETPAY_XOF_PER_USD', default='600'))
+OPENROUTER_IMAGE_MODEL = env('OPENROUTER_IMAGE_MODEL', default='bytedance-seed/seedream-4.5')
+OPENROUTER_VIDEO_MODEL = env('OPENROUTER_VIDEO_MODEL', default='alibaba/wan-3.0')
 MEDIA_GENERATION_CREDITS = {
     'image': env.int('MEDIA_IMAGE_CREDITS', default=630),
-    'video': env.int('MEDIA_VIDEO_CREDITS', default=10_000),
+    'video': env.int('MEDIA_VIDEO_CREDITS', default=16_800),
     'audio': env.int('MEDIA_AUDIO_CREDITS', default=2_000),
 }
 MEDIA_GENERATION_MODELS = {

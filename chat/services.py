@@ -18,6 +18,10 @@ MARGIN_MULTIPLIER = 1.5
 DEFAULT_OUTPUT_ESTIMATE = 500  # tokens de sortie estimés par défaut
 
 
+def credits_per_million_tokens(price_usd):
+    return round(float(price_usd or 0) * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR)
+
+
 def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
     """Estime le coût réel en $ selon les tarifs du modèle, applique la marge, convertit en crédits."""
     history = history or []
@@ -42,7 +46,7 @@ def is_local_provider(provider):
 
 def generate_openai_image(provider, api_key, prompt, size="1024x1024"):
     if provider.slug != "openai" or not provider.base_url:
-        raise ProviderError("La génération d’images nécessite un fournisseur OpenAI configuré.")
+        raise ProviderError("La génération d’images n’est pas configurée avec ce modèle.")
     url = provider.base_url.rstrip("/") + "/v1/images/generations"
     payload = {
         "model": "gpt-image-1",
@@ -66,13 +70,13 @@ def generate_openai_image(provider, api_key, prompt, size="1024x1024"):
     except HTTPError as error:
         if error.code == 429:
             raise ProviderError("Trop de requêtes image; réessaie dans un instant.") from error
-        raise ProviderError(f"OpenAI Images a renvoyé une erreur ({error.code}).") from error
+        raise ProviderError(f"La génération d’images a renvoyé une erreur ({error.code}).") from error
     except (OSError, ValueError) as error:
-        raise ProviderError("Le service OpenAI Images est temporairement indisponible.") from error
+        raise ProviderError("Le service de génération d’images est temporairement indisponible.") from error
 
     image = (result.get("data") or [{}])[0].get("b64_json")
     if not image:
-        raise ProviderError("OpenAI Images n’a renvoyé aucune image.")
+        raise ProviderError("Aucune image n’a été renvoyée.")
     return image, result.get("usage") or {}
 
 
@@ -81,7 +85,7 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
     provider_name = f"{provider.slug} {provider.name}".lower()
     is_anthropic = "anthropic" in provider_name
     if not provider.base_url:
-        raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
+        raise ProviderError("Le modèle n’a pas d’URL de connexion configurée.")
 
     base_headers = {
         "Content-Type": "application/json",
@@ -114,6 +118,8 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             "top_p": top_p,
         }
         headers = base_headers.copy()
+        if provider.slug == "openrouter":
+            headers["X-Title"] = "AI 2 AI"
         if not is_local_provider(provider):
             headers["Authorization"] = f"Bearer {api_key}"
 
@@ -130,9 +136,9 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
         if error.code == 429:
             raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
         body = error.read().decode("utf-8", errors="replace")
-        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}): {body[:300]}") from error
+        raise ProviderError(f"Le service a renvoyé une erreur ({error.code}): {body[:300]}") from error
     except (OSError, ValueError) as error:
-        raise ProviderError("Le fournisseur est temporairement indisponible.") from error
+        raise ProviderError("Le service est temporairement indisponible.") from error
 
     if is_anthropic:
         reply = "".join(
@@ -154,7 +160,7 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
     provider_name = f"{provider.slug} {provider.name}".lower()
     is_anthropic = "anthropic" in provider_name
     if not provider.base_url:
-        raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
+        raise ProviderError("Le modèle n’a pas d’URL de connexion configurée.")
 
     base_headers = {
         "Content-Type": "application/json",
@@ -189,6 +195,8 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
             "top_p": top_p,
         }
         headers = base_headers.copy()
+        if provider.slug == "openrouter":
+            headers["X-Title"] = "AI 2 AI"
         if not is_local_provider(provider):
             headers["Authorization"] = f"Bearer {api_key}"
 
@@ -237,9 +245,9 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
         if error.code == 429:
             raise ProviderError("Trop de requêtes, réessaie dans un instant.") from error
         body = error.read().decode("utf-8", errors="replace")
-        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}): {body[:300]}") from error
+        raise ProviderError(f"Le service a renvoyé une erreur ({error.code}): {body[:300]}") from error
     except (OSError, ValueError) as error:
-        raise ProviderError("Le fournisseur est temporairement indisponible.") from error
+        raise ProviderError("Le service est temporairement indisponible.") from error
 
     yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
 

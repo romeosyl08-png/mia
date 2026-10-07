@@ -15,7 +15,7 @@ def _chat_completions_url(provider):
         parsed = urlsplit(base_url)
         parsed.port
     except ValueError as error:
-        raise ProviderError("L’URL de base du fournisseur est invalide.") from error
+        raise ProviderError("L’URL de connexion est invalide.") from error
     if (
         parsed.scheme not in {"http", "https"}
         or not parsed.hostname
@@ -24,7 +24,7 @@ def _chat_completions_url(provider):
         or parsed.query
         or parsed.fragment
     ):
-        raise ProviderError("L’URL de base du fournisseur doit être une URL HTTP(S) valide.")
+        raise ProviderError("L’URL de connexion doit être une URL HTTP(S) valide.")
     return base_url + "/v1/chat/completions"
 
 
@@ -40,9 +40,9 @@ def call_llm_with_tools(provider, api_key, model_id, messages, system_prompt="",
     provider_name = f"{provider.slug} {provider.name}".lower()
     is_anthropic = "anthropic" in provider_name
     if not provider.base_url:
-        raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
+        raise ProviderError("Le modèle n’a pas d’URL de connexion configurée.")
     if is_anthropic:
-        raise ProviderError("Le mode outils n'est pas encore supporté pour Anthropic.")
+        raise ProviderError("Ce modèle ne prend pas en charge le mode outils.")
 
     url = _chat_completions_url(provider)
     payload = {
@@ -65,9 +65,9 @@ def call_llm_with_tools(provider, api_key, model_id, messages, system_prompt="",
         with urlopen(request, timeout=120) as response:
             data = json_module.loads(response.read().decode("utf-8"))
     except HTTPError as error:
-        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
+        raise ProviderError(f"Le service a renvoyé une erreur ({error.code}).") from error
     except (OSError, ValueError) as error:
-        raise ProviderError("Le fournisseur est temporairement indisponible.") from error
+        raise ProviderError("Le service est temporairement indisponible.") from error
 
     choice = (data.get("choices") or [{}])[0]
     message_response = choice.get("message", {})
@@ -85,9 +85,9 @@ def call_llm_with_tools_stream(provider, api_key, model_id, messages, system_pro
     """
     provider_name = f"{provider.slug} {provider.name}".lower()
     if "anthropic" in provider_name:
-        raise ProviderError("Le mode outils/streaming n'est pas supporté pour Anthropic.")
+        raise ProviderError("Ce modèle ne prend pas en charge le streaming avec outils.")
     if not provider.base_url:
-        raise ProviderError("Le fournisseur n'a pas d'URL configurée.")
+        raise ProviderError("Le modèle n’a pas d’URL de connexion configurée.")
 
     url = _chat_completions_url(provider)
     payload = {
@@ -110,9 +110,9 @@ def call_llm_with_tools_stream(provider, api_key, model_id, messages, system_pro
     try:
         response = urlopen(request, timeout=120)
     except HTTPError as error:
-        raise ProviderError(f"Le fournisseur a renvoyé une erreur ({error.code}).") from error
+        raise ProviderError(f"Le service a renvoyé une erreur ({error.code}).") from error
     except (OSError, ValueError) as error:
-        raise ProviderError("Le fournisseur est temporairement indisponible.") from error
+        raise ProviderError("Le service est temporairement indisponible.") from error
 
     usage = {}
     finish_reason = None
