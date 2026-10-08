@@ -5,7 +5,11 @@
 {% block body %}
 <main style="font-family:Arial,sans-serif;max-width:600px;margin:80px auto;padding:20px;text-align:center;color:var(--ink)">
   <h1>Paiement reçu</h1>
-  <p>La recharge sera ajoutée dès confirmation de Stripe.</p>
+  {% if paydunya_return %}
+  <p>PayDunya confirme ta transaction. Tes jetons apparaîtront dès que sa notification sécurisée aura été traitée.</p>
+  {% else %}
+  <p>La recharge sera ajoutée dès confirmation sécurisée du prestataire de paiement.</p>
+  {% endif %}
   <a style="color:var(--accent-hover)" href="{% url 'chat:chat-home' %}">Retour au chat</a>
 </main>
 {% endblock %}

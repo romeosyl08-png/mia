@@ -2479,27 +2479,27 @@ fileInput.addEventListener("change", async () => {
 
 
 //recharge
-   const operatorInput = document.getElementById("operator");
-    const phoneInput = document.getElementById("phone");
-    const operatorChoices = [...document.querySelectorAll(".operator-choice")];
-    let waveChosenManually = false;
-    function selectOperator(operator, manual = false){
-      if(operatorInput) operatorInput.value = operator;
-      if(manual) waveChosenManually = operator === "wave";
-      operatorChoices.forEach(choice => {
-        const selected = choice.dataset.operator === operator;
-        choice.classList.toggle("active", selected);
-        choice.setAttribute("aria-pressed", String(selected));
+    const currencyToggleOptions = [...document.querySelectorAll("[data-payment-currency]")];
+    const paymentCards = {
+      XOF: document.getElementById("paydunyaPayment"),
+      USD: document.getElementById("stripePayment"),
+    };
+    function selectPaymentCurrency(currency){
+      if(!paymentCards[currency]) return;
+      currencyToggleOptions.forEach(option => {
+        const selected = option.dataset.paymentCurrency === currency;
+        option.classList.toggle("active", selected);
+        option.setAttribute("aria-pressed", String(selected));
+      });
+      Object.entries(paymentCards).forEach(([cardCurrency, card]) => {
+        if(!card) return;
+        const selected = cardCurrency === currency;
+        card.hidden = !selected;
+        card.classList.toggle("active", selected);
       });
     }
-    operatorChoices.forEach(choice => choice.addEventListener("click", () => selectOperator(choice.dataset.operator, true)));
-    if(phoneInput) phoneInput.addEventListener("input", () => {
-      if(waveChosenManually) return;
-      const digits = phoneInput.value.replace(/\D/g, "");
-      const prefix = digits.startsWith("225") ? digits.slice(3, 5) : digits.slice(0, 2);
-      if(prefix === "01") selectOperator("momo");
-      if(prefix === "05") selectOperator("moov");
-      if(prefix === "07") selectOperator("orange");
+    currencyToggleOptions.forEach(option => {
+      option.addEventListener("click", () => selectPaymentCurrency(option.dataset.paymentCurrency));
     });
 
     const formatCredits = value => new Intl.NumberFormat("fr-FR").format(value);
@@ -2518,25 +2518,25 @@ fileInput.addEventListener("change", async () => {
     stripeAmountInput?.addEventListener("input", updateStripeCredits);
     updateStripeCredits();
 
-    const mobileMoneyAmountInput = document.getElementById("mobile-amount");
-    const mobileMoneyCreditsOutput = document.getElementById("mobileMoneyCreditsEstimate");
-    function updateMobileMoneyCredits(){
-      if(!mobileMoneyAmountInput || !mobileMoneyCreditsOutput) return;
-      const amount = Number(mobileMoneyAmountInput.value);
-      const xofPerUsd = Number(mobileMoneyCreditsOutput.dataset.xofPerUsd);
-      const creditsPerDollar = Number(mobileMoneyCreditsOutput.dataset.creditsPerDollar);
+    const paydunyaAmountInput = document.getElementById("paydunya-amount");
+    const paydunyaCreditsOutput = document.getElementById("paydunyaCreditsEstimate");
+    function updatePaydunyaCredits(){
+      if(!paydunyaAmountInput || !paydunyaCreditsOutput) return;
+      const amount = Number(paydunyaAmountInput.value);
+      const xofPerUsd = Number(paydunyaCreditsOutput.dataset.xofPerUsd);
+      const creditsPerDollar = Number(paydunyaCreditsOutput.dataset.creditsPerDollar);
       if(!Number.isFinite(xofPerUsd) || xofPerUsd <= 0){
-        mobileMoneyCreditsOutput.textContent = "Indisponible";
+        paydunyaCreditsOutput.textContent = "Indisponible";
         return;
       }
-      if(!Number.isFinite(amount) || amount < Number(mobileMoneyAmountInput.min)){
-        mobileMoneyCreditsOutput.textContent = `Minimum ${new Intl.NumberFormat("fr-FR").format(Number(mobileMoneyAmountInput.min))} FCFA`;
+      if(!Number.isFinite(amount) || amount < Number(paydunyaAmountInput.min)){
+        paydunyaCreditsOutput.textContent = `Minimum ${new Intl.NumberFormat("fr-FR").format(Number(paydunyaAmountInput.min))} FCFA`;
         return;
       }
-      mobileMoneyCreditsOutput.textContent = `${formatCredits(Math.floor(amount / xofPerUsd * creditsPerDollar))} jetons`;
+      paydunyaCreditsOutput.textContent = `${formatCredits(Math.floor(amount / xofPerUsd * creditsPerDollar))} jetons`;
     }
-    mobileMoneyAmountInput?.addEventListener("input", updateMobileMoneyCredits);
-    updateMobileMoneyCredits();
+    paydunyaAmountInput?.addEventListener("input", updatePaydunyaCredits);
+    updatePaydunyaCredits();
 
     document.querySelectorAll("[data-set-amount]").forEach(button => {
       button.addEventListener("click", () => {
@@ -2547,47 +2547,6 @@ fileInput.addEventListener("change", async () => {
       });
     });
 
-    const mobileMoneyForm = document.getElementById("mobileMoneyForm");
-    const mobileMoneySubmit = document.getElementById("mobileMoneySubmit");
-    const mobileMoneyStatus = document.getElementById("mobileMoneyStatus");
-    mobileMoneyForm?.addEventListener("submit", async event => {
-      event.preventDefault();
-      if(!mobileMoneySubmit || mobileMoneySubmit.disabled) return;
-      mobileMoneySubmit.disabled = true;
-      mobileMoneyStatus.textContent = "Préparation du paiement…";
-      let redirecting = false;
-      try{
-        const response = await fetch(mobileMoneyForm.action, {
-          method: "POST",
-          headers: { "Accept": "application/json" },
-          body: new FormData(mobileMoneyForm),
-        });
-        let result;
-        try{
-          result = await response.json();
-        }catch(_error){
-          throw new Error("Réponse de paiement invalide. Réessaie dans quelques instants.");
-        }
-        if(!response.ok){
-          throw new Error(result.error || "Le paiement n’a pas pu être préparé.");
-        }
-        if(typeof result.payment_url !== "string"){
-          throw new Error("Le prestataire n’a pas fourni de lien de paiement.");
-        }
-        const paymentUrl = new URL(result.payment_url, window.location.href);
-        if(paymentUrl.protocol !== "https:"){
-          throw new Error("Le lien de paiement sécurisé est invalide.");
-        }
-        redirecting = true;
-        window.location.assign(paymentUrl.href);
-      }catch(error){
-        mobileMoneyStatus.textContent = error instanceof TypeError
-          ? "Connexion impossible au prestataire. Vérifie ta connexion et réessaie."
-          : error.message || "Le paiement a échoué. Réessaie.";
-      }finally{
-        if(!redirecting) mobileMoneySubmit.disabled = false;
-      }
-    });
 
 
 

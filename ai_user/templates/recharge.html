@@ -4,7 +4,7 @@
 
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=recharge-rates-1">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=currency-toggle-3">
 {% endblock %}
 
 {% block body %}
@@ -55,18 +55,94 @@
       <span class="payment-security"><span aria-hidden="true">✓</span> Paiement confirmé avant crédit</span>
     </div>
 
+    <div class="currency-toggle" role="group" aria-label="Choisir la devise de paiement">
+      <button type="button" class="currency-toggle-option active" data-payment-currency="XOF" aria-pressed="true" aria-controls="paydunyaPayment">XOF</button>
+      <button type="button" class="currency-toggle-option" data-payment-currency="USD" aria-pressed="false" aria-controls="stripePayment">USD</button>
+    </div>
+
     <div class="payment-grid">
-      <form class="payment-card stripe-card" method="post" action="{% url 'create-recharge-checkout' %}">
+      <form class="payment-card paydunya-card active" id="paydunyaPayment" method="post" action="{% url 'create-paydunya-checkout' %}">
+        {% csrf_token %}
+        <div class="payment-card-heading">
+          <span class="payment-provider-mark paydunya-mark" aria-hidden="true">P</span>
+          <div>
+            <p class="payment-overline">Carte et paiement local</p>
+          </div>
+          <span class="payment-tag">FCFA</span>
+        </div>
+        <p class="payment-description">Paie par carte ou avec les moyens Mobile Money proposés par PayDunya pour ton pays.</p>
+
+        <fieldset class="customer-details">
+          <legend>Informations de paiement</legend>
+          <label for="paydunya-customer-name">Nom complet
+            <input id="paydunya-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required>
+          </label>
+          <label for="paydunya-customer-email">E-mail
+            <input id="paydunya-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required>
+          </label>
+          <label class="customer-phone-field" for="paydunya-customer-phone">Téléphone
+            <input id="paydunya-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required>
+          </label>
+        </fieldset>
+
+        <label class="amount-label" for="paydunya-amount">Montant à recharger</label>
+        <div class="currency-input">
+          <span class="currency-symbol currency-symbol-text" aria-hidden="true">FCFA</span>
+          <input id="paydunya-amount" name="amount" type="number" min="{{ paydunya_minimum_xof }}" step="1" value="{{ default_paydunya_amount }}" required aria-describedby="paydunyaRate paydunyaCreditsEstimate" {% if not paydunya_available %}disabled{% endif %}>
+          <span class="currency-code">XOF</span>
+        </div>
+        {% if paydunya_available %}
+        <div class="amount-presets" aria-label="Montants rapides PayDunya en FCFA">
+          {% for preset in paydunya_presets %}
+          <button type="button" data-set-amount="paydunya-amount" data-amount="{{ preset.amount }}">{{ preset.label }} FCFA</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <p class="payment-rate-note" id="paydunyaRate">
+          {% if paydunya_available %}
+          Minimum {{ paydunya_minimum_xof|floatformat:0 }} FCFA · 1 USD = {{ paydunya_rate|floatformat:0 }} FCFA.
+          {% else %}
+          {{ paydunya_unavailable_reason }}
+          {% endif %}
+        </p>
+        <div class="credit-estimate">
+          <span>Tu recevras environ</span>
+          <output id="paydunyaCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-xof-per-usd="{{ paydunya_rate|default:0 }}" aria-live="polite">
+            {% if paydunya_available %}{{ default_paydunya_credits_display }} jetons{% else %}Indisponible{% endif %}
+          </output>
+        </div>
+
+        {% if paydunya_available %}
+        <button class="payment-submit" type="submit">Continuer avec PayDunya <span aria-hidden="true">→</span></button>
+        <p class="payment-footnote">Tu choisiras la carte ou le moyen de paiement disponible sur la page sécurisée PayDunya.</p>
+        {% else %}
+        <button class="payment-submit" type="button" disabled>PayDunya indisponible</button>
+        {% endif %}
+      </form>
+
+      <form class="payment-card stripe-card" id="stripePayment" method="post" action="{% url 'create-recharge-checkout' %}" hidden>
         {% csrf_token %}
         <div class="payment-card-heading">
           <span class="payment-provider-mark stripe-mark" aria-hidden="true">S</span>
           <div>
             <p class="payment-overline">Carte bancaire</p>
-            <h3>Stripe</h3>
           </div>
           <span class="payment-tag">USD</span>
         </div>
         <p class="payment-description">Paiement par carte via la page sécurisée de Stripe.</p>
+
+        <fieldset class="customer-details">
+          <legend>Informations de paiement</legend>
+          <label for="stripe-customer-name">Nom complet
+            <input id="stripe-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required>
+          </label>
+          <label for="stripe-customer-email">E-mail
+            <input id="stripe-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required>
+          </label>
+          <label class="customer-phone-field" for="stripe-customer-phone">Téléphone
+            <input id="stripe-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required>
+          </label>
+        </fieldset>
 
         <label class="amount-label" for="stripe-amount">Montant à recharger</label>
         <div class="currency-input">
@@ -94,74 +170,6 @@
         {% endif %}
       </form>
 
-      <form class="payment-card mobile-card" id="mobileMoneyForm" method="post" action="{% url 'create-mobile-money-checkout' %}">
-        {% csrf_token %}
-        <div class="payment-card-heading">
-          <span class="payment-provider-mark mobile-mark" aria-hidden="true">M</span>
-          <div>
-            <p class="payment-overline">Paiement local</p>
-            <h3>Mobile Money</h3>
-          </div>
-          <span class="payment-tag">FCFA</span>
-        </div>
-        <p class="payment-description">Choisis ton opérateur puis confirme le paiement sur ton téléphone.</p>
-
-        <label class="amount-label" for="mobile-amount">Montant à recharger</label>
-        <div class="currency-input">
-          <span class="currency-symbol currency-symbol-text" aria-hidden="true">FCFA</span>
-          <input id="mobile-amount" name="amount" type="number" min="{{ mobile_money_minimum_xof }}" step="1" value="{{ default_mobile_money_amount }}" required aria-describedby="mobileMoneyRate mobileMoneyCreditsEstimate" {% if not mobile_money_available %}disabled{% endif %}>
-          <span class="currency-code">XOF</span>
-        </div>
-        {% if mobile_money_available %}
-        <div class="amount-presets" aria-label="Montants rapides en FCFA">
-          {% for preset in mobile_money_presets %}
-          <button type="button" data-set-amount="mobile-amount" data-amount="{{ preset.amount }}">{{ preset.label }} FCFA</button>
-          {% endfor %}
-        </div>
-        {% endif %}
-        <p class="payment-rate-note" id="mobileMoneyRate">
-          {% if mobile_money_available %}
-          Minimum {{ mobile_money_minimum_xof|floatformat:0 }} FCFA · 1 USD = {{ conversion_rate_display }} FCFA.
-          {% else %}
-          {{ mobile_money_unavailable_reason }}
-          {% endif %}
-        </p>
-        <div class="credit-estimate">
-          <span>Tu recevras environ</span>
-          <output id="mobileMoneyCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-xof-per-usd="{{ mobile_money_rate|default:0 }}" aria-live="polite">
-            {% if mobile_money_available %}{{ default_mobile_money_credits_display }} jetons{% else %}Indisponible{% endif %}
-          </output>
-        </div>
-
-        <span class="operator-label">Ton opérateur</span>
-        <input type="hidden" id="operator" name="operator" value="wave">
-        <div class="operator-grid" role="group" aria-label="Choisir un opérateur Mobile Money">
-          <button class="operator-choice active" type="button" data-operator="wave" aria-pressed="true" {% if not mobile_money_available %}disabled{% endif %}>
-            <span class="operator-icon wave" aria-hidden="true">W</span><span class="operator-name">Wave</span>
-          </button>
-          <button class="operator-choice" type="button" data-operator="orange" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
-            <span class="operator-icon orange" aria-hidden="true">OM</span><span class="operator-name">Orange Money<span class="operator-prefix">07</span></span>
-          </button>
-          <button class="operator-choice" type="button" data-operator="momo" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
-            <span class="operator-icon momo" aria-hidden="true">M</span><span class="operator-name">Momo<span class="operator-prefix">01</span></span>
-          </button>
-          <button class="operator-choice" type="button" data-operator="moov" aria-pressed="false" {% if not mobile_money_available %}disabled{% endif %}>
-            <span class="operator-icon moov" aria-hidden="true">M</span><span class="operator-name">Moov Money<span class="operator-prefix">05</span></span>
-          </button>
-        </div>
-
-        <label class="phone-field" for="phone">
-          Numéro Mobile Money
-          <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+225 07 00 00 00 00" required {% if not mobile_money_available %}disabled{% endif %}>
-        </label>
-        <p class="payment-status" id="mobileMoneyStatus" role="status" aria-live="polite"></p>
-        {% if mobile_money_available %}
-        <button class="payment-submit" id="mobileMoneySubmit" type="submit">Continuer avec Mobile Money <span aria-hidden="true">→</span></button>
-        {% else %}
-        <button class="payment-submit" id="mobileMoneySubmit" type="button" disabled>Mobile Money indisponible</button>
-        {% endif %}
-        <p class="payment-footnote">Le taux configuré est appliqué au montant en FCFA pour calculer les jetons.</p>
-      </form>
     </div>
   </section>
 

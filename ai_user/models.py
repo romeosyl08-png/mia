@@ -117,11 +117,12 @@ class RechargePurchase(models.Model):
 
     class Method(models.TextChoices):
         STRIPE = "stripe", "Stripe"
-        CINETPAY = "cinetpay", "CinetPay"
+        PAYDUNYA = "paydunya", "PayDunya"
         
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     stripe_session_id = models.CharField(max_length=200, blank=True, null=True, unique=True)
+    paydunya_token = models.CharField(max_length=200, blank=True, null=True, unique=True)
     method = models.CharField(max_length=20, choices=Method.choices, default=Method.STRIPE)
     reference = models.CharField(max_length=100, blank=True, help_text="Référence ou numéro de transaction Wave donné par l'utilisateur")
     phone_number = models.CharField(max_length=20, blank=True)

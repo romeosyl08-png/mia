@@ -13,10 +13,10 @@ urlpatterns = [
     path("recharge/", views.recharge_page, name="recharge-page"),
     path("tarifs/", views.tariffs_page, name="tariffs-page"),
     path("recharge/create-checkout/", views.create_recharge_checkout, name="create-recharge-checkout"),
-    path("recharge/mobile-money/", views.create_mobile_money_checkout, name="create-mobile-money-checkout"),
+    path("recharge/paydunya/", views.create_paydunya_checkout, name="create-paydunya-checkout"),
     path("recharge/success/", views.recharge_success, name="recharge-success"),
     path("recharge/webhook/", views.stripe_webhook, name="stripe-webhook"),
-    path('recharge/cinetpay-webhook/', views.cinetpay_webhook, name='cinetpay-webhook'),
+    path("recharge/paydunya-webhook/", views.paydunya_webhook, name="paydunya-webhook"),
 
     path('api-keys/', views.api_keys_page, name='api-keys-page'),
     path('api-keys/barrassons/', views.barrassons_guide, name='barrassons-guide'),

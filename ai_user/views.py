@@ -1,11 +1,16 @@
 import hashlib
 import hmac
+import json
+import re
 import time
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseForbidden
 from django.utils import timezone
@@ -24,7 +29,6 @@ from chat.services import (
 )
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 import requests
-import uuid
 
 
 RECHARGE_PLANS = {
@@ -33,7 +37,64 @@ RECHARGE_PLANS = {
 	"25": {"amount_cents": 2_500, "credits": 300_000},
 }
 MIN_RECHARGE_CENTS = 500
-MOBILE_MONEY_OPERATORS = {"wave", "orange", "momo", "moov"}
+
+
+def _payment_customer_details(request):
+    name = request.POST.get("customer_name", "").strip()
+    email = request.POST.get("customer_email", "").strip()
+    phone = request.POST.get("customer_phone", "").strip()
+    phone_digits = "".join(character for character in phone if character.isdigit())
+
+    if not name or len(name) > 100:
+        return None, "Le nom complet est requis et doit contenir au plus 100 caractères."
+    try:
+        validate_email(email)
+    except ValidationError:
+        return None, "Une adresse e-mail valide est requise."
+    if not 6 <= len(phone_digits) <= 20:
+        return None, "Un numéro de téléphone valide est requis."
+    return {"name": name, "email": email, "phone": phone}, None
+
+
+def _paydunya_is_configured():
+    return bool(
+        settings.PAYDUNYA_MASTER_KEY
+        and settings.PAYDUNYA_PRIVATE_KEY
+        and settings.PAYDUNYA_TOKEN
+    )
+
+
+def _paydunya_checkout_url():
+    if settings.PAYDUNYA_CHECKOUT_URL:
+        return settings.PAYDUNYA_CHECKOUT_URL
+    if settings.PAYDUNYA_PRIVATE_KEY.startswith("test_private_"):
+        return "https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create"
+    return "https://app.paydunya.com/api/v1/checkout-invoice/create"
+
+
+def _paydunya_webhook_payload(request):
+    if request.POST:
+        nested_payload = {}
+        for key, value in request.POST.items():
+            path = re.findall(r"([^\[\]]+)", key)
+            if not path:
+                continue
+            current = nested_payload
+            for part in path[:-1]:
+                existing = current.get(part)
+                if existing is None:
+                    existing = {}
+                    current[part] = existing
+                if not isinstance(existing, dict):
+                    return None
+                current = existing
+            current[path[-1]] = value
+        return nested_payload
+    try:
+        payload = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _next_url(request):
@@ -99,34 +160,33 @@ def whatsapp_send_otp(request):
 def recharge_page(request):
 	account = getattr(request.user, "credit_account", None)
 	credits = account.balance if account is not None else 0
-	rate = settings.CINETPAY_XOF_PER_USD
-	rate_configured = rate.is_finite() and rate > 0
-	mobile_money_minimum_xof = (
-		int(rate.to_integral_value(rounding=ROUND_CEILING))
-		if rate_configured else 0
-	)
-	mobile_money_credentials_configured = bool(settings.CINETPAY_API_KEY and settings.CINETPAY_SITE_ID)
-	mobile_money_available = rate_configured and mobile_money_credentials_configured
-	if not mobile_money_credentials_configured:
-		mobile_money_unavailable_reason = "Le paiement Mobile Money n’est pas configuré pour le moment."
-	elif not rate_configured:
-		mobile_money_unavailable_reason = "Le taux FCFA/USD doit être configuré avant d’activer ce paiement."
+	paydunya_rate = settings.PAYDUNYA_XOF_PER_USD
+	paydunya_rate_configured = paydunya_rate.is_finite() and paydunya_rate > 0
+	paydunya_available = _paydunya_is_configured() and paydunya_rate_configured
+	if not _paydunya_is_configured():
+		paydunya_unavailable_reason = "Le paiement PayDunya n’est pas configuré pour le moment."
+	elif not paydunya_rate_configured:
+		paydunya_unavailable_reason = "Le taux FCFA/USD PayDunya doit être configuré."
 	else:
-		mobile_money_unavailable_reason = ""
-	mobile_money_presets = []
-	if mobile_money_available:
-		for usd_amount in (1, 5, 10):
-			xof_amount = int(
-				(rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)
-			)
-			mobile_money_presets.append({
-				"amount": xof_amount,
-				"label": f"{xof_amount:,}".replace(",", " "),
-			})
-	default_mobile_money_amount = mobile_money_presets[0]["amount"] if mobile_money_presets else ""
-	default_mobile_money_credits = (
-		int((Decimal(default_mobile_money_amount) * CREDITS_PER_DOLLAR / rate).to_integral_value(rounding=ROUND_DOWN))
-		if mobile_money_available else 0
+		paydunya_unavailable_reason = ""
+	paydunya_minimum_xof = max(settings.PAYDUNYA_MINIMUM_XOF, 200)
+	paydunya_presets = (
+		[{
+			"amount": paydunya_minimum_xof,
+			"label": f"{paydunya_minimum_xof:,}".replace(",", " "),
+		}] + [
+			{
+				"amount": int((paydunya_rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)),
+				"label": f"{int((paydunya_rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)):,}".replace(",", " "),
+			}
+			for usd_amount in (5, 10)
+		]
+		if paydunya_available else []
+	)
+	default_paydunya_amount = paydunya_presets[0]["amount"] if paydunya_presets else ""
+	default_paydunya_credits = (
+		int((Decimal(default_paydunya_amount) * CREDITS_PER_DOLLAR / paydunya_rate).to_integral_value(rounding=ROUND_DOWN))
+		if paydunya_available else 0
 	)
 	return render(request, "recharge.html", {
 		"plans": RECHARGE_PLANS,
@@ -134,24 +194,27 @@ def recharge_page(request):
 		"credits_display": f"{credits:,}".replace(",", " "),
 		"credits_per_dollar": CREDITS_PER_DOLLAR,
 		"credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
-		"conversion_rate_display": format(rate.normalize(), "f") if rate.is_finite() and rate > 0 else "",
+		"conversion_rate_display": (
+			format(paydunya_rate.normalize(), "f")
+			if paydunya_rate_configured else ""
+		),
 		"stripe_available": bool(settings.STRIPE_SECRET_KEY),
 		"stripe_currency": settings.STRIPE_CURRENCY.upper(),
 		"stripe_default_credits": MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100,
 		"stripe_default_credits_display": f"{MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100:,}".replace(",", " "),
-		"mobile_money_available": mobile_money_available,
-		"mobile_money_unavailable_reason": mobile_money_unavailable_reason,
-		"mobile_money_rate": rate if rate_configured else "",
-		"mobile_money_minimum_xof": mobile_money_minimum_xof,
-		"mobile_money_presets": mobile_money_presets,
-		"default_mobile_money_amount": default_mobile_money_amount,
-		"default_mobile_money_credits": default_mobile_money_credits,
-		"default_mobile_money_credits_display": f"{default_mobile_money_credits:,}".replace(",", " "),
+		"paydunya_available": paydunya_available,
+		"paydunya_unavailable_reason": paydunya_unavailable_reason,
+		"paydunya_rate": paydunya_rate if paydunya_rate_configured else "",
+		"paydunya_minimum_xof": paydunya_minimum_xof,
+		"paydunya_presets": paydunya_presets,
+		"default_paydunya_amount": default_paydunya_amount,
+		"default_paydunya_credits": default_paydunya_credits,
+		"default_paydunya_credits_display": f"{default_paydunya_credits:,}".replace(",", " "),
 	})
 
 
 def tariffs_page(request):
-    rate = settings.CINETPAY_XOF_PER_USD
+    rate = settings.PAYDUNYA_XOF_PER_USD
     conversion_rate_display = (
         format(rate.normalize(), "f") if rate.is_finite() and rate > 0 else ""
     )
@@ -186,6 +249,9 @@ def create_recharge_checkout(request):
 		return JsonResponse({"error": "Methode non autorisee."}, status=405)
 	if not settings.STRIPE_SECRET_KEY:
 		return JsonResponse({"error": "Stripe n'est pas configure."}, status=503)
+	customer, customer_error = _payment_customer_details(request)
+	if customer_error:
+		return JsonResponse({"error": customer_error}, status=400)
 
 	try:
 		amount = Decimal(request.POST.get("amount", ""))
@@ -215,7 +281,13 @@ def create_recharge_checkout(request):
 			}],
 			success_url=request.build_absolute_uri(reverse("recharge-success")) + "?session_id={CHECKOUT_SESSION_ID}",
 			cancel_url=request.build_absolute_uri(reverse("recharge-page")),
-			metadata={"user_id": str(request.user.id), "credits": str(plan["credits"])},
+			customer_email=customer["email"],
+			metadata={
+				"user_id": str(request.user.id),
+				"credits": str(plan["credits"]),
+				"customer_name": customer["name"],
+				"customer_phone": customer["phone"],
+			},
 		)
 	except ImportError:
 		return JsonResponse({"error": "Installe le paquet stripe."}, status=503)
@@ -223,89 +295,117 @@ def create_recharge_checkout(request):
 
 
 @login_required(login_url="/auth/?next=/recharge/")
-def create_mobile_money_checkout(request):
+def create_paydunya_checkout(request):
     if request.method != "POST":
         return JsonResponse({"error": "Methode non autorisee."}, status=405)
-    if not settings.CINETPAY_API_KEY or not settings.CINETPAY_SITE_ID:
-        return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
+    if not _paydunya_is_configured():
+        return JsonResponse({"error": "PayDunya n'est pas configure."}, status=503)
 
-    rate = settings.CINETPAY_XOF_PER_USD
+    rate = settings.PAYDUNYA_XOF_PER_USD
     if not rate.is_finite() or rate <= 0:
-        return JsonResponse({"error": "Le taux de conversion FCFA/USD n'est pas configure."}, status=503)
+        return JsonResponse({"error": "Le taux de conversion FCFA/USD PayDunya n'est pas configure."}, status=503)
 
     try:
         amount = Decimal(request.POST.get("amount", ""))
-        amount_fcfa = int(amount)
+        amount_xof = int(amount)
     except (ArithmeticError, TypeError, ValueError):
         return JsonResponse({"error": "Le montant doit etre un nombre entier en FCFA."}, status=400)
-    if not amount.is_finite() or amount != Decimal(amount_fcfa):
-        return JsonResponse({"error": "Le montant Mobile Money doit etre un nombre entier en FCFA."}, status=400)
-    minimum_amount_xof = int(rate.to_integral_value(rounding=ROUND_CEILING))
-    if amount_fcfa < minimum_amount_xof:
+    if not amount.is_finite() or amount != Decimal(amount_xof):
+        return JsonResponse({"error": "Le montant PayDunya doit etre un nombre entier en FCFA."}, status=400)
+
+    minimum_amount_xof = max(settings.PAYDUNYA_MINIMUM_XOF, 200)
+    if amount_xof < minimum_amount_xof:
         return JsonResponse({
-            "error": f"Le montant Mobile Money minimum est de {minimum_amount_xof:,} FCFA.".replace(",", " "),
+            "error": f"Le montant PayDunya minimum est de {minimum_amount_xof:,} FCFA.".replace(",", " "),
         }, status=400)
+    customer, customer_error = _payment_customer_details(request)
+    if customer_error:
+        return JsonResponse({"error": customer_error}, status=400)
 
-    phone = request.POST.get("phone", "").strip()
-    operator = request.POST.get("operator", "").strip()
-    if not phone or operator not in MOBILE_MONEY_OPERATORS:
-        return JsonResponse({"error": "Le numero et l'operateur Mobile Money sont requis."}, status=400)
-    transaction_id = str(uuid.uuid4())
     credits = int(
-        (Decimal(amount_fcfa) * CREDITS_PER_DOLLAR / rate).to_integral_value(rounding=ROUND_DOWN)
+        (Decimal(amount_xof) * CREDITS_PER_DOLLAR / rate).to_integral_value(rounding=ROUND_DOWN)
     )
-    amount_cents = amount_fcfa * 100
-
     payload = {
-        "apikey": settings.CINETPAY_API_KEY,
-        "site_id": settings.CINETPAY_SITE_ID,
-        "transaction_id": transaction_id,
-        "amount": amount_fcfa,
-        "currency": "XOF",
-        "description": f"Recharge de {credits:,} jetons",
-        "customer_name": request.user.first_name or request.user.username,
-        "customer_surname": request.user.last_name or "-",
-        "customer_phone_number": phone,
-        "notify_url": request.build_absolute_uri(reverse("cinetpay-webhook")),
-        "return_url": request.build_absolute_uri(reverse("recharge-success")),
-        "channels": "MOBILE_MONEY",
+        "invoice": {
+            "items": {
+                "credits": {
+                    "name": "Recharge de jetons 2AI",
+                    "quantity": 1,
+                    "unit_price": str(amount_xof),
+                    "total_price": str(amount_xof),
+                    "description": f"{credits:,} jetons".replace(",", " "),
+                },
+            },
+            "total_amount": amount_xof,
+            "description": f"Recharge de {credits:,} jetons 2AI".replace(",", " "),
+        },
+        "store": {"name": settings.PAYDUNYA_STORE_NAME},
+        "custom_data": {
+            "customer_name": customer["name"],
+            "customer_email": customer["email"],
+            "customer_phone": customer["phone"],
+        },
+        "actions": {
+            "callback_url": request.build_absolute_uri(reverse("paydunya-webhook")),
+            "return_url": (
+                request.build_absolute_uri(reverse("recharge-success"))
+                + "?paydunya=1"
+            ),
+            "cancel_url": request.build_absolute_uri(reverse("recharge-page")),
+        },
     }
-
+    headers = {
+        "Content-Type": "application/json",
+        "PAYDUNYA-MASTER-KEY": settings.PAYDUNYA_MASTER_KEY,
+        "PAYDUNYA-PRIVATE-KEY": settings.PAYDUNYA_PRIVATE_KEY,
+        "PAYDUNYA-TOKEN": settings.PAYDUNYA_TOKEN,
+    }
     try:
         response = requests.post(
-            "https://api-checkout.cinetpay.com/v2/payment",
+            _paydunya_checkout_url(),
             json=payload,
+            headers=headers,
             timeout=30,
         )
         data = response.json()
     except (requests.RequestException, ValueError):
-        return JsonResponse({"error": "Le prestataire Mobile Money est temporairement indisponible."}, status=503)
+        return JsonResponse({"error": "Le prestataire PayDunya est temporairement indisponible."}, status=503)
 
-    if not isinstance(data, dict):
-        return JsonResponse({"error": "Réponse invalide du prestataire Mobile Money."}, status=502)
-    if data.get("code") != "201":
-        return JsonResponse({"error": data.get("message", "Erreur CinetPay.")}, status=502)
-    provider_data = data.get("data")
-    payment_url = provider_data.get("payment_url") if isinstance(provider_data, dict) else None
-    if not isinstance(payment_url, str) or not payment_url:
-        return JsonResponse({"error": "CinetPay n'a pas fourni de lien de paiement valide."}, status=502)
+    payment_url = data.get("response_text") if isinstance(data, dict) else None
+    token = data.get("token") if isinstance(data, dict) else None
+    if (
+        not isinstance(data, dict)
+        or data.get("response_code") != "00"
+        or not isinstance(payment_url, str)
+        or not isinstance(token, str)
+        or not token
+    ):
+        provider_error = data.get("description") or data.get("response_text")
+        if not isinstance(provider_error, str) or not provider_error:
+            provider_error = "PayDunya n'a pas fourni de lien de paiement valide."
+        return JsonResponse({"error": f"PayDunya : {provider_error[:300]}"}, status=502)
+    payment_url_parts = urlparse(payment_url)
+    if (
+        payment_url_parts.scheme != "https"
+        or payment_url_parts.hostname not in {"app.paydunya.com", "paydunya.com"}
+    ):
+        return JsonResponse({"error": "PayDunya a fourni un lien de paiement non sécurisé."}, status=502)
 
-    # Enregistre la transaction en attente, avant même la confirmation
     RechargePurchase.objects.create(
         user=request.user,
-        stripe_session_id=transaction_id,  # réutilise ce champ, ou ajoute un champ dédié cinetpay_transaction_id
-        method=RechargePurchase.Method.CINETPAY,
-        phone_number=phone,
-        amount_cents=amount_cents,
+        paydunya_token=token,
+        method=RechargePurchase.Method.PAYDUNYA,
+        amount_cents=amount_xof * 100,
         credits=credits,
-        status=RechargePurchase.Status.PENDING,
     )
+    return redirect(payment_url)
 
-    return JsonResponse({"payment_url": payment_url})
 
 @login_required(login_url="/auth/?next=/recharge/")
 def recharge_success(request):
-	return render(request, "recharge_success.html")
+    return render(request, "recharge_success.html", {
+        "paydunya_return": request.GET.get("paydunya") == "1",
+    })
 
 @csrf_exempt
 def stripe_webhook(request):
@@ -349,43 +449,60 @@ def stripe_webhook(request):
 	return HttpResponse("ok")
 
 @csrf_exempt
-def cinetpay_webhook(request):
+def paydunya_webhook(request):
     if request.method != "POST":
         return HttpResponse("Methode non autorisee.", status=405)
+    if not settings.PAYDUNYA_MASTER_KEY:
+        return HttpResponse("PayDunya non configure.", status=503)
 
-    transaction_id = request.POST.get("cpm_trans_id")
-    if not transaction_id:
-        return HttpResponse("Transaction manquante.", status=400)
+    payload = _paydunya_webhook_payload(request)
+    if payload is None:
+        return HttpResponse("Notification invalide.", status=400)
+    data = payload.get("data", payload) if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return HttpResponse("Notification invalide.", status=400)
 
-    # Vérifie le statut réel auprès de CinetPay (ne jamais faire confiance au seul webhook)
-    try:
-        response = requests.post(
-            "https://api-checkout.cinetpay.com/v2/payment/check",
-            json={
-                "apikey": settings.CINETPAY_API_KEY,
-                "site_id": settings.CINETPAY_SITE_ID,
-                "transaction_id": transaction_id,
-            },
-            timeout=30,
-        )
-        data = response.json()
-    except (requests.RequestException, ValueError):
-        return HttpResponse("Verification impossible.", status=502)
+    received_hash = str(data.get("hash", ""))
+    expected_hash = hashlib.sha512(settings.PAYDUNYA_MASTER_KEY.encode()).hexdigest()
+    if not hmac.compare_digest(received_hash, expected_hash):
+        return HttpResponseForbidden("Signature PayDunya invalide.")
 
-    if data.get("code") != "00" or data.get("data", {}).get("status") != "ACCEPTED":
-        return HttpResponse("ok")  # paiement pas encore confirmé, CinetPay réessaiera
+    invoice = data.get("invoice")
+    if not isinstance(invoice, dict):
+        return HttpResponse("Facture PayDunya invalide.", status=400)
+    token = invoice.get("token")
+    if not isinstance(token, str) or not token:
+        return HttpResponse("Token PayDunya manquant.", status=400)
 
     with transaction.atomic():
-        purchase = RechargePurchase.objects.filter(stripe_session_id=transaction_id).first()
-        if purchase and purchase.status != RechargePurchase.Status.PAID:
+        purchase = RechargePurchase.objects.select_for_update().filter(
+            paydunya_token=token,
+            method=RechargePurchase.Method.PAYDUNYA,
+        ).first()
+        if purchase is None:
+            return HttpResponse("Transaction inconnue.", status=404)
+
+        try:
+            paid_amount_cents = int(Decimal(str(invoice["total_amount"])) * 100)
+        except (ArithmeticError, KeyError, TypeError, ValueError):
+            return HttpResponse("Montant PayDunya invalide.", status=400)
+        if paid_amount_cents != purchase.amount_cents:
+            return HttpResponse("Montant PayDunya incoherent.", status=400)
+
+        status = str(data.get("status", "")).lower()
+        if status in {"failed", "cancelled"} and purchase.status == RechargePurchase.Status.PENDING:
+            purchase.status = RechargePurchase.Status.FAILED
+            purchase.save(update_fields=["status"])
+        elif status == "completed" and purchase.status != RechargePurchase.Status.PAID:
             purchase.status = RechargePurchase.Status.PAID
             purchase.paid_at = timezone.now()
             purchase.save(update_fields=["status", "paid_at"])
-            account = purchase.user.credit_account
-            account.credit(purchase.credits, reason="recharge", note=f"CinetPay {transaction_id}")
-
+            purchase.user.credit_account.credit(
+                purchase.credits,
+                reason="recharge",
+                note=f"PayDunya {token}",
+            )
     return HttpResponse("ok")
-
 
 
 def telegram_auth(request):

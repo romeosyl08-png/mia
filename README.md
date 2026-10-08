@@ -25,15 +25,20 @@ Les conversations créées avec une IA locale sont enregistrées dans le stockag
 
 ## Recharges et paiements
 
-Stripe accepte les paiements par carte en USD. Pour activer Mobile Money via CinetPay, configure `CINETPAY_API_KEY`, `CINETPAY_SITE_ID` et `CINETPAY_XOF_PER_USD` dans l'environnement :
+Stripe accepte les paiements par carte en USD. La page publique `/tarifs/` liste les modèles cloud actifs et les crédits par million de tokens en entrée et en sortie, selon la même formule que la facturation. Stripe nécessite également `STRIPE_SECRET_KEY`.
+
+Pour activer PayDunya (carte et moyens de paiement locaux proposés sur son checkout), crée une AppDunya et configure ses clés, sans les exposer au navigateur :
 
 ```dotenv
-CINETPAY_API_KEY=
-CINETPAY_SITE_ID=
-CINETPAY_XOF_PER_USD=600
+PAYDUNYA_MASTER_KEY=
+PAYDUNYA_PRIVATE_KEY=
+PAYDUNYA_TOKEN=
+PAYDUNYA_STORE_NAME=2AI
+PAYDUNYA_XOF_PER_USD=600
+PAYDUNYA_MINIMUM_XOF=200
 ```
 
-Le taux par défaut affiché est `600 FCFA = 1 USD = 10 000 jetons`; tu peux le remplacer avec `CINETPAY_XOF_PER_USD`. Le montant Mobile Money est saisi en FCFA et les jetons sont calculés avec ce taux. Le minimum de paiement correspond à l'équivalent configuré de 1 USD. La page publique `/tarifs/` liste les modèles cloud actifs et les crédits par million de tokens en entrée et en sortie, selon la même formule que la facturation. Stripe nécessite également `STRIPE_SECRET_KEY`.
+La création de facture utilise automatiquement l'endpoint sandbox lorsque `PAYDUNYA_PRIVATE_KEY` commence par `test_private_`, et l'endpoint live pour les clés live. `PAYDUNYA_CHECKOUT_URL` permet de remplacer explicitement ce choix. L'IPN doit pouvoir joindre publiquement `/recharge/paydunya-webhook/`; il est enregistré automatiquement dans chaque facture. Cette notification est validée avec le hash SHA-512 de `PAYDUNYA_MASTER_KEY`, puis son token et son montant sont comparés à la recharge créée avant de créditer le compte.
 
 ## PostgreSQL local
 

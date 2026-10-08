@@ -511,7 +511,7 @@ class ChatHomeTests(TestCase):
 		self.assertContains(response, 'Informations juridiques')
 		self.assertContains(response, 'À compléter avant mise en production')
 		self.assertContains(response, 'Stripe')
-		self.assertContains(response, 'CinetPay')
+		self.assertContains(response, 'PayDunya')
 		self.assertContains(response, 'mode temporaire')
 
 	def test_pricing_page_has_been_removed(self):

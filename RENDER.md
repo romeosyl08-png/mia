@@ -31,7 +31,7 @@ Sur Render, execute cette commande depuis le Shell du service web.
 
 Ajoute les secrets Stripe, Telegram et API dans les variables d'environnement Render si ces fonctions sont utilisees. Configure ensuite l'URL publique du service dans les webhooks Stripe et Telegram.
 
-Pour activer Mobile Money via CinetPay, configure aussi `CINETPAY_API_KEY` et `CINETPAY_SITE_ID`. Le taux par défaut est `CINETPAY_XOF_PER_USD=600`, soit `600 FCFA = 1 USD = 10 000 jetons`; remplace-le dans l'environnement Render si tu choisis un autre taux. Les montants sont demandés en FCFA et le minimum correspond à l'équivalent configuré de 1 USD. La page `/tarifs/` présente les coûts d'utilisation des modèles cloud en jetons.
+Pour activer PayDunya, ajoute `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY`, `PAYDUNYA_TOKEN` et, si nécessaire, `PAYDUNYA_STORE_NAME` et `PAYDUNYA_XOF_PER_USD`. Le minimum est de `PAYDUNYA_MINIMUM_XOF=200` FCFA par défaut. Les clés privées commençant par `test_private_` utilisent automatiquement l'endpoint sandbox; les clés live utilisent l'endpoint live. Utilise `PAYDUNYA_CHECKOUT_URL` seulement pour remplacer explicitement ce choix. PayDunya doit pouvoir appeler l'URL publique `https://<domaine-render>/recharge/paydunya-webhook/`; l'application vérifie le hash IPN, le token et le montant avant de créditer les jetons.
 
 Pour activer le chat cloud et les générations d'images et de vidéos, configure `OPENROUTER_API_KEY`. Les modèles média se règlent avec `OPENROUTER_IMAGE_MODEL` et `OPENROUTER_VIDEO_MODEL` (par défaut : `bytedance-seed/seedream-4.5` et `alibaba/wan-3.0`). L’audio utilise toujours les clés et modèles audio configurés séparément.
 
