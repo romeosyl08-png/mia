@@ -114,7 +114,7 @@
           </div>
         </div>
         <textarea id="composerInput" placeholder="Merry Christmas" rows="1"></textarea>
-        <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg></button>
+        <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message"><span id="sendButtonLabel">Envoyer</span></button>
       </div>
       <div class="composer-tools" aria-label="Outils du message">
         <button type="button" class="tool-btn active" id="chatModeBtn" data-mode="chat" aria-pressed="true" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
@@ -293,12 +293,12 @@
       <p>Connexion directe depuis ce navigateur à Ollama ou à un serveur compatible OpenAI sur ton appareil. Les conversations restent ici par défaut.</p>
       <label for="localModelBaseUrl">Adresse locale de l’API</label>
       <input id="localModelBaseUrl" type="url" value="http://localhost:11434/v1" autocomplete="url" required>
-      <button type="button" id="discoverLocalModelsBtn">Tester et charger les modèles</button>
+      <button type="button" id="discoverLocalModelsBtn">Analyser mon appareil</button>
       <label for="localModelSelect">Modèle</label>
       <select id="localModelSelect" required disabled>
         <option value="">Teste la connexion pour charger les modèles</option>
       </select>
-      <p class="local-model-help">Ollama peut nécessiter l’autorisation CORS de ce site dans OLLAMA_ORIGINS. Les échanges locaux restent sur ton appareil.</p>
+      <p class="local-model-help">Recherche Ollama, LM Studio, Jan, LocalAI et GPT4All sur cet appareil. Autorise ce site dans les réglages CORS de l’IA locale si le navigateur bloque la connexion. Les échanges locaux restent sur ton appareil.</p>
       <p id="localModelStatus" role="status" aria-live="polite"></p>
       <footer>
         <button type="button" id="cancelLocalModelBtn">Annuler</button>

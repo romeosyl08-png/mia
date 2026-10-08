@@ -12,7 +12,7 @@ from urllib.error import HTTPError
 from django.conf import settings
 from api.models import AIModel, APIProvider
 from bara.models import Workspace
-from chat.services import ProviderError, call_llm_team, stream_llm_provider, stream_llm_team
+from chat.services import ProviderError, call_llm_provider, call_llm_team, stream_llm_provider, stream_llm_team
 from chat.media_generation import _download_output, _json_request, _run_apiframe, generate_media, generate_openrouter_media, normalize_generation_options
 from chat.routing import recommend_model
 from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
@@ -33,6 +33,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertIsNotNone(main.select_one('#messages'))
 		self.assertIsNotNone(main.select_one('#composerForm'))
+		self.assertIsNotNone(main.select_one('#sendButtonLabel'))
 		self.assertIsNotNone(main.select_one('#composerPlusMenu'))
 		self.assertIsNotNone(main.select_one('#plusFilesBtn'))
 		self.assertIsNotNone(main.select_one('#plusImageBtn'))
@@ -98,6 +99,7 @@ class ChatHomeTests(TestCase):
 		self.assertIsNotNone(soup.select_one('#localModelDialogBtn'))
 		self.assertIsNotNone(soup.select_one('#modelPickerDialog'))
 		self.assertIsNotNone(soup.select_one('#localModelDialog'))
+		self.assertContains(response, 'id="discoverLocalModelsBtn">Analyser mon appareil</button>')
 
 	def test_local_conversation_sync_is_explicit_and_appends_messages(self):
 		user = User.objects.create_user(username='local-sync-user', password='test-password')
@@ -852,6 +854,10 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(request_payload['model'], 'backend-model')
 		self.assertEqual(request_payload['top_p'], 0.4)
 		self.assertEqual(request_payload['max_tokens'], 900)
+		self.assertIn(
+			'Ne prétends jamais avoir reçu, ouvert ou analysé un fichier autrement.',
+			next(message['content'] for message in request_payload['messages'] if message['role'] == 'system'),
+		)
 		user.credit_account.refresh_from_db()
 		self.assertEqual(response.json()['remaining_balance'], user.credit_account.balance)
 		self.assertLess(user.credit_account.balance, 1000)
@@ -887,6 +893,63 @@ class ChatHomeTests(TestCase):
 		self.assertIn('données non fiables', provider_prompt)
 		assistant_message = Message.objects.filter(role='assistant').get()
 		self.assertEqual(assistant_message.sources, response.json()['sources'])
+
+	def test_web_mode_short_search_command_uses_the_previous_user_request(self):
+		user = User.objects.create_user(username='web-followup-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Web follow-up provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Web follow-up model', model_id='web-followup-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		conversation = Conversation.objects.create(user=user, title='Match des Bleus')
+		previous_request = "Fais un tableau des 30 derniers matchs de l'équipe de France"
+		Message.objects.create(conversation=conversation, role='user', content=previous_request)
+		Message.objects.create(
+			conversation=conversation,
+			role='assistant',
+			content="Je n’ai pas accès aux résultats en temps réel.",
+		)
+		self.client.force_login(user)
+
+		with patch('chat.views.bara_tool_definitions.web_search', return_value={
+			'results': [{'title': 'Résultats des Bleus', 'snippet': 'Résultats récents', 'link': 'https://example.test/bleus'}],
+		}) as search, patch('chat.views.call_llm_provider', return_value=('Voici les résultats trouvés.', 10, 5)) as provider_call:
+			response = self.client.post('/chat/api/send/', data=json.dumps({
+				'conversation_id': conversation.id,
+				'mode': 'web',
+				'model_id': 'web-followup-model',
+				'content': 'cherche sur le web',
+			}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 200)
+		search.assert_called_once_with(None, previous_request)
+		self.assertIn('ne produis pas de balise ou de commande', provider_call.call_args.args[4])
+		self.assertEqual(response.json()['reply'], 'Voici les résultats trouvés.')
+
+	def test_web_mode_rejects_unexecuted_search_markup_and_refunds(self):
+		user = User.objects.create_user(username='web-markup-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Web markup provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Web markup model', model_id='web-markup-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		self.client.force_login(user)
+
+		with patch('chat.views.bara_tool_definitions.web_search', return_value={'results': []}), patch(
+			'chat.views.call_llm_provider',
+			return_value=('Je lance une recherche <web_search>résultats</web_search>', 10, 5),
+		):
+			response = self.client.post('/chat/api/send/', data=json.dumps({
+				'mode': 'web',
+				'model_id': 'web-markup-model',
+				'content': 'Trouve les résultats du dernier match des Bleus',
+			}), content_type='application/json')
+
+		self.assertEqual(response.status_code, 502)
+		self.assertIn('commande de recherche au lieu d’une réponse', response.json()['error']['message'])
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
+		self.assertFalse(Conversation.objects.filter(user=user).exists())
 
 	def test_deep_mode_uses_a_larger_output_budget(self):
 		user = User.objects.create_user(username='deep-mode-user', password='test-password')
@@ -1489,6 +1552,45 @@ class ChatHomeTests(TestCase):
 		request_payload = json.loads(urlopen.call_args.args[0].data)
 		self.assertTrue(request_payload['stream'])
 
+	@patch('chat.services.urlopen')
+	def test_call_llm_provider_rejects_empty_response(self, urlopen):
+		provider = APIProvider(name='Empty response provider', base_url='https://provider.example.test')
+		response = MagicMock()
+		response.__enter__.return_value.read.return_value = json.dumps({
+			'choices': [{'message': {'content': ''}}],
+			'usage': {'prompt_tokens': 10, 'completion_tokens': 0},
+		}).encode()
+		urlopen.return_value = response
+
+		with self.assertRaisesRegex(ProviderError, 'n’a renvoyé aucun texte'):
+			call_llm_provider(provider, 'test-key', 'test-model', [{'role': 'user', 'content': 'Analyse ce PDF'}])
+
+	@patch('chat.views.stream_llm_provider')
+	def test_empty_streamed_reply_is_not_saved_or_charged(self, stream_provider):
+		user = User.objects.create_user(username='empty-stream-user', password='test-password')
+		user.credit_account.balance = 1000
+		user.credit_account.save(update_fields=['balance'])
+		provider = APIProvider.objects.create(name='Empty stream provider', base_url='https://provider.example.test')
+		AIModel.objects.create(provider=provider, name='Empty stream model', model_id='empty-stream-model')
+		provider.keys.create(name='server-key', key='server-secret')
+		stream_provider.return_value = iter([{'type': 'usage', 'input_tokens': 10, 'output_tokens': 0}])
+		self.client.force_login(user)
+
+		response = self.client.post(
+			'/chat/api/send/',
+			data=json.dumps({'model_id': 'empty-stream-model', 'content': 'Peux-tu analyser ce PDF ?'}),
+			content_type='application/json',
+			HTTP_ACCEPT='text/event-stream',
+		)
+		body = b''.join(response.streaming_content).decode()
+
+		self.assertIn('"type": "error"', body)
+		self.assertIn('n’a renvoyé aucun texte', body)
+		self.assertNotIn('réponse vide', body)
+		user.credit_account.refresh_from_db()
+		self.assertEqual(user.credit_account.balance, 1000)
+		self.assertFalse(Conversation.objects.filter(user=user).exists())
+
 	@patch('chat.services.stream_llm_provider')
 	def test_send_message_streams_team_response(self, stream_provider):
 		user = User.objects.create_user(username='streaming-team-user', password='test-password')
@@ -1683,6 +1785,16 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, '2AI')
 		self.assertNotContains(response, 'Le Comptoir')
+
+	def test_about_page_explains_local_ai_files_and_pricing(self):
+		response = self.client.get('/nous/')
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'Choisir ton IA')
+		self.assertContains(response, 'IA locale')
+		self.assertContains(response, 'PDF, Word, Excel ou PowerPoint')
+		self.assertContains(response, '600 FCFA pour 10&nbsp;000 jetons')
+		self.assertContains(response, 'href="/tarifs/"')
 
 	def test_anonymous_user_is_sent_to_authentication(self):
 		response = self.client.get('/')

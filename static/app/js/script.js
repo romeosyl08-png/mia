@@ -474,8 +474,68 @@ let state = {
     });
     if(autoModelBtn) autoModelBtn.classList.toggle("active", state.modelId === "auto");
   }
+  function compactModelLabel(value){
+    let label = String(value || "").trim();
+    const separator = label.indexOf(":");
+    if(separator > 0){
+      const prefix = label.slice(0, separator).trim();
+      const remainder = label.slice(separator + 1).trim();
+      if(prefix && remainder.toLowerCase().startsWith(`${prefix.toLowerCase()} `)) label = remainder;
+    }
+    return label.replace(/\s*(?:\(free\)|:free)\s*$/i, "").trim();
+  }
+  function renderSendButton(){
+    const button = el("sendBtn");
+    const labelElement = el("sendButtonLabel");
+    if(!button || !labelElement) return;
+    const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    const conversation = activeConvo();
+    const modelId = conversation?.localOnly
+      ? `local:${conversation.localModel?.modelId || state.localAI?.modelId || ""}`
+      : state.modelId;
+    const selectedModel = Array.from(document.querySelectorAll(".model-picker-item[data-model-id]"))
+      .find(item => item.dataset.modelId === modelId);
+    const modelName = modelId === "auto"
+      ? "Auto 2AI"
+      : modelId.startsWith("local:")
+        ? modelId.slice("local:".length) || "IA locale"
+        : compactModelLabel(selectedModel?.dataset.modelName || selectedModel?.querySelector("strong")?.textContent)
+          || "Choisir une IA";
+    let label = modelName;
+    let details = modelName;
+    if(el("teamModeBtn").classList.contains("active")){
+      const count = el("teamModelSelect").selectedOptions.length;
+      label = count ? `Équipe IA · ${count}` : "Équipe IA";
+      details = label;
+    }else if(mode === "web"){
+      label = "Recherche web";
+      details = label;
+    }else if(mode === "deep"){
+      label = "Réponse détaillée";
+      details = label;
+    }else if(mode === "image"){
+      const size = el("imageSizeSelect").value.replace("x", "×");
+      label = `Image ${size}`;
+      details = `Générer une image · ${size}`;
+    }else if(mode === "video"){
+      const resolution = el("videoResolution").value;
+      const duration = el("videoDuration").value;
+      label = `Vidéo ${resolution} · ${duration}s`;
+      details = `Générer une vidéo · ${el("videoAspectRatio").value} · ${resolution} · ${duration} secondes`;
+    }else if(mode === "audio"){
+      const style = el("audioStyle").selectedOptions[0]?.textContent.trim();
+      const instrumental = el("audioInstrumental").checked;
+      label = `Audio${style ? ` · ${style}` : ""}${instrumental ? " · instrumental" : ""}`;
+      details = `Générer un audio${style ? ` · ${style}` : ""}${instrumental ? " · instrumental" : ""}`;
+    }
+    if(state.sending) label = "Envoi…";
+    labelElement.textContent = label;
+    button.title = state.sending ? "Envoi en cours…" : `Envoyer avec ${details}`;
+    button.setAttribute("aria-label", button.title);
+  }
   sortModelsForTask(el("modelTaskCategory").value);
   renderModelPickerState();
+  renderSendButton();
 
   function renderConvoList(){
     const list = el("convoList");
@@ -1096,6 +1156,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     if(creditBar) creditBar.style.width = (pct * 100) + "%";
     if(lowWarning) lowWarning.classList.toggle("show", pct < 0.15);
     if(sendButton) sendButton.disabled = (state.isAuthenticated && state.credits <= 0 && !isLocalModelSelected()) || state.sending;
+    renderSendButton();
   }
 
   function ensureCreditAccess(){
@@ -1141,6 +1202,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
         : "Copier dans mon compte";
     }
     renderModelPickerState();
+    renderSendButton();
   }
 
   function renderWorkspaceSelector(){
@@ -1915,31 +1977,115 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     renderAll();
   }
 
+  async function queryLocalModels(baseUrl, timeoutMs = 1800){
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try{
+      const response = await fetch(`${baseUrl}/models`, {
+        headers: { "Accept": "application/json" },
+        credentials: "omit",
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const models = Array.isArray(data.data)
+        ? data.data.map(item => item?.id || item?.name).filter(id => typeof id === "string" && id)
+        : [];
+      return models.map(modelId => ({ modelId, baseUrl }));
+    }finally{
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async function queryOllamaTags(){
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 1800);
+    try{
+      const response = await fetch("http://localhost:11434/api/tags", {
+        headers: { "Accept": "application/json" },
+        credentials: "omit",
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if(!response.ok) return [];
+      const data = await response.json();
+      return (Array.isArray(data.models) ? data.models : [])
+        .map(item => item?.name || item?.model)
+        .filter(modelId => typeof modelId === "string" && modelId)
+        .map(modelId => ({ modelId, baseUrl: "http://localhost:11434/v1" }));
+    }catch(_error){
+      return [];
+    }finally{
+      window.clearTimeout(timeout);
+    }
+  }
+
   async function discoverLocalModels(){
     const status = el("localModelStatus");
     const button = el("discoverLocalModelsBtn");
     const select = el("localModelSelect");
     button.disabled = true;
-    status.textContent = "Connexion au serveur local…";
+    el("saveLocalModelBtn").disabled = true;
+    select.disabled = true;
+    status.textContent = "Recherche des IA locales sur cet appareil…";
     try{
-      const baseUrl = normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim());
-      const response = await fetch(`${baseUrl}/models`, { headers: { "Accept": "application/json" } });
-      if(!response.ok) throw new Error(`Le serveur local a renvoyé une erreur (${response.status}).`);
-      const data = await response.json();
-      const models = Array.isArray(data.data) ? data.data.map(item => item?.id).filter(id => typeof id === "string" && id) : [];
-      if(!models.length) throw new Error("Aucun modèle compatible n’a été trouvé à cette adresse.");
-      select.replaceChildren(...models.map(modelId => new Option(modelId, modelId)));
-      if(state.localAI?.modelId && models.includes(state.localAI.modelId)) select.value = state.localAI.modelId;
+      const addresses = [
+        { baseUrl: "http://localhost:11434/v1", engine: "Ollama" },
+        { baseUrl: "http://localhost:1234/v1", engine: "LM Studio" },
+        { baseUrl: "http://localhost:1337/v1", engine: "Jan" },
+        { baseUrl: "http://localhost:8080/v1", engine: "LocalAI / llama.cpp" },
+        { baseUrl: "http://localhost:4891/v1", engine: "GPT4All" }
+      ];
+      const customBaseUrl = normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim());
+      if(!addresses.some(address => address.baseUrl === customBaseUrl)){
+        addresses.unshift({ baseUrl: customBaseUrl, engine: "Adresse personnalisée" });
+      }
+      const results = await Promise.all(addresses.map(async address => {
+        try{
+          const models = await queryLocalModels(address.baseUrl);
+          return models.map(model => ({ ...model, engine: address.engine }));
+        }catch(_error){
+          return [];
+        }
+      }));
+      const ollamaIndex = addresses.findIndex(address => address.baseUrl === "http://localhost:11434/v1");
+      if(ollamaIndex >= 0){
+        results[ollamaIndex].push(...await queryOllamaTags());
+        results[ollamaIndex] = results[ollamaIndex].map(model => ({
+          ...model,
+          engine: model.engine || "Ollama"
+        }));
+      }
+      const seen = new Set();
+      discoveredLocalModels = results.flat().filter(model => {
+        const key = `${model.baseUrl}\n${model.modelId}`;
+        if(seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if(!discoveredLocalModels.length){
+        select.replaceChildren(new Option("Aucune IA détectée", ""));
+        status.textContent = "Aucune IA trouvée sur les adresses locales habituelles. Lance Ollama ou une autre IA locale, vérifie l’accès CORS, ou saisis son adresse ci-dessus puis relance l’analyse.";
+        return;
+      }
+      select.replaceChildren(...discoveredLocalModels.map((model, index) => {
+        const option = new Option(`${model.modelId} · ${model.engine}`, String(index));
+        option.dataset.modelId = model.modelId;
+        option.dataset.baseUrl = model.baseUrl;
+        return option;
+      }));
+      const savedIndex = discoveredLocalModels.findIndex(model =>
+        model.modelId === state.localAI?.modelId && model.baseUrl === state.localAI?.baseUrl
+      );
+      if(savedIndex >= 0) select.value = String(savedIndex);
+      const selected = discoveredLocalModels[Number(select.value)];
+      if(selected) el("localModelBaseUrl").value = selected.baseUrl;
       select.disabled = false;
       el("saveLocalModelBtn").disabled = false;
-      status.textContent = `${models.length} modèle${models.length > 1 ? "s" : ""} détecté${models.length > 1 ? "s" : ""}.`;
+      status.textContent = `${discoveredLocalModels.length} modèle${discoveredLocalModels.length > 1 ? "s" : ""} trouvé${discoveredLocalModels.length > 1 ? "s" : ""} sur cet appareil.`;
     }catch(error){
-      status.textContent = error instanceof TypeError
-        ? "Connexion bloquée : vérifie que l’IA locale est lancée et autorise ce site dans sa configuration CORS."
-        : error.message;
-      select.replaceChildren(new Option("Teste la connexion pour charger les modèles", ""));
-      select.disabled = true;
-      el("saveLocalModelBtn").disabled = true;
+      status.textContent = error.message;
     }finally{
       button.disabled = false;
     }
@@ -1948,11 +2094,18 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
   function openLocalModelDialog(){
     if(state.localAI){
       el("localModelBaseUrl").value = state.localAI.baseUrl;
-      el("localModelSelect").replaceChildren(new Option(state.localAI.modelId, state.localAI.modelId));
+      const savedModel = { ...state.localAI, engine: "Modèle enregistré" };
+      discoveredLocalModels = [savedModel];
+      const option = new Option(state.localAI.modelId, "0");
+      option.dataset.modelId = state.localAI.modelId;
+      option.dataset.baseUrl = state.localAI.baseUrl;
+      el("localModelSelect").replaceChildren(option);
+      el("localModelSelect").value = "0";
       el("localModelSelect").disabled = false;
       el("saveLocalModelBtn").disabled = false;
       el("localModelStatus").textContent = "Modèle enregistré sur cet appareil.";
     }else{
+      discoveredLocalModels = [];
       el("localModelStatus").textContent = "";
       el("localModelSelect").replaceChildren(new Option("Teste la connexion pour charger les modèles", ""));
       el("localModelSelect").disabled = true;
@@ -1961,6 +2114,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     el("localModelDialog").showModal();
   }
 
+let discoveredLocalModels = [];
 el("modelChips").addEventListener("click", (e) => {
   const autoButton = e.target.closest("#autoModelBtn");
   const pickerButton = e.target.closest("#modelPickerBtn");
@@ -2029,16 +2183,23 @@ el("localModelBaseUrl").addEventListener("input", () => {
     el("localModelStatus").textContent = "";
   }
 });
+el("localModelSelect").addEventListener("change", event => {
+  const model = discoveredLocalModels[Number(event.currentTarget.value)];
+  if(model){
+    el("localModelBaseUrl").value = model.baseUrl;
+    el("saveLocalModelBtn").disabled = false;
+  }
+});
 el("cancelLocalModelBtn").addEventListener("click", () => el("localModelDialog").close());
 el("saveLocalModelBtn").addEventListener("click", async () => {
-  const modelId = el("localModelSelect").value;
-  if(!modelId) return;
+  const model = discoveredLocalModels[Number(el("localModelSelect").value)];
+  if(!model) return;
   try{
-    const settings = { baseUrl: normalizeLocalBaseUrl(el("localModelBaseUrl").value.trim()), modelId };
+    const settings = { baseUrl: normalizeLocalBaseUrl(model.baseUrl), modelId: model.modelId };
     localStorage.setItem(localAISettingsKey, JSON.stringify(settings));
     state.localAI = settings;
     el("localModelDialog").close();
-    await switchModel(`local:${modelId}`);
+    await switchModel(`local:${model.modelId}`);
   }catch(error){
     showChatNotice(error.message);
   }
@@ -2061,6 +2222,7 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
       document.querySelectorAll(".model-chip:not(.team-chip)").forEach(item => item.classList.remove("active"));
       el("teamModelGrid").querySelector(".team-model-option")?.focus();
     }
+    renderSendButton();
   });
   el("teamModelGrid").addEventListener("click", event => {
     const button = event.target.closest(".team-model-option");
@@ -2076,6 +2238,7 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
     option.selected = !option.selected;
     button.classList.toggle("selected", option.selected);
     el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
+    renderSendButton();
   });
   const mediaOptionsPanel = el("mediaOptionsPanel");
   function updateMediaOptionControls(mode){
@@ -2108,10 +2271,14 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
       button.classList.add("active");
       button.setAttribute("aria-pressed", "true");
       updateMediaOptionControls(button.dataset.mode);
+      renderSendButton();
     });
   });
+  ["imageSizeSelect", "videoAspectRatio", "videoResolution", "videoDuration", "videoGenerateAudio", "audioStyle", "audioInstrumental"]
+    .forEach(id => el(id).addEventListener("change", renderSendButton));
 const fileInput = document.createElement("input");
 fileInput.type = "file";
+fileInput.accept = ".txt,.md,.csv,.json,.py,.js,.html,.css,.pdf,.docx,.xlsx,.pptx";
 fileInput.hidden = true;
 document.body.appendChild(fileInput);
 
@@ -2148,19 +2315,26 @@ fileInput.addEventListener("change", async () => {
 
   const convo = activeConvo();
   if(!convo){
-    el("creditNotice").textContent = "Crée d'abord une conversation.";
-    el("creditNotice").classList.add("show");
-    window.setTimeout(() => el("creditNotice").classList.remove("show"), 2800);
+    showChatNotice("Crée d'abord une conversation.");
+    fileInput.value = "";
+    return;
+  }
+  if(!convo.workspaceId){
+    showChatNotice("Sélectionne ou crée un espace Bara dans « Fichiers » avant de joindre un document.");
+    fileInput.value = "";
+    return;
+  }
+  if(file.size > 10 * 1024 * 1024){
+    showChatNotice("Le fichier dépasse la limite de 10 Mo.");
     fileInput.value = "";
     return;
   }
 
   const formData = new FormData();
   formData.append("file", file);
-  if(convo.id) formData.append("conversation_id", convo.id);
 
   try{
-    const res = await fetch("/bara/upload/", { 
+    const res = await fetch(`/bara/${encodeURIComponent(convo.workspaceId)}/upload/`, {
       method: "POST",
       headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value },
       body: formData
@@ -2168,13 +2342,11 @@ fileInput.addEventListener("change", async () => {
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || "Erreur d'upload");
 
-    el("creditNotice").textContent = `"${data.name}" ajouté — l'IA peut maintenant le lire.`;
-    el("creditNotice").classList.add("show");
-    window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
+    showChatNotice(data.has_text
+      ? `"${data.name}" ajouté à l'espace Bara et disponible pour l'IA.`
+      : `"${data.name}" est enregistré, mais son texte n'a pas pu être extrait.`);
   }catch(err){
-    el("creditNotice").textContent = "Erreur : " + err.message;
-    el("creditNotice").classList.add("show");
-    window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
+    showChatNotice("Erreur d'ajout du fichier : " + err.message);
   }
   fileInput.value = "";
 });

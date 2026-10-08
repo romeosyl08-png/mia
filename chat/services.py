@@ -147,12 +147,16 @@ def call_llm_provider(provider, api_key, model_id, messages, system_prompt="", t
             if block.get("type") == "text"
         )
         usage = data.get("usage", {})
-        return reply or "(réponse vide)", usage.get("input_tokens", 0), usage.get("output_tokens", 0)
+        if not isinstance(reply, str) or not reply.strip():
+            raise ProviderError("Le modèle n’a renvoyé aucun texte.")
+        return reply, usage.get("input_tokens", 0), usage.get("output_tokens", 0)
 
     choice = (data.get("choices") or [{}])[0]
     reply = (choice.get("message") or {}).get("content", "")
     usage = data.get("usage", {})
-    return reply or "(réponse vide)", usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    if not isinstance(reply, str) or not reply.strip():
+        raise ProviderError("Le modèle n’a renvoyé aucun texte.")
+    return reply, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
 def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0):

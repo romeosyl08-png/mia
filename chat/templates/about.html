@@ -62,8 +62,8 @@
   <main>
     <section class="about-intro" aria-labelledby="aboutTitle">
       <p class="about-kicker">À propos de 2AI</p>
-      <h1 id="aboutTitle">Un espace pour faire avancer tes idées avec l’IA.</h1>
-      <p>2AI, c’est un espace de travail où tu peux choisir un modèle, créer des assistants adaptés à tes besoins et retrouver tes outils au même endroit.</p>
+      <h1 id="aboutTitle">Tes IA, tes conversations et tes outils réunis au même endroit.</h1>
+      <p>Choisis un modèle en ligne ou relie une IA locale, travaille avec tes documents et garde la maîtrise de tes conversations. 2AI réunit le chat, les projets et les automatisations dans un espace pensé pour ton usage.</p>
     </section>
 
     <section aria-labelledby="capabilitiesTitle">
@@ -74,38 +74,38 @@
       <div class="about-capabilities">
         <article class="about-capability">
           <span class="about-number">01</span>
-          <div><h3>Discuter avec plusieurs modèles</h3><p>Choisis parmi les modèles proposés sur ton compte pour rédiger, apprendre, réfléchir ou coder.</p></div>
+          <div><h3>Choisir ton IA</h3><p>Compare les modèles en ligne disponibles ou connecte une IA locale compatible, directement depuis ton navigateur.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">02</span>
-          <div><h3>Créer tes assistants</h3><p>Configure des personas avec leur nom, leur style, leurs consignes et leurs préférences pour les adapter à tes projets.</p></div>
+          <div><h3>Travailler avec tes documents</h3><p>Relie un espace Bara et ajoute des fichiers texte, PDF, Word, Excel ou PowerPoint pour retrouver leur contenu dans tes échanges.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">03</span>
-          <div><h3>Recherche web et réponses approfondies</h3><p>Utilise la recherche web et le mode approfondi pour enrichir certaines réponses avec des sources consultables, lorsque le service est configuré.</p></div>
+          <div><h3>Recherche web et sources consultables</h3><p>Le mode recherche affiche les liens et extraits des pages utilisées pour que tu puisses consulter les sources.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">04</span>
-          <div><h3>Travailler avec tes fichiers</h3><p>Relie un espace Bara pour permettre à l’assistant d’explorer et de modifier les fichiers pris en charge dans le cadre de ton projet.</p></div>
+          <div><h3>Garder la main sur tes conversations</h3><p>Classe, recherche ou archive tes échanges. Les conversations avec une IA locale restent dans le navigateur jusqu’à ce que tu choisisses de les copier dans ton compte.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">05</span>
-          <div><h3>Générer et retrouver des images</h3><p>Crée des images, puis retrouve les créations dans la galerie associée à ton compte.</p></div>
+          <div><h3>Automatiser ton travail</h3><p>Dans Bara, relie des outils comme ta messagerie ou Blender et confirme les actions sensibles avant leur exécution.</p></div>
         </article>
         <article class="about-capability">
           <span class="about-number">06</span>
-          <div><h3>Garder le fil de ton travail</h3><p>Retrouve, recherche, classe ou archive tes conversations. Le mode temporaire garde l’échange en mémoire pendant la session sans l’enregistrer comme conversation.</p></div>
+          <div><h3>Comprendre les tarifs</h3><p>Consulte les modèles et leur coût en jetons avant de choisir. Le taux de référence est de 600 FCFA pour 10&nbsp;000 jetons.</p></div>
         </article>
       </div>
     </section>
 
     <section class="about-note" aria-labelledby="aboutNoteTitle">
       <div>
-        <h2 id="aboutNoteTitle">Des outils selon ta configuration</h2>
-        <p>Les modèles et la génération d’images, de vidéos ou d’audio consomment des jetons. Les échanges temporaires restent facturés selon le modèle utilisé, comme les autres échanges.</p>
+        <h2 id="aboutNoteTitle">Tes données et tes choix</h2>
+        <p>Les messages envoyés à une IA en ligne sont transmis au service qui traite la demande. Une IA locale se connecte depuis ton navigateur ; ses conversations restent dans le stockage local, sauf si tu demandes explicitement leur copie dans ton compte. La génération d’images, de vidéos ou d’audio et les échanges avec les modèles consomment des jetons. Les fonctions et moyens de paiement dépendent de la configuration disponible.</p>
       </div>
       <div class="about-actions">
-        <a class="about-action" href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>
+        <a class="about-action" href="/tarifs/">Voir les tarifs</a>
         <a class="about-action primary" href="{% if is_authenticated %}/{% else %}/auth/?next=/{% endif %}">Ouvrir 2AI</a>
       </div>
     </section>

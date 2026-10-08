@@ -1,7 +1,9 @@
 import os
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -49,6 +51,29 @@ class WorkspaceToolTests(TestCase):
         auto_workspace = Workspace.objects.get(user=self.user, title="Workspace Auto")
         self.assertTrue(auto_workspace.auto_route)
         self.assertEqual(auto_workspace.active_model_id, model.id)
+
+    def test_chat_file_upload_uses_selected_workspace_and_is_owner_scoped(self):
+        self.client.force_login(self.user)
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            response = self.client.post(
+                reverse("bara:upload", args=[self.workspace.id]),
+                {"file": SimpleUploadedFile("notes.txt", b"Important notes", content_type="text/plain")},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["has_text"])
+        uploaded_file = WorkFile.objects.get(workspace=self.workspace, original_name="notes.txt")
+        self.assertEqual(uploaded_file.extracted_text, "Important notes")
+
+        other_user = User.objects.create_user(username="other-workspace-user", password="test-password")
+        self.client.force_login(other_user)
+        response = self.client.post(
+            reverse("bara:upload", args=[self.workspace.id]),
+            {"file": SimpleUploadedFile("private.txt", b"private", content_type="text/plain")},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(WorkFile.objects.filter(workspace=self.workspace, original_name="private.txt").exists())
 
     def test_search_code_finds_matching_lines(self):
         WorkFile.objects.create(

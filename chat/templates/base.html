@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=media-options-2">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=send-label-1">
 <link rel="stylesheet" href="{% static 'app/css/pwa.css' %}?v=pwa-1">
 {% block extra_head %}
 {% endblock %}
@@ -39,7 +39,7 @@
     <!-- APPARENCE GLOBALE -->
       {% if chat_config %}{{ chat_config|json_script:"chat-config" }}{% endif %}
     <script src="{% static 'app/js/appearance.js' %}?v=persona-brand-2"></script>
-    <script src="{% static 'app/js/script.js' %}?v=media-openrouter-1"></script>
+    <script src="{% static 'app/js/script.js' %}?v=send-label-1"></script>
     <script src="{% static 'app/js/pwa.js' %}?v=pwa-1"></script>
 
     {% block extra_js %}{% endblock %}
