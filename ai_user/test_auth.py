@@ -1,10 +1,96 @@
+import hashlib
+import hmac
+import time
+from urllib.parse import parse_qs, urlparse
+
 from bs4 import BeautifulSoup
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from unittest.mock import patch
+
+from ai_user.models import TelegramIdentity
+
+TEST_STATIC_STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 
 class SignupValidationTests(TestCase):
+    @override_settings(
+        SECURE_SSL_REDIRECT=False,
+        STORAGES=TEST_STATIC_STORAGES,
+        GOOGLE_CLIENT_ID='google-client-test',
+        GOOGLE_CLIENT_SECRET='google-secret-test',
+        GOOGLE_REDIRECT_URI='https://mia-vkl1.onrender.com/accounts/google/login/callback/',
+        PUBLIC_BASE_URL='https://mia-vkl1.onrender.com',
+        TELEGRAM_BOT_TOKEN='telegram-token-test',
+        TELEGRAM_BOT_USERNAME='Test2AIBot',
+    )
+    def test_social_login_urls_use_the_configured_public_origin(self):
+        page = self.client.get('/auth/?next=/bara/')
+        self.assertEqual(
+            page.context['telegram_auth_url'],
+            'https://mia-vkl1.onrender.com/telegram/auth/?next=%2Fbara%2F',
+        )
+
+        google = self.client.get('/auth/google/?next=/bara/')
+        query = parse_qs(urlparse(google['Location']).query)
+        self.assertEqual(
+            query['redirect_uri'],
+            ['https://mia-vkl1.onrender.com/accounts/google/login/callback/'],
+        )
+
+    @override_settings(
+        SECURE_SSL_REDIRECT=False,
+        STORAGES=TEST_STATIC_STORAGES,
+        GOOGLE_CLIENT_ID='google-client-test',
+        GOOGLE_CLIENT_SECRET='google-secret-test',
+        GOOGLE_REDIRECT_URI='',
+        PUBLIC_BASE_URL='',
+    )
+    def test_local_google_redirect_matches_the_authorized_localhost_uri(self):
+        response = self.client.get('/auth/google/', HTTP_HOST='localhost:8000')
+
+        query = parse_qs(urlparse(response['Location']).query)
+        self.assertEqual(
+            query['redirect_uri'],
+            ['http://localhost:8000/accounts/google/login/callback/'],
+        )
+
+    @override_settings(
+        SECURE_SSL_REDIRECT=False,
+        STORAGES=TEST_STATIC_STORAGES,
+        TELEGRAM_BOT_TOKEN='telegram-token-test',
+    )
+    def test_valid_telegram_payload_creates_a_session(self):
+        payload = {
+            'id': '123456789',
+            'auth_date': str(int(time.time())),
+            'first_name': 'Compte test',
+            'username': 'telegram_test_user',
+        }
+        data = '\n'.join(f'{key}={payload[key]}' for key in sorted(payload))
+        secret = hashlib.sha256(b'telegram-token-test').digest()
+        payload['hash'] = hmac.new(secret, data.encode(), hashlib.sha256).hexdigest()
+        payload['next'] = '/bara/'
+
+        response = self.client.get('/telegram/auth/', payload)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response['Location'], '/bara/')
+        identity = TelegramIdentity.objects.get(telegram_id=123456789)
+        self.assertEqual(int(self.client.session['_auth_user_id']), identity.user_id)
+
+    @override_settings(SECURE_SSL_REDIRECT=False, STORAGES=TEST_STATIC_STORAGES)
+    def test_auth_page_has_password_visibility_and_whatsapp_unavailable_message(self):
+        response = self.client.get('/auth/')
+
+        self.assertContains(response, 'data-password-target="id_login_password"')
+        self.assertContains(response, 'data-password-target="id_signup_password1"')
+        self.assertContains(response, 'data-password-target="id_signup_password2"')
+        self.assertContains(response, 'La connexion WhatsApp est indisponible pour le moment.', count=4)
+
     def test_login_accepts_email_case_insensitively(self):
         user = User.objects.create_user('email-login', email='qa@example.test', password='P7!cobalt-forest-V4')
         response = self.client.post('/login/', {'username': ' QA@EXAMPLE.TEST ', 'password': 'P7!cobalt-forest-V4'})

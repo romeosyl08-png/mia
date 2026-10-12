@@ -44,22 +44,86 @@ class RechargeTests(TestCase):
 		self.assertContains(response, "PayDunya")
 		self.assertContains(response, "12 345")
 		self.assertContains(response, "FCFA")
-		self.assertContains(response, "600 FCFA =")
+		self.assertContains(response, "600 XOF =")
 		self.assertContains(response, "10 000 jetons")
 		self.assertContains(response, "Voir les tarifs de toutes les IA")
-		self.assertContains(response, 'id="paydunya-amount" name="amount" type="number" min="200"')
-		self.assertContains(response, 'data-payment-currency="XOF"')
-		self.assertContains(response, 'data-payment-currency="USD"')
-		self.assertContains(response, 'id="paydunyaPayment"')
-		self.assertContains(response, 'id="stripePayment"')
-		self.assertContains(response, 'id="paydunya-customer-name"')
-		self.assertContains(response, 'id="paydunya-customer-email"')
-		self.assertContains(response, 'id="paydunya-customer-phone"')
-		self.assertContains(response, 'id="stripe-customer-name"')
-		self.assertContains(response, 'id="stripe-customer-email"')
-		self.assertContains(response, 'id="stripe-customer-phone"')
-		self.assertNotContains(response, "<h3>PayDunya</h3>")
-		self.assertNotContains(response, "<h3>Stripe</h3>")
+		self.assertContains(response, 'id="payment-amount" name="amount" type="number" min="200"')
+		self.assertContains(response, 'id="paymentForm"')
+		self.assertContains(response, 'action="/recharge/paydunya/"')
+		self.assertNotContains(response, 'action="/recharge/create-checkout/"')
+
+	def test_currency_is_detected_from_country_header_and_saved_in_session(self):
+		self.client.force_login(self.user)
+		with override_settings(STRIPE_SECRET_KEY="sk_test_currency"):
+			response = self.client.get("/recharge/", HTTP_CF_IPCOUNTRY="FR")
+
+		self.assertEqual(response.context["currency"].code, "EUR")
+		self.assertEqual(self.client.session["display_currency"], "EUR")
+		self.assertContains(response, "0,92 EUR = 10 000 jetons")
+		self.assertContains(response, 'action="/recharge/create-checkout/"')
+		self.assertNotContains(response, 'action="/recharge/paydunya/"')
+
+	def test_currency_is_detected_from_public_ip_when_country_header_is_absent(self):
+		self.client.force_login(self.user)
+		lookup_response = MagicMock(text="US")
+		lookup_response.raise_for_status.return_value = None
+		with (
+			override_settings(
+				STRIPE_SECRET_KEY="sk_test_currency",
+				IP_CURRENCY_LOOKUP_ENABLED=True,
+			),
+			patch("ai_user.currency.requests.get", return_value=lookup_response) as get,
+		):
+			response = self.client.get("/recharge/", REMOTE_ADDR="8.8.8.8")
+
+		self.assertEqual(response.context["currency"].code, "USD")
+		self.assertEqual(get.call_args.args[0], "https://ipapi.co/8.8.8.8/country/")
+
+	def test_user_can_change_currency_and_choice_overrides_location(self):
+		self.client.force_login(self.user)
+		response = self.client.post("/recharge/currency/", {
+			"currency": "EUR",
+			"next": "/recharge/",
+		})
+		self.assertRedirects(response, "/recharge/")
+
+		with override_settings(STRIPE_SECRET_KEY="sk_test_currency"):
+			page = self.client.get("/recharge/", HTTP_CF_IPCOUNTRY="CI")
+		self.assertEqual(page.context["currency"].code, "EUR")
+		self.assertContains(page, 'name="currency" value="EUR"')
+		self.assertNotContains(page, 'name="currency" value="XOF"')
+
+	def test_stripe_checkout_uses_selected_euro_currency_and_conversion(self):
+		self.client.force_login(self.user)
+		session = self.client.session
+		session["display_currency"] = "EUR"
+		session.save()
+		checkout = MagicMock(url="https://checkout.stripe.com/test-session")
+		with (
+			override_settings(STRIPE_SECRET_KEY="sk_test_currency", EUR_PER_USD=Decimal("0.92")),
+			patch("stripe.checkout.Session.create", return_value=checkout) as create,
+		):
+			response = self.client.post("/recharge/create-checkout/", {
+				"amount": "4.60",
+				"currency": "EUR",
+				**PAYMENT_CUSTOMER,
+			})
+
+		self.assertRedirects(response, checkout.url, fetch_redirect_response=False)
+		price_data = create.call_args.kwargs["line_items"][0]["price_data"]
+		self.assertEqual(price_data["currency"], "eur")
+		self.assertEqual(price_data["unit_amount"], 460)
+		self.assertEqual(create.call_args.kwargs["metadata"]["credits"], "50000")
+
+	def test_tariffs_use_the_currency_saved_by_the_user(self):
+		session = self.client.session
+		session["display_currency"] = "EUR"
+		session.save()
+
+		response = self.client.get("/tarifs/", HTTP_CF_IPCOUNTRY="CI")
+
+		self.assertContains(response, "0,92 EUR = 10 000 jetons")
+		self.assertNotContains(response, "600 FCFA")
 
 	def test_tariffs_page_lists_active_models_with_their_token_prices(self):
 		provider = APIProvider.objects.create(name="OpenRouter")

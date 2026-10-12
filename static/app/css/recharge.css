@@ -203,42 +203,59 @@ body {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.currency-toggle {
-  display: inline-flex;
-  width: min(100%, 320px);
-  min-height: 76px;
+.currency-selector {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 280px) auto;
+  align-items: center;
+  gap: 8px 10px;
+  width: fit-content;
+  max-width: 100%;
   margin-bottom: 16px;
-  padding: 6px;
-  border: 0;
-  border-radius: 999px;
-  background: linear-gradient(105deg, var(--accent), var(--accent-hover));
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 24%, transparent);
-}
-
-.currency-toggle-option {
-  flex: 1;
-  min-width: 0;
-  min-height: 64px;
-  padding: 12px 18px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #fff;
-  font: 700 17px var(--font-body);
-  letter-spacing: 0;
-  cursor: pointer;
-  transition: background .18s, color .18s, box-shadow .18s, transform .18s;
-}
-
-.currency-toggle-option.active {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--panel);
-  color: var(--accent);
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: 0 6px 18px var(--shadow);
 }
 
-.currency-toggle-option:focus-visible {
-  outline: 3px solid var(--panel);
-  outline-offset: -5px;
+.currency-selector label {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.currency-selector select,
+.currency-selector button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 650 12px var(--font-body);
+}
+
+.currency-selector select {
+  min-width: 0;
+  padding: 7px 32px 7px 10px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.currency-selector button {
+  padding: 7px 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+.currency-selector span {
+  grid-column: 2 / -1;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+.currency-selector select:focus-visible,
+.currency-selector button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  outline-offset: 2px;
 }
 
 .payment-card {
@@ -636,6 +653,16 @@ body {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .currency-selector {
+    grid-template-columns: 1fr auto;
+    width: 100%;
+  }
+
+  .currency-selector label,
+  .currency-selector span {
+    grid-column: 1 / -1;
   }
 
   .payment-security {

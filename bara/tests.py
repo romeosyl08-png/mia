@@ -52,6 +52,26 @@ class WorkspaceToolTests(TestCase):
         self.assertTrue(auto_workspace.auto_route)
         self.assertEqual(auto_workspace.active_model_id, model.id)
 
+    @override_settings(
+        SECURE_SSL_REDIRECT=False,
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_workspace_detail_renders_editor_workbench_shell(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("bara:detail", args=[self.workspace.id]), follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="bara-wrap bara-workbench"')
+        self.assertContains(response, 'class="bara-activity"')
+        self.assertContains(response, 'id="toggle-workbench-sidebar"')
+        self.assertContains(response, 'class="editor-tabs"')
+        self.assertContains(response, 'class="bara-statusbar"')
+        self.assertContains(response, 'id="workspace-files-panel"')
+
     def test_chat_file_upload_uses_selected_workspace_and_is_owner_scoped(self):
         self.client.force_login(self.user)
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):

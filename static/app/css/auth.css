@@ -27,6 +27,10 @@
 .field label { display: block; margin-bottom: 7px; color: var(--ink); font-size: 13px; font-weight: 500; }
 .field input { width: 100%; min-height: 46px; border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; background: var(--paper); color: var(--ink); font-size: 16px; }
 .field input:focus { border-color: var(--accent); }
+.password-field { position: relative; }
+.password-field input { padding-right: 82px; }
+.password-toggle { position: absolute; top: 50%; right: 7px; min-width: 66px; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 7px; transform: translateY(-50%); background: var(--panel); color: var(--ink-soft); font-size: 11px; font-weight: 600; cursor: pointer; }
+.password-toggle:hover { color: var(--ink); }
 .field .help { margin-top: 7px; color: var(--ink-soft); font-size: 12px; }
 .submit-btn { width: 100%; min-height: 46px; margin-top: 2px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 600; cursor: pointer; }
 .submit-btn:hover { background: var(--accent-hover); }
@@ -37,11 +41,13 @@
 .social-btn .ic { width: 20px; height: 20px; flex: none; }
 #telegram-login-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
 #telegram-login-wrap:empty { display: none; }
+.telegram-loading, .telegram-fallback, .social-unavailable { width: 100%; margin: 0 0 12px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink-soft); font-size: 12px; line-height: 1.4; text-align: center; }
+.telegram-fallback { margin-top: 8px; }
 .wa-panel { display: none; padding: 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .wa-panel.open { display: block; }
 .wa-panel .field { margin-bottom: 12px; }
 .send-otp-btn { width: 100%; min-height: 42px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-size: 13px; font-weight: 600; cursor: pointer; }
-.otp-status { margin: 12px 0 0; color: var(--ink-soft); font-size: 12px; }
+.otp-status { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .otp-status:empty { display: none; }
 .switch-line { margin: 24px 0 0; text-align: center; color: var(--ink-soft); font-size: 13px; }
 .switch-line a { font-weight: 600; text-decoration: none; }

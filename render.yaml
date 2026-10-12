@@ -34,10 +34,24 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      - key: DEFAULT_CURRENCY
+        value: XOF
+      - key: EUR_PER_USD
+        value: "0.92"
+      - key: IP_CURRENCY_LOOKUP_ENABLED
+        value: "True"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_BOT_USERNAME
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: "https://mia-vkl1.onrender.com"
+      - key: GOOGLE_REDIRECT_URI
+        value: "https://mia-vkl1.onrender.com/accounts/google/login/callback/"
       - key: REDIS_URL
         sync: false
       - key: GROQ_API_KEY

@@ -38,18 +38,59 @@
     });
   });
 
+  const passwordToggles = document.querySelectorAll ? document.querySelectorAll('.password-toggle') : [];
+  passwordToggles.forEach(button => {
+    const input = document.getElementById(button.dataset.passwordTarget);
+    if (!input) return;
+    button.addEventListener('click', () => {
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      button.textContent = showing ? 'Afficher' : 'Masquer';
+      button.setAttribute('aria-label', showing ? 'Afficher le mot de passe' : 'Masquer le mot de passe');
+      button.setAttribute('aria-pressed', String(!showing));
+      input.focus({preventScroll: true});
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    });
+  });
+
+  const telegramWrappers = document.querySelectorAll ? document.querySelectorAll('[id^="telegram-login-wrap"]') : [];
+  telegramWrappers.forEach(wrapper => {
+    const fallback = wrapper.querySelector('.telegram-fallback');
+    const loading = wrapper.querySelector('.telegram-loading');
+    if (!fallback) return;
+    const updateTelegramState = () => {
+      const loaded = Boolean(wrapper.querySelector('iframe'));
+      if (loading) loading.hidden = loaded;
+      if (loaded) fallback.hidden = true;
+      return loaded;
+    };
+    const observer = new MutationObserver(() => {
+      if (updateTelegramState()) observer.disconnect();
+    });
+    observer.observe(wrapper, {childList: true, subtree: true});
+    window.setTimeout(() => {
+      observer.disconnect();
+      if (!updateTelegramState()) {
+        if (loading) loading.hidden = true;
+        fallback.hidden = false;
+      }
+    }, 5000);
+  });
+
   ['', 'Signup'].forEach(suffix => {
     const toggle = document.getElementById('waToggle' + suffix);
     const panel = document.getElementById('waPanel' + suffix);
     const send = document.getElementById('waSendOtp' + suffix);
-    if (!toggle || !panel || !send) return;
+    if (!toggle || !panel) return;
     toggle.setAttribute('aria-controls', panel.id);
     toggle.setAttribute('aria-expanded', 'false');
     toggle.addEventListener('click', () => {
       const open = panel.classList.toggle('open');
       toggle.setAttribute('aria-expanded', String(open));
-      if (open) panel.querySelector('input').focus();
+      if (open) panel.querySelector('input')?.focus();
     });
+    if (!send) return;
     send.addEventListener('click', async () => {
       const input = panel.querySelector('input');
       const status = panel.querySelector('.otp-status');

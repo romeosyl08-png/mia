@@ -19,11 +19,7 @@
     <h1>Combien coûte chaque IA ?</h1>
     <p>Les jetons sont calculés selon les tokens réellement utilisés en entrée et en sortie.</p>
     <div class="tariffs-equivalence">
-      {% if conversion_rate_display %}
-      <strong>{{ conversion_rate_display }} FCFA = 1 USD = {{ credits_per_dollar_display }} jetons</strong>
-      {% else %}
-      <strong>1 USD = {{ credits_per_dollar_display }} jetons</strong>
-      {% endif %}
+      <strong>{{ reference_amount_display }} {{ currency.code }} = {{ credits_per_dollar_display }} jetons</strong>
       <span>{{ model_count }} modèle{{ model_count|pluralize }} cloud disponible{{ model_count|pluralize }}</span>
     </div>
   </header>

@@ -1401,9 +1401,12 @@ class PersonaMemorySuggestionView(View):
 
 
 def about_page(request):
-	return render(request, 'about.html', {
+	from ai_user.currency import currency_context
+	context = {
 		'is_authenticated': request.user.is_authenticated,
-	})
+	}
+	context.update(currency_context(request))
+	return render(request, 'about.html', context)
 
 
 def legal_page(request):

@@ -10,6 +10,36 @@
   const messageUrl = form.action;
   let currentController = null;
 
+  // ---------- Navigation de l'espace de travail ----------
+  const sidebarToggle = document.getElementById('toggle-workbench-sidebar');
+  const activityButtons = Array.from(document.querySelectorAll('[data-workbench-target]'));
+
+  function setSidebarCollapsed(collapsed){
+    workspaceRoot.classList.toggle('sidebar-collapsed', collapsed);
+    sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+    sidebarToggle.title = collapsed ? "Afficher l'explorateur" : "Masquer l'explorateur";
+    try{ localStorage.setItem('bara.sidebar.collapsed', collapsed ? '1' : '0'); }catch(error){}
+  }
+
+  let sidebarWasCollapsed = false;
+  try{ sidebarWasCollapsed = localStorage.getItem('bara.sidebar.collapsed') === '1'; }catch(error){}
+  setSidebarCollapsed(sidebarWasCollapsed);
+
+  sidebarToggle.addEventListener('click', () => {
+    setSidebarCollapsed(!workspaceRoot.classList.contains('sidebar-collapsed'));
+  });
+
+  activityButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      setSidebarCollapsed(false);
+      activityButtons.forEach(item => item.classList.toggle('active', item === button));
+      const panel = document.getElementById(button.dataset.workbenchTarget);
+      if(!panel) return;
+      if(panel.tagName === 'DETAILS') panel.open = true;
+      panel.scrollIntoView({ block: 'start', behavior: 'auto' });
+    });
+  });
+
   // ---------- Markdown + coloration + bouton copier ----------
   function enhance(container){
     container.querySelectorAll('pre').forEach(pre => {
@@ -258,6 +288,8 @@
             if(event.title){
               const titleEl = document.querySelector('.conv-item.active .conv-title');
               if(titleEl) titleEl.textContent = event.title;
+              const tabTitle = document.querySelector('.editor-tab.active .tab-title');
+              if(tabTitle) tabTitle.textContent = event.title;
             }
             if(event.billing_warning) appendMessage('error', event.billing_warning);
           }

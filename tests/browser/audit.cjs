@@ -252,12 +252,14 @@ async function login(p, identifier=credentials.username) {
       await visit(url);if(url==='/')await readyChat();return layout();
     });
     await check(`Recharge ${width} — devises, montants et validations sans paiement`,async()=>{
-      await visit('/recharge/');await page.locator('[data-payment-currency=USD]').click();assert.ok(await page.locator('#stripePayment').isVisible());
-      await page.locator('[data-set-amount="stripe-amount"][data-amount="10"]').click();
-      assert.equal(await page.locator('#stripe-amount').inputValue(),'10');
-      const estimate=await page.locator('#stripeCreditsEstimate').innerText();assert.ok(estimate.includes('jetons'));
-      await page.locator('#stripe-amount').fill('1');assert.equal(await page.locator('#stripe-amount').evaluate(el=>el.checkValidity()),false);
-      await page.locator('[data-payment-currency=XOF]').click();assert.ok(await page.locator('#paydunyaPayment').isVisible());
+      await visit('/recharge/');await page.locator('#currencySelect').selectOption('USD');await page.waitForLoadState('domcontentloaded');
+      assert.equal(await page.locator('input[name=currency][type=hidden]').inputValue(),'USD');
+      await page.locator('[data-set-amount="payment-amount"][data-amount="10.00"]').click();
+      assert.equal(await page.locator('#payment-amount').inputValue(),'10.00');
+      const estimate=await page.locator('#creditsEstimate').innerText();assert.ok(estimate.includes('jetons'));
+      await page.locator('#payment-amount').fill('1');assert.equal(await page.locator('#payment-amount').evaluate(el=>el.checkValidity()),false);
+      await page.locator('#currencySelect').selectOption('XOF');await page.waitForLoadState('domcontentloaded');
+      assert.equal(await page.locator('input[name=currency][type=hidden]').inputValue(),'XOF');
       await screenshot(`recharge-${width}`);return {checkoutRequests:report.blocked.length};
     });
     await check(`Chat ${width} — menus et conversation temporaire`,async()=>{

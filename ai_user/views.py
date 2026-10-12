@@ -3,8 +3,8 @@ import hmac
 import json
 import re
 import time
-from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
-from urllib.parse import urlparse
+from decimal import Decimal, ROUND_DOWN
+from urllib.parse import urlencode, urlparse
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login
@@ -27,17 +27,19 @@ from chat.services import (
     credits_per_million_tokens,
     is_local_provider,
 )
+from .currency import (
+	SUPPORTED_CURRENCIES,
+	amount_for_usd,
+	credits_for_amount,
+	currencies,
+	currency_context,
+	format_amount,
+	selected_currency,
+	set_selected_currency,
+)
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 from .forms import SignupForm
 import requests
-
-
-RECHARGE_PLANS = {
-	"5": {"amount_cents": 500, "credits": 50_000},
-	"10": {"amount_cents": 1_000, "credits": 110_000},
-	"25": {"amount_cents": 2_500, "credits": 300_000},
-}
-MIN_RECHARGE_CENTS = 500
 
 
 def _payment_customer_details(request):
@@ -107,11 +109,40 @@ def _next_url(request):
 	return reverse("chat:chat-home")
 
 
-def auth_page(request):
-	return render(request, "losign.html", {
+def _public_absolute_uri(request, path):
+	if settings.PUBLIC_BASE_URL:
+		return f"{settings.PUBLIC_BASE_URL}{path}"
+	return request.build_absolute_uri(path)
+
+
+def _google_redirect_uri(request):
+	return settings.GOOGLE_REDIRECT_URI or _public_absolute_uri(
+		request, reverse("google-callback")
+	)
+
+
+def _auth_context(request, **extra):
+	next_url = _next_url(request)
+	telegram_configured = bool(
+		settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_BOT_USERNAME
+	)
+	context = {
 		"telegram_bot_username": settings.TELEGRAM_BOT_USERNAME,
-		"next_url": _next_url(request),
-	})
+		"telegram_configured": telegram_configured,
+		"telegram_auth_url": (
+			f"{_public_absolute_uri(request, reverse('telegram_auth'))}?{urlencode({'next': next_url})}"
+			if telegram_configured else ""
+		),
+		"google_configured": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
+		"next_url": next_url,
+		"whatsapp_available": False,
+	}
+	context.update(extra)
+	return context
+
+
+def auth_page(request):
+	return render(request, "losign.html", _auth_context(request))
 
 
 def login_view(request):
@@ -130,11 +161,10 @@ def login_view(request):
 		if user is not None:
 			login(request, user)
 			return redirect(_next_url(request))
-	return render(request, "losign.html", {
-		"form": type("LoginForm", (), {"errors": request.method == "POST"})(),
-		"telegram_bot_username": settings.TELEGRAM_BOT_USERNAME,
-		"next_url": _next_url(request),
-	})
+	return render(request, "losign.html", _auth_context(
+		request,
+		form=type("LoginForm", (), {"errors": request.method == "POST"})(),
+	))
 
 
 def signup_view(request):
@@ -144,18 +174,14 @@ def signup_view(request):
 			user = form.save()
 		login(request, user)
 		return redirect(_next_url(request))
-	return render(request, "losign.html", {
-		"signup_form": form,
-		"telegram_bot_username": settings.TELEGRAM_BOT_USERNAME,
-		"next_url": _next_url(request),
-	})
+	return render(request, "losign.html", _auth_context(request, signup_form=form))
 
 
 def whatsapp_send_otp(request):
 	if request.method != "POST":
 		return JsonResponse({"error": "Methode non autorisee."}, status=405)
 	return JsonResponse(
-		{"error": "La verification WhatsApp n'est pas encore configuree."},
+		{"error": "La connexion WhatsApp est indisponible pour le moment."},
 		status=501,
 	)
 
@@ -164,64 +190,59 @@ def whatsapp_send_otp(request):
 def recharge_page(request):
 	account = getattr(request.user, "credit_account", None)
 	credits = account.balance if account is not None else 0
-	paydunya_rate = settings.PAYDUNYA_XOF_PER_USD
-	paydunya_rate_configured = paydunya_rate.is_finite() and paydunya_rate > 0
-	paydunya_available = _paydunya_is_configured() and paydunya_rate_configured
-	if not _paydunya_is_configured():
-		paydunya_unavailable_reason = "Le paiement PayDunya n’est pas configuré pour le moment."
-	elif not paydunya_rate_configured:
-		paydunya_unavailable_reason = "Le taux FCFA/USD PayDunya doit être configuré."
+	currency_data = currency_context(request)
+	currency = currency_data["currency"]
+	if currency.code == "XOF":
+		minimum_amount = Decimal(max(settings.PAYDUNYA_MINIMUM_XOF, 200))
+		preset_amounts = [minimum_amount, amount_for_usd(currency, 5), amount_for_usd(currency, 10)]
+		payment_available = _paydunya_is_configured()
+		unavailable_reason = "Le paiement PayDunya n’est pas configuré pour le moment."
 	else:
-		paydunya_unavailable_reason = ""
-	paydunya_minimum_xof = max(settings.PAYDUNYA_MINIMUM_XOF, 200)
-	paydunya_presets = (
-		[{
-			"amount": paydunya_minimum_xof,
-			"label": f"{paydunya_minimum_xof:,}".replace(",", " "),
-		}] + [
-			{
-				"amount": int((paydunya_rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)),
-				"label": f"{int((paydunya_rate * usd_amount).to_integral_value(rounding=ROUND_CEILING)):,}".replace(",", " "),
-			}
-			for usd_amount in (5, 10)
-		]
-		if paydunya_available else []
-	)
-	default_paydunya_amount = paydunya_presets[0]["amount"] if paydunya_presets else ""
-	default_paydunya_credits = (
-		int((Decimal(default_paydunya_amount) * CREDITS_PER_DOLLAR / paydunya_rate).to_integral_value(rounding=ROUND_DOWN))
-		if paydunya_available else 0
-	)
-	return render(request, "recharge.html", {
-		"plans": RECHARGE_PLANS,
+		minimum_amount = amount_for_usd(currency, 5)
+		preset_amounts = [amount_for_usd(currency, value) for value in (5, 10, 25)]
+		payment_available = bool(settings.STRIPE_SECRET_KEY)
+		unavailable_reason = "Le paiement par carte n’est pas configuré pour le moment."
+	presets = [
+		{
+			"amount": format(amount, f".{currency.decimals}f"),
+			"label": format_amount(amount, currency.decimals),
+		}
+		for amount in dict.fromkeys(preset_amounts)
+	]
+	default_credits = credits_for_amount(currency, minimum_amount, CREDITS_PER_DOLLAR)
+	context = {
 		"credits": credits,
 		"credits_display": f"{credits:,}".replace(",", " "),
 		"credits_per_dollar": CREDITS_PER_DOLLAR,
 		"credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
-		"conversion_rate_display": (
-			format(paydunya_rate.normalize(), "f")
-			if paydunya_rate_configured else ""
-		),
-		"stripe_available": bool(settings.STRIPE_SECRET_KEY),
-		"stripe_currency": settings.STRIPE_CURRENCY.upper(),
-		"stripe_default_credits": MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100,
-		"stripe_default_credits_display": f"{MIN_RECHARGE_CENTS * CREDITS_PER_DOLLAR // 100:,}".replace(",", " "),
-		"paydunya_available": paydunya_available,
-		"paydunya_unavailable_reason": paydunya_unavailable_reason,
-		"paydunya_rate": paydunya_rate if paydunya_rate_configured else "",
-		"paydunya_minimum_xof": paydunya_minimum_xof,
-		"paydunya_presets": paydunya_presets,
-		"default_paydunya_amount": default_paydunya_amount,
-		"default_paydunya_credits": default_paydunya_credits,
-		"default_paydunya_credits_display": f"{default_paydunya_credits:,}".replace(",", " "),
-	})
+		"currency_options": [currencies()[code] for code in SUPPORTED_CURRENCIES],
+		"minimum_amount": format(minimum_amount, f".{currency.decimals}f"),
+		"minimum_amount_display": format_amount(minimum_amount, currency.decimals),
+		"presets": presets,
+		"default_credits_display": f"{default_credits:,}".replace(",", " "),
+		"payment_available": payment_available,
+		"payment_unavailable_reason": unavailable_reason,
+	}
+	context.update(currency_data)
+	return render(request, "recharge.html", context)
+
+
+@login_required(login_url="/auth/?next=/recharge/")
+def set_currency(request):
+	if request.method != "POST":
+		return JsonResponse({"error": "Methode non autorisee."}, status=405)
+	if not set_selected_currency(request, request.POST.get("currency")):
+		return JsonResponse({"error": "Monnaie non prise en charge."}, status=400)
+	next_url = request.POST.get("next", reverse("recharge-page"))
+	if not url_has_allowed_host_and_scheme(
+		next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+	):
+		next_url = reverse("recharge-page")
+	return redirect(next_url)
 
 
 def tariffs_page(request):
-    rate = settings.PAYDUNYA_XOF_PER_USD
-    conversion_rate_display = (
-        format(rate.normalize(), "f") if rate.is_finite() and rate > 0 else ""
-    )
+    display_currency = currency_context(request)
     models = (
         AIModel.objects.filter(is_active=True, provider__is_active=True)
         .select_related("provider")
@@ -237,14 +258,15 @@ def tariffs_page(request):
         for model in models
         if not is_local_provider(model.provider)
     ]
-    return render(request, "tariffs.html", {
+    context = {
         "tariffs": tariffs,
         "model_count": len(tariffs),
         "credits_per_dollar": CREDITS_PER_DOLLAR,
         "credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
         "margin_multiplier": MARGIN_MULTIPLIER,
-        "conversion_rate_display": conversion_rate_display,
-    })
+    }
+    context.update(display_currency)
+    return render(request, "tariffs.html", context)
 
 
 @login_required(login_url="/auth/?next=/recharge/")
@@ -253,20 +275,29 @@ def create_recharge_checkout(request):
 		return JsonResponse({"error": "Methode non autorisee."}, status=405)
 	if not settings.STRIPE_SECRET_KEY:
 		return JsonResponse({"error": "Stripe n'est pas configure."}, status=503)
+	currency = selected_currency(request)
+	if currency.provider != "stripe" or request.POST.get("currency", currency.code) != currency.code:
+		return JsonResponse({"error": "La monnaie de paiement a changé. Recharge la page."}, status=400)
 	customer, customer_error = _payment_customer_details(request)
 	if customer_error:
 		return JsonResponse({"error": customer_error}, status=400)
 
 	try:
 		amount = Decimal(request.POST.get("amount", ""))
-		amount_cents = int(amount * 100)
+		amount_cents = int((amount * 100).to_integral_value(rounding=ROUND_DOWN))
 	except (ArithmeticError, TypeError, ValueError):
 		return JsonResponse({"error": "Montant invalide."}, status=400)
-	if amount_cents < MIN_RECHARGE_CENTS:
-		return JsonResponse({"error": "Le montant Stripe minimum est de 5 dollars."}, status=400)
+	normalized_amount = Decimal(amount_cents) / 100
+	if amount != normalized_amount:
+		return JsonResponse({"error": "Le montant doit avoir au plus deux décimales."}, status=400)
+	minimum_amount = amount_for_usd(currency, 5)
+	if not amount.is_finite() or amount < minimum_amount:
+		return JsonResponse({
+			"error": f"Le montant Stripe minimum est de {format_amount(minimum_amount, currency.decimals)} {currency.code}."
+		}, status=400)
 	plan = {
 		"amount_cents": amount_cents,
-		"credits": (amount_cents * CREDITS_PER_DOLLAR) // 100,
+		"credits": credits_for_amount(currency, normalized_amount, CREDITS_PER_DOLLAR),
 	}
 
 	try:
@@ -278,7 +309,7 @@ def create_recharge_checkout(request):
 			line_items=[{
 				"quantity": 1,
 				"price_data": {
-					"currency": settings.STRIPE_CURRENCY,
+					"currency": currency.code.lower(),
 					"unit_amount": plan["amount_cents"],
 					"product_data": {"name": f"Recharge de {plan['credits']:,} jetons"},
 				},
@@ -291,6 +322,7 @@ def create_recharge_checkout(request):
 				"credits": str(plan["credits"]),
 				"customer_name": customer["name"],
 				"customer_phone": customer["phone"],
+				"currency": currency.code,
 			},
 		)
 	except ImportError:
@@ -304,6 +336,10 @@ def create_paydunya_checkout(request):
         return JsonResponse({"error": "Methode non autorisee."}, status=405)
     if not _paydunya_is_configured():
         return JsonResponse({"error": "PayDunya n'est pas configure."}, status=503)
+
+    currency = selected_currency(request)
+    if currency.code != "XOF" or request.POST.get("currency", "XOF") != "XOF":
+        return JsonResponse({"error": "La monnaie de paiement a changé. Recharge la page."}, status=400)
 
     rate = settings.PAYDUNYA_XOF_PER_USD
     if not rate.is_finite() or rate <= 0:
@@ -565,7 +601,7 @@ def telegram_auth(request):
 	login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 	return redirect(next_url if next_url and url_has_allowed_host_and_scheme(
 		next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
-	) else reverse("chat-home"))
+		) else reverse("chat:chat-home"))
 
 import secrets
 import requests
@@ -576,6 +612,8 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
 def google_login(request):
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        return HttpResponseServerError("La connexion Google n'est pas configurée.")
     state = secrets.token_urlsafe(24)
     request.session["google_oauth_state"] = state
     next_url = request.GET.get("next", "/")
@@ -583,7 +621,7 @@ def google_login(request):
 
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": request.build_absolute_uri(reverse("google-callback")),
+        "redirect_uri": _google_redirect_uri(request),
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -611,7 +649,7 @@ def google_callback(request):
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": request.build_absolute_uri(reverse("google-callback")),
+            "redirect_uri": _google_redirect_uri(request),
         }, timeout=20)
         token_data = token_response.json()
         access_token = token_data["access_token"]

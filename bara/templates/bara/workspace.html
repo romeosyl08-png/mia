@@ -10,16 +10,20 @@
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
 {% endif %}
 {% if workspace %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">{% endif %}
-<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=frontend-1">
+<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=vscode-1">
 {% endblock %}
 
 {% block body %}
-<div class="bara-wrap"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
+<div class="bara-wrap{% if workspace %} bara-workbench{% else %} bara-home{% endif %}"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
 
 {% if not workspace %}
 
-  <div class="bara-header">
-    <h1>🧩 Bara — Espaces de travail</h1>
+  <div class="bara-header bara-home-header">
+    <div>
+      <span class="bara-kicker">2AI / BARA</span>
+      <h1>Espaces de travail</h1>
+      <p>Retrouve tes projets, tes fichiers et tes assistants au même endroit.</p>
+    </div>
     {% include "includes/pwa_controls.html" with pwa_inline=True %}
   </div>
 
@@ -50,7 +54,7 @@
 
 {% else %}
 
-  <div class="bara-header">
+  <div class="bara-header bara-titlebar">
     <div style="min-width:0;">
       <a href="{% url 'bara:home' %}" class="bara-back">‹ Tous les espaces</a>
       <form method="post" action="{% url 'bara:rename-workspace' workspace.id %}" style="margin-top:6px;">
@@ -94,9 +98,31 @@
   {% endif %}
 
   <div class="bara-main">
-    <aside class="bara-sidebar">
+    <nav class="bara-activity" aria-label="Navigation de l'espace de travail">
+      <button type="button" id="toggle-workbench-sidebar" class="activity-button" title="Afficher ou masquer l'explorateur" aria-label="Afficher ou masquer l'explorateur" aria-expanded="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      </button>
+      <button type="button" class="activity-button active" data-workbench-target="workspace-conversations-panel" title="Conversations" aria-label="Afficher les conversations">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>
+      </button>
+      <button type="button" class="activity-button" data-workbench-target="workspace-files-panel" title="Explorateur de fichiers" aria-label="Afficher les fichiers">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
+      </button>
+      <button type="button" class="activity-button" data-workbench-target="workspace-tools-panel" title="Outils" aria-label="Afficher les outils">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.7 6.3 3-3a5 5 0 0 1-6.4 6.4l-7 7a2.1 2.1 0 0 0 3 3l7-7a5 5 0 0 0 6.4-6.4l-3 3-3-3Z"/></svg>
+      </button>
+      <button type="button" class="activity-button" data-workbench-target="workspace-automations-panel" title="Automatisations" aria-label="Afficher les automatisations">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.5"/></svg>
+      </button>
+      <span class="activity-spacer"></span>
+      <a class="activity-button" href="{% if workspace.user_id == request.user.id %}{% url 'bara:connections' workspace.id %}{% else %}{% url 'chat:project-memory' workspace.id %}{% endif %}" title="Réglages et connexions" aria-label="Réglages et connexions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+      </a>
+    </nav>
+    <aside class="bara-sidebar" aria-label="Explorateur Bara">
+      <div class="explorer-title"><span>EXPLORATEUR</span><strong>{{ workspace.title }}</strong></div>
 
-      <div class="side-block">
+      <div class="side-block" id="workspace-conversations-panel">
         <div class="side-head">
           <h2>Conversations</h2>
           <form method="post" action="{% url 'bara:new-conversation' workspace.id %}">
@@ -117,7 +143,7 @@
         </ul>
       </div>
 
-      <details class="side-details side-block" {% if workspace.instructions %}open{% endif %}>
+      <details class="side-details side-block" id="workspace-instructions-panel" {% if workspace.instructions %}open{% endif %}>
         <summary>Instructions pour l'agent</summary>
         <textarea id="instructions-input" rows="5" placeholder="Ex : réponds toujours en français, style concis, code commenté…">{{ workspace.instructions }}</textarea>
         <button type="button" id="instructions-save">Enregistrer</button><span id="instructions-status"></span>
@@ -265,7 +291,7 @@
         <div class="visualization-help">Prévisualise une URL dans un cadre isolé, ou demande un graphique à partir d'un fichier ou de données dans le chat.</div>
       </details>
 
-      <div class="side-block">
+      <div class="side-block" id="workspace-files-panel">
         <div class="side-head"><h2>Fichiers</h2></div>
         <div class="storage-meter" title="Stockage utilisé (fichiers + historique)">
   <div class="bar"><div style="width:{{ storage.percent }}%;{% if storage.percent >= 90 %}background:var(--danger);{% endif %}"></div></div>
@@ -309,7 +335,18 @@
       </div>
     </aside>
 
-    <section class="bara-chat">
+    <section class="bara-chat" aria-label="Éditeur de conversation">
+      <div class="editor-tabs" role="tablist" aria-label="Onglets ouverts">
+        <div class="editor-tab active" role="tab" aria-selected="true">
+          <span class="tab-icon" aria-hidden="true">◇</span>
+          <span class="tab-title">{{ conversation.title }}</span>
+          <span class="tab-dirty" title="Conversation active" aria-hidden="true">●</span>
+        </div>
+      </div>
+      <div class="editor-breadcrumb" aria-label="Emplacement actuel">
+        <span>Bara</span><span aria-hidden="true">›</span><span>{{ workspace.title }}</span><span aria-hidden="true">›</span><strong>{{ conversation.title }}</strong>
+      </div>
+      <div class="editor-content">
       <div id="preview-panel">
         <div class="bar">
           <span id="preview-title">Aperçu HTML</span>
@@ -350,8 +387,18 @@
         <button type="submit" id="submit-btn" title="Envoyer">➜</button>
         <button type="button" id="stop-btn" title="Arrêter" style="display:none;">■</button>
       </form>
+      </div>
     </section>
   </div>
+
+  <footer class="bara-statusbar" aria-label="État de Bara">
+    <span class="status-ready"><span aria-hidden="true">◉</span> Bara prêt</span>
+    <span class="status-project">{{ workspace.title }}</span>
+    <span class="status-spacer"></span>
+    <span>{% if workspace.auto_route %}Auto 2AI{% else %}{{ workspace.active_model.name|default:"IA non sélectionnée" }}{% endif %}</span>
+    <span>Markdown</span>
+    <span>{{ credits|floatformat:0 }} jetons</span>
+  </footer>
 
 
 
@@ -364,6 +411,6 @@
 {% include "includes/markdown_scripts.html" %}
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script defer src="{% static 'app/js/workspace.js' %}?v=frontend-1"></script>
+<script defer src="{% static 'app/js/workspace.js' %}?v=vscode-1"></script>
 {% endif %}
 {% endblock %}

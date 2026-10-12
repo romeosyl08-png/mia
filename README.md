@@ -27,7 +27,18 @@ Le bouton ninja ouvre une **conversation temporaire**, sans mémoire enregistré
 
 ## Recharges et paiements
 
-Stripe accepte les paiements par carte en USD. La page publique `/tarifs/` liste les modèles cloud actifs et les crédits par million de tokens en entrée et en sortie, selon la même formule que la facturation. Stripe nécessite également `STRIPE_SECRET_KEY`.
+La monnaie est détectée au premier accès à partir du pays transmis par le proxy ou, à défaut, de l’adresse IP. La zone UEMOA utilise XOF avec PayDunya, la zone euro utilise EUR avec Stripe et les autres pays utilisent USD avec Stripe. L’utilisateur peut remplacer ce choix sur `/recharge/`; la préférence reste dans sa session et s’applique aussi aux pages `/tarifs/` et `/nous/`. Stripe nécessite `STRIPE_SECRET_KEY`.
+
+Les taux de référence sont des paramètres de facturation 2AI, pas des taux de change en temps réel :
+
+```dotenv
+DEFAULT_CURRENCY=XOF
+EUR_PER_USD=0.92
+IP_CURRENCY_LOOKUP_ENABLED=True
+IP_CURRENCY_LOOKUP_URL=https://ipapi.co/{ip}/country/
+IP_CURRENCY_LOOKUP_TIMEOUT_SECONDS=1.5
+IP_CURRENCY_CACHE_SECONDS=86400
+```
 
 Pour activer PayDunya (carte et moyens de paiement locaux proposés sur son checkout), crée une AppDunya et configure ses clés, sans les exposer au navigateur :
 

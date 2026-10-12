@@ -36,7 +36,7 @@ Sur Render, execute cette commande depuis le Shell du service web.
 
 Ajoute les secrets Stripe, Telegram et API dans les variables d'environnement Render si ces fonctions sont utilisees. Configure ensuite l'URL publique du service dans les webhooks Stripe et Telegram.
 
-Pour activer PayDunya, ajoute `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY`, `PAYDUNYA_TOKEN` et, si nécessaire, `PAYDUNYA_STORE_NAME` et `PAYDUNYA_XOF_PER_USD`. Le minimum est de `PAYDUNYA_MINIMUM_XOF=200` FCFA par défaut. Les clés privées commençant par `test_private_` utilisent automatiquement l'endpoint sandbox; les clés live utilisent l'endpoint live. Utilise `PAYDUNYA_CHECKOUT_URL` seulement pour remplacer explicitement ce choix. PayDunya doit pouvoir appeler l'URL publique `https://<domaine-render>/recharge/paydunya-webhook/`; l'application vérifie le hash IPN, le token et le montant avant de créditer les jetons.
+Pour activer PayDunya, ajoute `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY`, `PAYDUNYA_TOKEN` et, si nécessaire, `PAYDUNYA_STORE_NAME` et `PAYDUNYA_XOF_PER_USD`. Le minimum est de `PAYDUNYA_MINIMUM_XOF=200` FCFA par défaut. `DEFAULT_CURRENCY` définit la monnaie de repli, `EUR_PER_USD` le taux de référence de facturation en euros et `IP_CURRENCY_LOOKUP_ENABLED` active la détection par IP lorsque le proxy ne fournit pas le pays. Les clés privées commençant par `test_private_` utilisent automatiquement l'endpoint sandbox; les clés live utilisent l'endpoint live. Utilise `PAYDUNYA_CHECKOUT_URL` seulement pour remplacer explicitement ce choix. PayDunya doit pouvoir appeler l'URL publique `https://<domaine-render>/recharge/paydunya-webhook/`; l'application vérifie le hash IPN, le token et le montant avant de créditer les jetons.
 
 Pour activer le chat cloud et les générations d'images et de vidéos, configure `OPENROUTER_API_KEY`. Les modèles média se règlent avec `OPENROUTER_IMAGE_MODEL` et `OPENROUTER_VIDEO_MODEL` (par défaut : `bytedance-seed/seedream-4.5` et `alibaba/wan-3.0`). L’audio utilise toujours les clés et modèles audio configurés séparément.
 
@@ -48,6 +48,18 @@ Pour activer Gmail et Outlook dans Bara, renseigne `GOOGLE_CLIENT_ID`, `GOOGLE_C
 https://<domaine-render>/bara/plugins/email/google_mail/callback/
 https://<domaine-render>/bara/plugins/email/microsoft_mail/callback/
 ```
+
+La connexion au compte Google utilise une URI distincte. Dans Google Cloud Console, ajoute exactement cette URI aux **URI de redirection autorisés** du client OAuth web :
+
+```text
+https://mia-vkl1.onrender.com/accounts/google/login/callback/
+```
+
+Les variables `PUBLIC_BASE_URL` et `GOOGLE_REDIRECT_URI` de Render doivent contenir respectivement `https://mia-vkl1.onrender.com` et cette URI complète. Si le domaine public change, modifie les deux variables et l'URI dans Google Cloud Console avec la même valeur.
+
+Pour tester Google en local avec l'URI déjà autorisée, ouvre l'application sur `http://localhost:8000` et non sur `http://127.0.0.1:8000`. Le domaine qui démarre la connexion doit rester le même au retour de Google afin de conserver la session OAuth.
+
+Pour Telegram, ouvre BotFather, lance `/setdomain`, sélectionne le bot configuré dans `TELEGRAM_BOT_USERNAME`, puis enregistre `mia-vkl1.onrender.com`. Le widget Telegram refuse silencieusement ou affiche une erreur lorsque son domaine ne correspond pas au domaine autorisé du bot.
 
 Google demande les scopes Gmail `gmail.readonly` et `gmail.compose`; Microsoft demande `Mail.ReadWrite` et `Mail.Send`. `Mail.ReadWrite` est plus large que les actions Outlook offertes dans Bara. Les envois restent soumis a une confirmation dans l'interface.
 

@@ -1,42 +1,29 @@
 {% extends "base.html" %}
-
 {% block title %}Recharger mes jetons{% endblock %}
-
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=frontend-1">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=currency-1">
 {% endblock %}
-
 {% block body %}
 <main class="recharge-page">
   <nav class="recharge-nav" aria-label="Navigation de recharge">
-    <a class="recharge-back" href="{% url 'chat:chat-home' %}">
-      <span aria-hidden="true">←</span> Retour au chat
-    </a>
+    <a class="recharge-back" href="{% url 'chat:chat-home' %}"><span aria-hidden="true">←</span> Retour au chat</a>
     <span class="recharge-brand">2AI <span aria-hidden="true">/</span> MON COMPTE</span>
   </nav>
-
   <header class="recharge-hero">
     <p class="recharge-eyebrow">Crédits 2AI</p>
     <h1>Recharge ton solde</h1>
     <p>Choisis un montant et un moyen de paiement. Tes jetons seront ajoutés après confirmation.</p>
     <div class="recharge-equivalence">
-      <strong>
-        {% if conversion_rate_display %}{{ conversion_rate_display }} FCFA = {% endif %}
-        1 USD = {{ credits_per_dollar_display }} jetons
-      </strong>
+      <strong>{{ reference_amount_display }} {{ currency.code }} = {{ credits_per_dollar_display }} jetons</strong>
       <a href="{% url 'tariffs-page' %}">Voir les tarifs de toutes les IA <span aria-hidden="true">→</span></a>
     </div>
   </header>
-
   <section class="balance-card" aria-labelledby="balanceHeading">
     <div class="balance-mark" aria-hidden="true">✦</div>
     <div class="balance-copy">
       <span id="balanceHeading" class="balance-label">Ton solde actuel</span>
-      <div class="balance-amount">
-        <strong>{{ credits_display }}</strong>
-        <span>jetons</span>
-      </div>
+      <div class="balance-amount"><strong>{{ credits_display }}</strong><span>jetons</span></div>
       {% if credits == 0 %}
       <p class="balance-message is-low">Ton solde est épuisé. Recharge pour continuer à utiliser les IA.</p>
       {% else %}
@@ -45,143 +32,70 @@
     </div>
     <div class="balance-side-note">Mis à jour à l’ouverture de cette page</div>
   </section>
-
   <section class="payment-section" aria-labelledby="paymentHeading">
     <div class="payment-section-heading">
-      <div>
-        <p class="recharge-eyebrow">Paiement</p>
-        <h2 id="paymentHeading">Choisis ta méthode</h2>
-      </div>
+      <div><p class="recharge-eyebrow">Paiement</p><h2 id="paymentHeading">Choisis ton montant</h2></div>
       <span class="payment-security"><span aria-hidden="true">✓</span> Paiement confirmé avant crédit</span>
     </div>
-
-    <div class="currency-toggle" role="group" aria-label="Choisir la devise de paiement">
-      <button type="button" class="currency-toggle-option active" data-payment-currency="XOF" aria-pressed="true" aria-controls="paydunyaPayment">XOF</button>
-      <button type="button" class="currency-toggle-option" data-payment-currency="USD" aria-pressed="false" aria-controls="stripePayment">USD</button>
-    </div>
-
+    <form class="currency-selector" method="post" action="{% url 'set-currency' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'recharge-page' %}">
+      <label for="currencySelect">Monnaie</label>
+      <select id="currencySelect" name="currency" aria-describedby="currencyHelp">
+        {% for option in currency_options %}
+        <option value="{{ option.code }}"{% if option.code == currency.code %} selected{% endif %}>{{ option.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Appliquer</button>
+      <span id="currencyHelp">Détectée selon ton pays, modifiable ici.</span>
+    </form>
     <div class="payment-grid">
-      <form class="payment-card paydunya-card active" id="paydunyaPayment" method="post" action="{% url 'create-paydunya-checkout' %}">
+      <form class="payment-card active {% if currency.provider == 'paydunya' %}paydunya-card{% else %}stripe-card{% endif %}" id="paymentForm" method="post" action="{% if currency.provider == 'paydunya' %}{% url 'create-paydunya-checkout' %}{% else %}{% url 'create-recharge-checkout' %}{% endif %}">
         {% csrf_token %}
+        <input type="hidden" name="currency" value="{{ currency.code }}">
         <div class="payment-card-heading">
-          <span class="payment-provider-mark paydunya-mark" aria-hidden="true">P</span>
-          <div>
-            <p class="payment-overline">Carte et paiement local</p>
-          </div>
-          <span class="payment-tag">FCFA</span>
+          <span class="payment-provider-mark {% if currency.provider == 'paydunya' %}paydunya-mark{% else %}stripe-mark{% endif %}" aria-hidden="true">{% if currency.provider == 'paydunya' %}P{% else %}S{% endif %}</span>
+          <div><p class="payment-overline">{% if currency.provider == 'paydunya' %}Carte et paiement local{% else %}Carte bancaire{% endif %}</p></div>
+          <span class="payment-tag">{{ currency.code }}</span>
         </div>
-        <p class="payment-description">Paie par carte ou avec les moyens Mobile Money proposés par PayDunya pour ton pays.</p>
-
+        <p class="payment-description">{% if currency.provider == 'paydunya' %}Paie par carte ou avec les moyens Mobile Money proposés par PayDunya pour ton pays.{% else %}Paiement par carte via la page sécurisée de Stripe.{% endif %}</p>
         <fieldset class="customer-details">
           <legend>Informations de paiement</legend>
-          <label for="paydunya-customer-name">Nom complet
-            <input id="paydunya-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required>
-          </label>
-          <label for="paydunya-customer-email">E-mail
-            <input id="paydunya-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required>
-          </label>
-          <label class="customer-phone-field" for="paydunya-customer-phone">Téléphone
-            <input id="paydunya-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required>
-          </label>
+          <label for="payment-customer-name">Nom complet<input id="payment-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required></label>
+          <label for="payment-customer-email">E-mail<input id="payment-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required></label>
+          <label class="customer-phone-field" for="payment-customer-phone">Téléphone<input id="payment-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required></label>
         </fieldset>
-
-        <label class="amount-label" for="paydunya-amount">Montant à recharger</label>
+        <label class="amount-label" for="payment-amount">Montant à recharger</label>
         <div class="currency-input">
-          <span class="currency-symbol currency-symbol-text" aria-hidden="true">FCFA</span>
-          <input id="paydunya-amount" name="amount" type="number" min="{{ paydunya_minimum_xof }}" step="1" value="{{ default_paydunya_amount }}" required aria-describedby="paydunyaRate paydunyaCreditsEstimate" {% if not paydunya_available %}disabled{% endif %}>
-          <span class="currency-code">XOF</span>
+          <span class="currency-symbol{% if currency.code == 'XOF' %} currency-symbol-text{% endif %}" aria-hidden="true">{{ currency.symbol }}</span>
+          <input id="payment-amount" name="amount" type="number" min="{{ minimum_amount }}" step="{% if currency.decimals == 0 %}1{% else %}0.01{% endif %}" value="{{ minimum_amount }}" required aria-describedby="paymentRate creditsEstimate" {% if not payment_available %}disabled{% endif %}>
+          <span class="currency-code">{{ currency.code }}</span>
         </div>
-        {% if paydunya_available %}
-        <div class="amount-presets" aria-label="Montants rapides PayDunya en FCFA">
-          {% for preset in paydunya_presets %}
-          <button type="button" data-set-amount="paydunya-amount" data-amount="{{ preset.amount }}">{{ preset.label }} FCFA</button>
-          {% endfor %}
+        {% if payment_available %}
+        <div class="amount-presets" aria-label="Montants rapides en {{ currency.code }}">
+          {% for preset in presets %}<button type="button" data-set-amount="payment-amount" data-amount="{{ preset.amount }}">{{ preset.label }} {{ currency.code }}</button>{% endfor %}
         </div>
         {% endif %}
-        <p class="payment-rate-note" id="paydunyaRate">
-          {% if paydunya_available %}
-          Minimum {{ paydunya_minimum_xof|floatformat:0 }} FCFA · 1 USD = {{ paydunya_rate|floatformat:0 }} FCFA.
-          {% else %}
-          {{ paydunya_unavailable_reason }}
-          {% endif %}
-        </p>
+        <p class="payment-rate-note" id="paymentRate">{% if payment_available %}Minimum {{ minimum_amount_display }} {{ currency.code }} · Taux de référence 2AI : {{ reference_amount_display }} {{ currency.code }} pour {{ credits_per_dollar_display }} jetons.{% else %}{{ payment_unavailable_reason }}{% endif %}</p>
         <div class="credit-estimate">
           <span>Tu recevras environ</span>
-          <output id="paydunyaCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-xof-per-usd="{{ paydunya_rate|default:0 }}" aria-live="polite">
-            {% if paydunya_available %}{{ default_paydunya_credits_display }} jetons{% else %}Indisponible{% endif %}
-          </output>
+          <output id="creditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-rate-per-usd="{{ currency.rate_per_usd }}" data-currency="{{ currency.code }}" data-decimals="{{ currency.decimals }}" aria-live="polite">{% if payment_available %}{{ default_credits_display }} jetons{% else %}Indisponible{% endif %}</output>
         </div>
-
-        {% if paydunya_available %}
-        <button class="payment-submit" type="submit">Continuer avec PayDunya <span aria-hidden="true">→</span></button>
-        <p class="payment-footnote">Tu choisiras la carte ou le moyen de paiement disponible sur la page sécurisée PayDunya.</p>
+        {% if payment_available %}
+        <button class="payment-submit" type="submit">Continuer avec {% if currency.provider == 'paydunya' %}PayDunya{% else %}Stripe{% endif %} <span aria-hidden="true">→</span></button>
+        <p class="payment-footnote">Tu seras redirigé vers la page sécurisée du prestataire pour confirmer le paiement.</p>
         {% else %}
-        <button class="payment-submit" type="button" disabled>PayDunya indisponible</button>
+        <button class="payment-submit" type="button" disabled>Paiement indisponible</button>
         {% endif %}
       </form>
-
-      <form class="payment-card stripe-card" id="stripePayment" method="post" action="{% url 'create-recharge-checkout' %}" hidden>
-        {% csrf_token %}
-        <div class="payment-card-heading">
-          <span class="payment-provider-mark stripe-mark" aria-hidden="true">S</span>
-          <div>
-            <p class="payment-overline">Carte bancaire</p>
-          </div>
-          <span class="payment-tag">USD</span>
-        </div>
-        <p class="payment-description">Paiement par carte via la page sécurisée de Stripe.</p>
-
-        <fieldset class="customer-details">
-          <legend>Informations de paiement</legend>
-          <label for="stripe-customer-name">Nom complet
-            <input id="stripe-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required>
-          </label>
-          <label for="stripe-customer-email">E-mail
-            <input id="stripe-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required>
-          </label>
-          <label class="customer-phone-field" for="stripe-customer-phone">Téléphone
-            <input id="stripe-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required>
-          </label>
-        </fieldset>
-
-        <label class="amount-label" for="stripe-amount">Montant à recharger</label>
-        <div class="currency-input">
-          <span class="currency-symbol" aria-hidden="true">$</span>
-          <input id="stripe-amount" name="amount" type="number" min="5" step="0.01" value="5.00" required aria-describedby="stripeRate stripeCreditsEstimate">
-          <span class="currency-code">USD</span>
-        </div>
-        <div class="amount-presets" aria-label="Montants rapides en dollars">
-          <button type="button" data-set-amount="stripe-amount" data-amount="5">$5</button>
-          <button type="button" data-set-amount="stripe-amount" data-amount="10">$10</button>
-          <button type="button" data-set-amount="stripe-amount" data-amount="25">$25</button>
-        </div>
-        <p class="payment-rate-note" id="stripeRate">Minimum 5 USD · {{ credits_per_dollar_display }} jetons par dollar.</p>
-        <div class="credit-estimate">
-          <span>Tu recevras environ</span>
-          <output id="stripeCreditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" aria-live="polite">{{ stripe_default_credits_display }} jetons</output>
-        </div>
-
-        {% if stripe_available %}
-        <button class="payment-submit" type="submit">Continuer avec Stripe <span aria-hidden="true">→</span></button>
-        <p class="payment-footnote">Tu seras redirigé vers Stripe pour confirmer le paiement.</p>
-        {% else %}
-        <p class="payment-unavailable" role="status">Le paiement par carte n’est pas configuré pour le moment.</p>
-        <button class="payment-submit" type="button" disabled>Stripe indisponible</button>
-        {% endif %}
-      </form>
-
     </div>
   </section>
-
   <section class="payment-steps" aria-label="Étapes du paiement">
-    <div><span>1</span><p>Choisis un montant</p></div>
-    <div><span>2</span><p>Confirme auprès du prestataire</p></div>
-    <div><span>3</span><p>Retrouve tes jetons dans ton solde</p></div>
+    <div><span>1</span><p>Choisis un montant</p></div><div><span>2</span><p>Confirme auprès du prestataire</p></div><div><span>3</span><p>Retrouve tes jetons dans ton solde</p></div>
   </section>
 </main>
 {% endblock %}
-
 {% block extra_js %}
 {% load static %}
-<script defer src="{% static 'app/js/recharge.js' %}?v=frontend-1"></script>
+<script defer src="{% static 'app/js/recharge.js' %}?v=currency-1"></script>
 {% endblock %}
