@@ -1,0 +1,28 @@
+  .legal-page{max-width:900px;margin:0 auto;padding:24px clamp(20px,5vw,64px) 56px;}
+  .legal-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-bottom:18px;border-bottom:1px solid var(--line);}
+  .legal-brand{color:var(--ink);font:700 14px var(--font-display);text-decoration:none;}
+  .legal-nav{display:flex;gap:18px;}
+  .legal-nav a,.legal-footer a{color:var(--ink);font-size:13px;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px;}
+  .legal-nav a:hover,.legal-footer a:hover{color:var(--accent);}
+  .legal-header{padding:46px 0 24px;border-bottom:1px solid var(--line);}
+  .legal-eyebrow{margin:0 0 10px;color:var(--teal);font-size:12px;font-weight:700;text-transform:uppercase;}
+  .legal-header h1{margin:0;font:600 36px/1.12 var(--font-display);}
+  .legal-header p:last-child{max-width:680px;margin:14px 0 0;color:color-mix(in srgb,var(--ink) 72%,transparent);font-size:14px;line-height:1.65;}
+  .legal-warning{margin:22px 0;padding:14px 16px;border-left:3px solid var(--accent);background:var(--panel);font-size:13px;line-height:1.6;}
+  .legal-section{padding:22px 0;border-bottom:1px solid var(--line);}
+  .legal-section h2{margin:0 0 10px;font:600 18px var(--font-display);}
+  .legal-section p,.legal-section li{max-width:760px;color:color-mix(in srgb,var(--ink) 78%,transparent);font-size:13px;line-height:1.7;}
+  .legal-section p{margin:7px 0;}
+  .legal-section ul{margin:8px 0;padding-left:20px;}
+  .legal-details{display:grid;grid-template-columns:190px minmax(0,1fr);gap:8px 18px;margin:14px 0 0;font-size:13px;line-height:1.55;}
+  .legal-details dt{font-weight:600;}
+  .legal-details dd{margin:0;color:color-mix(in srgb,var(--ink) 78%,transparent);}
+  .legal-footer{display:flex;justify-content:space-between;gap:16px;padding-top:20px;color:color-mix(in srgb,var(--ink) 58%,transparent);font-size:12px;}
+  @media(max-width:560px){
+    .legal-page{padding-top:16px;}
+    .legal-header{padding-top:36px;}
+    .legal-header h1{font-size:30px;}
+    .legal-details{grid-template-columns:minmax(0,1fr);gap:2px;}
+    .legal-details dd{margin-bottom:10px;}
+    .legal-footer{flex-direction:column;}
+  }

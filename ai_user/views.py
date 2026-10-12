@@ -125,7 +125,7 @@ def login_view(request):
 			login(request, user)
 			return redirect(_next_url(request))
 	return render(request, "losign.html", {
-		"form": type("LoginForm", (), {"errors": True})(),
+		"form": type("LoginForm", (), {"errors": request.method == "POST"})(),
 		"telegram_bot_username": settings.TELEGRAM_BOT_USERNAME,
 		"next_url": _next_url(request),
 	})

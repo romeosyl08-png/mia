@@ -101,6 +101,8 @@ const chatConfig = JSON.parse(chatConfigElement.textContent);
 
 let state = {
 
+    initializing: true,
+
     credits:
         Number(chatConfig.initialCredits) || 0,
 
@@ -178,6 +180,8 @@ let state = {
 
     temporaryChat: false,
 
+    savingTemporary: false,
+
     temperatureOverride: null,
 
     workspaces: [],
@@ -205,6 +209,8 @@ let state = {
       workspaceId: localOnly ? null : state.selectedWorkspaceId,
       messages: [],
       temporary,
+      temporaryMemoryPersonaId: null,
+      temporarySavePersonaId: null,
       localOnly,
       folder: "",
       isArchived: false,
@@ -217,7 +223,7 @@ let state = {
     return convo;
   }
 
-  async function loadConversations(){
+  async function loadConversations(personasReady = Promise.resolve()){
     const localConversations = readLocalConversations();
     state.conversations = localConversations;
     if(!state.isAuthenticated) return;
@@ -225,6 +231,8 @@ let state = {
       const res = await fetch("/chat/api/conversations/");
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const list = await res.json();
+      // The request starts immediately; assigning personas depends on their response.
+      await personasReady;
       state.conversations = list.map(c => ({
         id: c.id,
         title: c.title,
@@ -234,14 +242,14 @@ let state = {
         isArchived: Boolean(c.is_archived),
         messages: null
       })).concat(localConversations);
+      let messagesReady = Promise.resolve();
       if(state.conversations.length > 0){
         state.activeConvoId = conversationKey(state.conversations[0]);
         state.activePersonaId = state.conversations[0].personaId;
         state.selectedWorkspaceId = state.conversations[0].workspaceId;
-        await loadConversationMessages(state.activeConvoId);
+        messagesReady = loadConversationMessages(state.activeConvoId);
       }
-      await loadConversationFolders();
-      await loadConversationHistory();
+      await Promise.all([messagesReady, loadConversationFolders(), loadConversationHistory()]);
     }catch(err){
       console.error("Erreur chargement conversations", err);
       state.sidebarConversations = localHistoryRows();
@@ -869,7 +877,7 @@ let state = {
     }
     const deleteButton = el("deletePersonaBtn");
     if(deleteButton){
-      deleteButton.disabled = !state.isAuthenticated || state.personas.length <= 1 || typeof selectedPersona?.id !== "number";
+      deleteButton.disabled = !state.isAuthenticated || state.personas.length <= 1 || selectedPersona?.is_big_persona || typeof selectedPersona?.id !== "number";
     }
   }
 
@@ -899,10 +907,12 @@ function renderHeader(){
   const temporaryButton = el("temporaryChatBtn");
   temporaryButton.classList.toggle("active", Boolean(convo?.temporary));
   temporaryButton.setAttribute("aria-pressed", String(Boolean(convo?.temporary)));
+  temporaryButton.disabled = Boolean(state.sending || state.savingTemporary);
   el("temporaryBadge").hidden = !convo?.temporary;
+  renderTemporaryControls(convo);
   const memoryButton = el("memorySuggestBtn");
   if(memoryButton){
-    memoryButton.disabled = !convo || convo.localOnly || !convo.messages?.some(message => message.role === "user") || state.sending;
+    memoryButton.disabled = !convo || convo.localOnly || !convo.messages?.some(message => message.role === "user") || state.sending || state.savingTemporary;
     memoryButton.title = convo?.localOnly
       ? "La suggestion de mémoire enverrait la conversation au serveur et est désactivée en mode local."
       : "Proposer une mémoire pour ce persona";
@@ -916,24 +926,39 @@ function renderHeader(){
           botAvatar: "🐘"
         };
 
-
-  el("chatTitle").textContent =
-    convo
-      ? convo.title
-      : "Nouvelle conversation";
-
-
-  el("chatAvatar").textContent =
-    appearance.botAvatar;
-
-
-  el("brandMark").textContent =
-    appearance.botAvatar;
-
-  document.title =
-    appearance.botName;
-
+  el("chatTitle").textContent = convo ? convo.title : "Nouvelle conversation";
+  el("chatAvatar").textContent = appearance.botAvatar;
+  el("brandMark").textContent = appearance.botAvatar;
+  document.title = appearance.botName;
 }
+
+  function renderTemporaryControls(convo){
+    const controls = el("temporaryChatControls");
+    controls.hidden = !convo?.temporary;
+    if(!convo?.temporary) return;
+    const personas = state.personas.filter(persona => Number.isInteger(persona.id));
+    const memorySelect = el("temporaryMemoryPersona");
+    const saveSelect = el("temporarySavePersona");
+    memorySelect.replaceChildren(new Option("Sans mémoire", ""));
+    saveSelect.replaceChildren(new Option("Choisir un persona", ""));
+    for(const persona of personas){
+      memorySelect.add(new Option(persona.name, String(persona.id)));
+      saveSelect.add(new Option(persona.name, String(persona.id)));
+    }
+    memorySelect.value = String(convo.temporaryMemoryPersonaId || "");
+    saveSelect.value = String(convo.temporarySavePersonaId || "");
+    const busy = Boolean(state.sending || state.savingTemporary);
+    memorySelect.disabled = busy || !state.isAuthenticated;
+    saveSelect.disabled = busy || !state.isAuthenticated;
+    const saveButton = el("saveTemporaryConversationBtn");
+    saveButton.disabled = busy || !state.isAuthenticated || !saveSelect.value
+      || !convo.messages?.some(message => message.role === "user")
+      || convo.messages.some(message => message.streaming);
+    saveButton.textContent = state.savingTemporary ? "Enregistrement…" : "Enregistrer";
+    el("temporaryConversationStatus").textContent = !state.isAuthenticated
+      ? "Connecte-toi pour utiliser la mémoire et enregistrer dans un persona."
+      : convo.temporarySaveStatus || "";
+  }
 
   function updateBrowserIdentity(){
     const favicon = el("botFavicon");
@@ -945,9 +970,13 @@ function renderHeader(){
 
 function renderMessages(){
   const wrap = el("messages");
+  if(state.initializing){
+    wrap.innerHTML = '<div class="empty-state" role="status"><div class="loading-indicator" aria-hidden="true"></div><div class="display">Ton espace se prépare</div><p class="empty-state-copy">Chargement de tes assistants et conversations…</p></div>';
+    return;
+  }
   const convo = activeConvo();
   if(!convo || !convo.messages || convo.messages.length === 0){
-    wrap.innerHTML = `<div class="empty-state"><div class="display">Choisis un persona, écris un message</div><div>Chaque échange consomme des jetons de ton solde prépayé, consultable en haut de la page.</div></div>`;
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-state-mark" aria-hidden="true">✦</div><p class="page-eyebrow">Ton espace de réflexion</p><div class="display">Qu’allons-nous créer aujourd’hui ?</div><p class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</p></div>`;
     return;
   }
   wrap.innerHTML = "";
@@ -1170,7 +1199,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     if(creditText) creditText.textContent = Math.max(0, Math.round(state.credits)).toLocaleString("fr-FR") + " jetons";
     if(creditBar) creditBar.style.width = (pct * 100) + "%";
     if(lowWarning) lowWarning.classList.toggle("show", pct < 0.15);
-    if(sendButton) sendButton.disabled = (state.isAuthenticated && state.credits <= 0 && !isLocalModelSelected()) || state.sending;
+    if(sendButton) sendButton.disabled = state.initializing || (state.isAuthenticated && state.credits <= 0 && !isLocalModelSelected()) || state.sending || state.savingTemporary;
     renderSendButton();
   }
 
@@ -1317,6 +1346,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
         image_file_ids: convo.messages.filter(m => m.role === 'user').at(-1)?.imageFileIds || [],
         edit_message_id: editMessageId,
         temporary: Boolean(convo.temporary),
+        temporary_memory_persona_id: convo.temporary ? convo.temporaryMemoryPersonaId : undefined,
         history: convo.temporary ? convo.messages
           .filter(message => !message.streaming)
           .slice(0, -1)
@@ -1372,7 +1402,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       .filter(message => !message.streaming && ["user", "bot"].includes(message.role))
       .slice(-40)
       .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content }));
-    if(persona?.prompt) messages.unshift({ role: "system", content: persona.prompt });
+    const personaPrompt = await window.AI2AIPersonaContext.load(persona, convo);
+    if(personaPrompt) messages.unshift({ role: "system", content: personaPrompt });
 
     let response;
     try{
@@ -1449,7 +1480,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
 
   async function sendMessage(text, reuseLastUser = false, editTarget = null){
     const localModelSelected = isLocalModelSelected();
-    if(state.sending || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
+    if(state.initializing || state.sending || state.savingTemporary || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
     state.sending = true;
     renderCredits();
     let convo = activeConvo();
@@ -1600,6 +1631,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     } finally {
       state.sending = false;
       renderCredits();
+      renderHeader();
     }
   }
 
@@ -1641,6 +1673,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     renderAll();
   });
   el("temporaryChatBtn").addEventListener("click", () => {
+    if(state.sending || state.savingTemporary) return;
     state.temporaryChat = !state.temporaryChat;
     if(!state.temporaryChat){
       state.conversations = state.conversations.filter(convo => !convo.temporary);
@@ -1648,6 +1681,84 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const persona = activePersona();
     newConversation(persona?.id, state.temporaryChat);
     renderAll();
+  });
+  el("temporaryMemoryPersona").addEventListener("change", event => {
+    const convo = activeConvo();
+    if(!convo?.temporary || state.sending || state.savingTemporary) return;
+    convo.temporaryMemoryPersonaId = event.currentTarget.value ? Number(event.currentTarget.value) : null;
+  });
+  el("temporarySavePersona").addEventListener("change", event => {
+    const convo = activeConvo();
+    if(!convo?.temporary || state.sending || state.savingTemporary) return;
+    convo.temporarySavePersonaId = event.currentTarget.value ? Number(event.currentTarget.value) : null;
+    renderHeader();
+  });
+  el("saveTemporaryConversationBtn").addEventListener("click", async () => {
+    const convo = activeConvo();
+    if(!convo?.temporary || !convo.temporarySavePersonaId || !state.isAuthenticated
+      || state.sending || state.savingTemporary || !convo.messages?.some(message => message.role === "user")
+      || convo.messages.some(message => message.streaming)) return;
+    state.savingTemporary = true;
+    convo.temporarySaveStatus = "Enregistrement de la conversation…";
+    const previousKey = conversationKey(convo);
+    renderHeader();
+    renderCredits();
+    try{
+      const response = await fetch("/chat/api/conversations/save-temporary/", {
+        method: "POST",
+        headers: {"Content-Type": "application/json",
+          "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value},
+        body: JSON.stringify({
+          title: convo.title,
+          persona_id: convo.temporarySavePersonaId,
+          workspace_id: convo.workspaceId ? Number(convo.workspaceId) : null,
+          messages: convo.messages.map(message => ({
+            role: message.role === "bot" ? "assistant" : message.role,
+            content: message.content,
+            prompt_tokens: message.role === "user" ? Math.max(0, Math.round(message.tokens || 0)) : 0,
+            completion_tokens: message.role === "bot" ? Math.max(0, Math.round(message.tokens || 0)) : 0,
+            sources: message.sources || [],
+            tool_events: message.toolEvents || [],
+            image_file_ids: message.imageFileIds || [],
+            interrupted: Boolean(message.interrupted),
+            media_url: message.mediaUrl || null,
+            media_kind: message.mediaKind || null
+          }))
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if(!response.ok) throw new Error(data.error?.message || "Impossible d’enregistrer la conversation.");
+      convo.id = data.conversation_id;
+      convo.title = data.title;
+      convo.personaId = data.persona_id;
+      convo.temporary = false;
+      convo.localOnly = false;
+      convo.localId = null;
+      convo.localModel = null;
+      convo.temporarySaveStatus = "";
+      convo.messages.forEach((message, index) => {
+        const saved = data.messages[index];
+        message.id = saved.id;
+        if(saved.media_url) message.mediaUrl = saved.media_url;
+      });
+      if(state.activeConvoId === previousKey){
+        state.activeConvoId = conversationKey(convo);
+        state.activePersonaId = convo.personaId;
+        state.temporaryChat = false;
+        state.selectedFolder = "";
+        state.showArchived = false;
+        el("archiveFilterBtn").classList.remove("active");
+        el("archiveFilterBtn").setAttribute("aria-pressed", "false");
+        if(isLocalModelSelected()) state.modelId = chatConfig.modelId || "auto";
+      }
+      await loadConversationHistory();
+      showChatNotice("Conversation enregistrée dans l’historique du persona.");
+    }catch(error){
+      convo.temporarySaveStatus = error.message;
+    }finally{
+      state.savingTemporary = false;
+      renderAll();
+    }
   });
   el("generationControlsBtn").addEventListener("click", () => {
     const panel = el("generationControlsPanel");
@@ -1924,7 +2035,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
   });
   el("deletePersonaBtn").addEventListener("click", async () => {
     const persona = activePersona();
-    if(!persona || state.personas.length <= 1 || typeof persona.id !== "number") return;
+    if(!persona || persona.is_big_persona || state.personas.length <= 1 || typeof persona.id !== "number") return;
     const confirmed = window.confirm(
       `Supprimer le persona « ${persona.name} » ? Les conversations associées resteront dans l’historique, sans ce persona.`
     );
@@ -2514,6 +2625,7 @@ fileInput.addEventListener("change", async () => {
   });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
+    if(state.initializing) return;
     const text = input.value.trim();
     const localModelSelected = isLocalModelSelected();
     if((localModelSelected ? !state.isAuthenticated : !ensureCreditAccess()) || !text) return;
@@ -2542,7 +2654,6 @@ fileInput.addEventListener("change", async () => {
   });
 
   // ---------- Init ----------
-  // ---------- Init ----------
 
   const currentAppearance =
     window.AI2AIAppearance
@@ -2559,155 +2670,21 @@ fileInput.addEventListener("change", async () => {
   }
 
   (async () => {
-
-    await loadPersonas();
-    await loadWorkspaces();
-
-    await loadConversations();
-
-    if(state.conversations.length === 0){
-      await newConversation(state.activePersonaId);
-    }
-
     renderAll();
-
+    const personasReady = loadPersonas();
+    try {
+      await Promise.all([personasReady, loadWorkspaces(), loadConversations(personasReady)]);
+      if(state.conversations.length === 0){
+        await newConversation(state.activePersonaId);
+      }
+      if(chatConfig.initialPersonaId && state.personas.some(persona => String(persona.id) === String(chatConfig.initialPersonaId))){
+        await setActivePersona(chatConfig.initialPersonaId);
+      }
+    } finally {
+      state.initializing = false;
+      renderAll();
+    }
   })();
 
 })();
-}
-
-
-//recharge
-    const currencyToggleOptions = [...document.querySelectorAll("[data-payment-currency]")];
-    const paymentCards = {
-      XOF: document.getElementById("paydunyaPayment"),
-      USD: document.getElementById("stripePayment"),
-    };
-    function selectPaymentCurrency(currency){
-      if(!paymentCards[currency]) return;
-      currencyToggleOptions.forEach(option => {
-        const selected = option.dataset.paymentCurrency === currency;
-        option.classList.toggle("active", selected);
-        option.setAttribute("aria-pressed", String(selected));
-      });
-      Object.entries(paymentCards).forEach(([cardCurrency, card]) => {
-        if(!card) return;
-        const selected = cardCurrency === currency;
-        card.hidden = !selected;
-        card.classList.toggle("active", selected);
-      });
-    }
-    currencyToggleOptions.forEach(option => {
-      option.addEventListener("click", () => selectPaymentCurrency(option.dataset.paymentCurrency));
-    });
-
-    const formatCredits = value => new Intl.NumberFormat("fr-FR").format(value);
-    const stripeAmountInput = document.getElementById("stripe-amount");
-    const stripeCreditsOutput = document.getElementById("stripeCreditsEstimate");
-    function updateStripeCredits(){
-      if(!stripeAmountInput || !stripeCreditsOutput) return;
-      const amount = Number(stripeAmountInput.value);
-      const creditsPerDollar = Number(stripeCreditsOutput.dataset.creditsPerDollar);
-      if(!Number.isFinite(amount) || amount < Number(stripeAmountInput.min)){
-        stripeCreditsOutput.textContent = `Minimum ${stripeAmountInput.min} USD`;
-        return;
-      }
-      stripeCreditsOutput.textContent = `${formatCredits(Math.floor(amount * creditsPerDollar))} jetons`;
-    }
-    stripeAmountInput?.addEventListener("input", updateStripeCredits);
-    updateStripeCredits();
-
-    const paydunyaAmountInput = document.getElementById("paydunya-amount");
-    const paydunyaCreditsOutput = document.getElementById("paydunyaCreditsEstimate");
-    function updatePaydunyaCredits(){
-      if(!paydunyaAmountInput || !paydunyaCreditsOutput) return;
-      const amount = Number(paydunyaAmountInput.value);
-      const xofPerUsd = Number(paydunyaCreditsOutput.dataset.xofPerUsd);
-      const creditsPerDollar = Number(paydunyaCreditsOutput.dataset.creditsPerDollar);
-      if(!Number.isFinite(xofPerUsd) || xofPerUsd <= 0){
-        paydunyaCreditsOutput.textContent = "Indisponible";
-        return;
-      }
-      if(!Number.isFinite(amount) || amount < Number(paydunyaAmountInput.min)){
-        paydunyaCreditsOutput.textContent = `Minimum ${new Intl.NumberFormat("fr-FR").format(Number(paydunyaAmountInput.min))} FCFA`;
-        return;
-      }
-      paydunyaCreditsOutput.textContent = `${formatCredits(Math.floor(amount / xofPerUsd * creditsPerDollar))} jetons`;
-    }
-    paydunyaAmountInput?.addEventListener("input", updatePaydunyaCredits);
-    updatePaydunyaCredits();
-
-    document.querySelectorAll("[data-set-amount]").forEach(button => {
-      button.addEventListener("click", () => {
-        const input = document.getElementById(button.dataset.setAmount);
-        if(!input || input.disabled) return;
-        input.value = button.dataset.amount;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    });
-
-
-
-
-//losign
-const tabLogin = document.getElementById("tabLogin");
-  const tabSignup = document.getElementById("tabSignup");
-  const panelLogin = document.getElementById("panelLogin");
-  const panelSignup = document.getElementById("panelSignup");
-
-  if(tabLogin && tabSignup && panelLogin && panelSignup){
-  function showLogin(){
-    panelLogin.style.display = "block";
-    panelSignup.style.display = "none";
-    tabLogin.classList.add("active");
-    tabSignup.classList.remove("active");
-  }
-  function showSignup(){
-    panelLogin.style.display = "none";
-    panelSignup.style.display = "block";
-    tabSignup.classList.add("active");
-    tabLogin.classList.remove("active");
-  }
-  tabLogin.addEventListener("click", showLogin);
-  tabSignup.addEventListener("click", showSignup);
-  document.getElementById("linkToSignup").addEventListener("click", (e) => { e.preventDefault(); showSignup(); });
-  document.getElementById("linkToLogin").addEventListener("click", (e) => { e.preventDefault(); showLogin(); });
-
-  // WhatsApp : pas d'OAuth standard, on ouvre un panneau numéro + OTP
-  const waToggle = document.getElementById("waToggle");
-  const waPanel = document.getElementById("waPanel");
-  waToggle.addEventListener("click", () => waPanel.classList.toggle("open"));
-
-  document.getElementById("waSendOtp").addEventListener("click", () => {
-    const phone = document.getElementById("wa_phone").value.trim();
-    if(!phone){ return; }
-    // À brancher sur une vraie vue Django qui déclenche l'envoi du code
-    // (ex. via l'API WhatsApp Cloud de Meta ou un fournisseur comme Twilio).
-    fetch("{% url 'whatsapp_send_otp' %}", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
-      },
-      body: JSON.stringify({ phone })
-    });
-  });
-
-  // Mêmes comportements pour le panneau Inscription
-  const waToggleSignup = document.getElementById("waToggleSignup");
-  const waPanelSignup = document.getElementById("waPanelSignup");
-  waToggleSignup.addEventListener("click", () => waPanelSignup.classList.toggle("open"));
-
-  document.getElementById("waSendOtpSignup").addEventListener("click", () => {
-    const phone = document.getElementById("wa_phone_signup").value.trim();
-    if(!phone){ return; }
-    fetch("{% url 'whatsapp_send_otp' %}", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
-      },
-      body: JSON.stringify({ phone })
-    });
-  });
 }

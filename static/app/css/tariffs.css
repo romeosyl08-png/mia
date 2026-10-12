@@ -10,11 +10,11 @@ body:has(.tariffs-page) {
 }
 
 .tariffs-page {
-  --tariffs-ink: #24211f;
-  --tariffs-muted: #77716d;
-  --tariffs-accent: #b64b3f;
-  --tariffs-line: #e9e2de;
-  --tariffs-paper: #fffdfb;
+  --tariffs-ink: var(--ink);
+  --tariffs-muted: var(--ink-soft);
+  --tariffs-accent: var(--accent);
+  --tariffs-line: var(--line);
+  --tariffs-paper: var(--paper);
   width: min(1180px, calc(100% - 48px));
   margin: 0 auto;
   padding: 28px 0 64px;
@@ -86,9 +86,9 @@ body:has(.tariffs-page) {
   gap: 12px 24px;
   margin-top: 26px;
   padding: 16px 20px;
-  border: 1px solid #e8c7c1;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
   border-radius: 14px;
-  background: #fff8f6;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
 }
 
 .tariffs-equivalence strong {
@@ -179,7 +179,7 @@ body:has(.tariffs-page) {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f7f3f0;
+  background: var(--panel);
   color: var(--tariffs-ink);
   font-size: 12px;
   line-height: 1.5;
@@ -192,7 +192,7 @@ body:has(.tariffs-page) {
 }
 
 .tariffs-table tbody tr:hover {
-  background: #fff8f6;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
 }
 
 .tariffs-table tbody tr:last-child th,
@@ -241,7 +241,7 @@ body:has(.tariffs-page) {
   padding: 20px 22px;
   border-left: 3px solid var(--tariffs-accent);
   border-radius: 8px;
-  background: #f7f3f0;
+  background: var(--panel);
 }
 
 .tariffs-local-note p {

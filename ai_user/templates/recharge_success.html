@@ -3,13 +3,15 @@
 {% block title %}Paiement reçu{% endblock %}
 
 {% block body %}
-<main style="font-family:Arial,sans-serif;max-width:600px;margin:80px auto;padding:20px;text-align:center;color:var(--ink)">
+<main class="success-page surface">
+  <div class="success-mark" aria-hidden="true">✓</div>
+  <p class="page-eyebrow">Recharge de jetons</p>
   <h1>Paiement reçu</h1>
   {% if paydunya_return %}
   <p>PayDunya confirme ta transaction. Tes jetons apparaîtront dès que sa notification sécurisée aura été traitée.</p>
   {% else %}
   <p>La recharge sera ajoutée dès confirmation sécurisée du prestataire de paiement.</p>
   {% endif %}
-  <a style="color:var(--accent-hover)" href="{% url 'chat:chat-home' %}">Retour au chat</a>
+  <a class="button-primary" href="{% url 'chat:chat-home' %}">Retour au chat</a>
 </main>
 {% endblock %}

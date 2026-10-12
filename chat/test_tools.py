@@ -70,7 +70,7 @@ class ChatWorkspaceToolTests(TestCase):
         self.assertEqual(len(result['sources']), 2)
         self.assertEqual(search.call_args.kwargs['json']['q'], 'définition vitesse')
         fetch.assert_called_once()
-        self.assertIn('"citation_id": 1', provider.call_args_list[1].args[3][-1]['content'])
+        self.assertEqual(json.loads(provider.call_args_list[1].args[3][-1]['content'])['citation_id'], 1)
         self.assertEqual(Message.objects.get(pk=result['assistant_message_id']).sources, result['sources'])
         self.assertEqual(RoutingObservation.objects.get(assistant_message_id=result['assistant_message_id']).tools_used, ['fetch_url', 'web_search'])
         self.assertIsNone(Conversation.objects.get(pk=result['conversation_id']).workspace_id)

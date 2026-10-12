@@ -1,6 +1,11 @@
 {% extends 'base.html' %}
+{% load static %}
+{% block title %}Tâches — {{ workspace.title }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
+{% endblock %}
 {% block body %}
-<main class="work-page">
+<main class="work-page" data-tasks-root="{% url 'bara:tasks' workspace.id %}">
   <a href="{% url 'bara:detail' workspace.id %}">← {{ workspace.title }}</a>
   <h1>Tâches</h1>
   <p>Les tâches continuent en arrière-plan. Les budgets limitent les étapes et les crédits.</p>
@@ -14,7 +19,7 @@
     </fieldset>
   </form>
   {% for task in tasks %}
-  <article data-task="{{ task.id }}" style="border:1px solid #777;border-radius:12px;padding:1rem;margin:1rem 0">
+  <article data-task="{{ task.id }}" data-status="{{ task.status }}">
     <h2>{{ task.objective|truncatechars:120 }}</h2>
     <p class="task-status" aria-live="polite">{{ task.status }} · {{ task.spent_credits }} crédits</p>
     <pre class="task-result" style="white-space:pre-wrap">{{ task.result }}</pre>
@@ -26,62 +31,10 @@
   </article>
   {% empty %}<p>Aucune tâche.</p>{% endfor %}
 </main>
-<script>
-(() => {
-  const root = '/bara/{{ workspace.id }}/tasks/';
-  const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
-  const labels = {queued:'En attente', running:'En cours', waiting:'Confirmation attendue', paused:'En pause', completed:'Terminée', failed:'Échec', cancelled:'Annulée', pause_requested:'Pause demandée', cancel_requested:'Annulation demandée'};
-  async function poll(card) {
-    try {
-      const r = await fetch(root + card.dataset.task + '/?after=' + (card.dataset.cursor || '0'));
-      if (!r.ok) return;
-      const t = await r.json();
-      if(t.events.length) card.dataset.cursor = t.events.at(-1).id;
-      card.querySelector('.task-status').textContent = `${labels[t.status] || t.status} · ${t.steps}/${t.max_steps} étapes · ${t.credits}/${t.credit_limit} crédits`;
-      card.querySelector('.task-result').textContent = t.result;
-      card.querySelector('.task-error').textContent = t.error;
-      for (const ev of t.events) {
-        const result = ev.data.result;
-        if(result?.status === 'visualization_ready' && result.chart && globalThis.AI2AICharts){
-          card.querySelector('.task-actions').append(AI2AICharts.createChart(result.chart));
-        }
-        if(result?.preview_url?.startsWith('/bara/{{ workspace.id }}/documents/')){
-          const a = document.createElement('a'); a.href = result.preview_url; a.textContent = 'Ouvrir '+(result.filename || 'le document');
-          const p = document.createElement('p'); p.append(a); card.querySelector('.task-actions').append(p);
-        }
-        if (!result || result.status !== 'pending_confirmation' || card.querySelector(`[data-confirm="${result.action_id}"]`)) continue;
-        const row = document.createElement('div'); row.dataset.confirm = result.action_id;
-        const text = document.createElement('p'); text.textContent = result.description; row.append(text);
-        for (const decision of ['confirm', 'reject']) {
-          const b = document.createElement('button'); b.textContent = decision === 'confirm' ? 'Confirmer' : 'Refuser';
-          b.onclick = async () => {
-            b.disabled = true;
-            try {
-              const response = await fetch(`/bara/{{ workspace.id }}/actions/${result.action_id}/${decision}/`, {method:'POST', headers:{'X-CSRFToken':csrf}});
-              if (response.ok) { row.replaceChildren(document.createTextNode('Décision enregistrée. La tâche reprendra automatiquement.')); }
-              else { text.textContent = 'Action indisponible ; consulte le journal.'; }
-            } catch { text.textContent = 'Connexion interrompue. Vérifie le journal avant de réessayer.'; }
-          }; row.append(b);
-        }
-        card.querySelector('.task-actions').append(row);
-      }
-      card.querySelector('[data-action=pause]').disabled = !['queued','running'].includes(t.status);
-      card.querySelector('[data-action=resume]').disabled = !['paused','waiting','failed'].includes(t.status);
-      card.querySelector('[data-action=cancel]').disabled = ['completed','cancelled'].includes(t.status);
-    } catch { card.querySelector('.task-error').textContent = 'Connexion perdue. La tâche reste enregistrée.'; }
-  }
-  document.querySelectorAll('[data-task]').forEach(card => {
-    card.querySelectorAll('[data-action]').forEach(b => b.onclick = async () => {
-      b.disabled = true;
-      try {
-        const body = new URLSearchParams({max_steps:card.querySelector('.task-steps').value, credit_limit:card.querySelector('.task-budget').value});
-        const r = await fetch(root + card.dataset.task + '/' + b.dataset.action + '/', {method:'POST',headers:{'X-CSRFToken':csrf},body});
-        if (!r.ok) card.querySelector('.task-error').textContent = (await r.json()).error;
-      } catch { card.querySelector('.task-error').textContent = 'Connexion perdue.'; }
-      await poll(card);
-    });
-    poll(card); setInterval(() => { if (!document.hidden) poll(card); }, 3000);
-  });
-})();
-</script>
+
+{% endblock %}
+
+{% block extra_js %}
+<script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
+<script defer src="{% static 'app/js/tasks.js' %}?v=frontend-1"></script>
 {% endblock %}

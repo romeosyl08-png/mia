@@ -1,19 +1,8 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}API — 2AI{% endblock %}
 {% block extra_head %}
-<style>
-  .api-wrap{max-width:820px;margin:0 auto;padding:30px 24px 60px;height:100%;overflow-y:auto;}
-  .api-wrap h1{font-size:24px;margin:0 0 6px;}
-  .api-wrap h2{font-size:16px;margin:32px 0 10px;}
-  .api-wrap p,.api-wrap li{font-size:14px;line-height:1.6;}
-  .api-wrap pre{background:#0d1117;color:#e6edf3;padding:14px;border-radius:10px;overflow-x:auto;font-size:12.5px;}
-  .api-wrap code{font-family:'Roboto Mono',monospace;}
-  .api-wrap p code,.api-wrap li code,.api-wrap td code{background:var(--panel);padding:2px 6px;border-radius:4px;font-size:12px;}
-  .api-wrap table{width:100%;border-collapse:collapse;font-size:12.5px;}
-  .api-wrap th,.api-wrap td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;}
-  .api-wrap th{font-size:11px;text-transform:uppercase;opacity:.55;}
-  .api-cta{display:inline-block;background:var(--accent);color:var(--accent-ink);padding:9px 18px;border-radius:8px;text-decoration:none;font-weight:600;font-size:13px;}
-</style>
+<link rel="stylesheet" href="{% static 'app/css/api.css' %}?v=frontend-1">
 {% endblock %}
 {% block body %}
 <div class="api-wrap">

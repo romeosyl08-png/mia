@@ -1,4 +1,4 @@
-const STATIC_CACHE = "2ai-public-static-v1";
+const STATIC_CACHE = "2ai-public-static-v2";
 const STATIC_PREFIX = "/static/";
 
 self.addEventListener("install", event => {

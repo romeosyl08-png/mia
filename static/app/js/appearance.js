@@ -158,10 +158,14 @@
             contrastColor(appearance.accent)
         );
 
+        document.documentElement.setAttribute("data-theme", appearance.theme);
         document.body.setAttribute(
             "data-theme",
             appearance.theme
         );
+
+        const themeColor = document.querySelector('meta[name="theme-color"]');
+        if (themeColor) themeColor.content = appearance.theme === "dark" ? "#191c28" : appearance.accent;
 
 
         /*

@@ -23,3 +23,5 @@ def create_credit_account(sender, instance, created, **kwargs):
         )
         for persona_data in DEFAULT_PERSONAS:
             Persona.objects.create(user=instance, **persona_data)
+        from chat.persona_context import ensure_big_persona
+        ensure_big_persona(instance)

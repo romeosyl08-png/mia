@@ -23,6 +23,8 @@ L’option **IA locale** se connecte directement, depuis le navigateur, à Ollam
 
 Les conversations créées avec une IA locale sont enregistrées dans le stockage du navigateur par défaut, sans être envoyées à l’historique du compte. Le bouton **Copier dans mon compte** synchronise explicitement les nouveaux échanges vers le serveur. Cette copie est distincte de l’original local.
 
+Le bouton ninja ouvre une **conversation temporaire**, sans mémoire enregistrée par défaut. Le sélecteur **Mémoire de persona** permet d’utiliser la mémoire du persona choisi pour les prochains messages, avec un modèle cloud ou local. La sélection ne modifie pas cette mémoire. Pour conserver les échanges, choisis un persona dans **Enregistrer dans un persona**, puis clique sur **Enregistrer** : la conversation, ses sources, ses résultats d’outils et ses images générées rejoignent l’historique de ce persona. Elle devient alors une conversation enregistrée. Sans cette action, elle reste uniquement en mémoire dans l’onglet.
+
 ## Recharges et paiements
 
 Stripe accepte les paiements par carte en USD. La page publique `/tarifs/` liste les modèles cloud actifs et les crédits par million de tokens en entrée et en sortie, selon la même formule que la facturation. Stripe nécessite également `STRIPE_SECRET_KEY`.
@@ -82,6 +84,14 @@ Chaque appel d'une équipe est facturé selon les tarifs du modèle qui l'a exé
 
 L'historique transmis aux modèles est limité aux échanges récents avec `CHAT_HISTORY_MAX_MESSAGES=48` et `CHAT_HISTORY_MAX_CHARS=48000`. Cette limite concerne le contexte fournisseur, pas l'historique sauvegardé. Les conversations reprennent leur place dans les échanges récents après chaque nouvelle réponse.
 
+Les résultats d’outils envoyés aux modèles utilisent du JSON compact sans modifier leurs données. Les instructions et sources de citation ne sont plus répétées dans un même prompt, et les passages documentaires qui se chevauchent sont fusionnés quand leur contenu correspond exactement dans le même fichier et la même page. L’historique sauvegardé, les préférences, les sources affichées et les limites de sortie sont conservés. Les mesures sur des exemples fictifs et les pistes supplémentaires de réduction du contexte sont détaillées dans `fiches.txt`, sections 19 et 20 ; les gains réels en tokens dépendent du modèle et des demandes.
+
+Chaque compte dispose aussi de **Big Persona**, créé par la migration `chat.0024_persona_sharing_big_persona` pour les comptes existants, puis automatiquement à l’inscription. Dans **Paramètres → Persona actif**, active **Autoriser la liaison avec Big Persona et les autres personas autorisés** sur chaque persona que tu souhaites partager. Le partage est désactivé par défaut et concerne uniquement la mémoire et les réglages, entre personas du même compte ; les conversations restent séparées. Les personas classiques qui autorisent la liaison reçoivent également le contexte des autres personas autorisés.
+
+Big Persona reçoit les sources autorisées, le profil du compte (nom, e-mail, date d’inscription et solde) et les réglages fonctionnels du site : génération, fonctionnalités, limites, tarification et modèles de médias. Ces informations sont sélectionnées explicitement côté serveur ; les mots de passe, clés API, secrets OAuth et paramètres de connexion à la base ne sont pas transmis. Le panneau **Big Persona** permet de consulter le profil et les réglages accessibles et d’ouvrir sa conversation. Le contexte est relu à chaque demande, pour les modèles hébergés comme locaux, sans recopier les mémoires sources dans celle de Big Persona. Une révocation s’applique aux prochaines demandes ; les messages déjà échangés ne sont pas effacés. Le contexte partagé utilise du JSON compact, mais sa taille augmente avec les sources autorisées.
+
+Applique la migration avec `python manage.py migrate` avant de démarrer cette version. Les nouveaux endpoints authentifiés `/chat/api/big-persona/` et `/chat/api/personas/<id>/context/` renvoient uniquement le contexte du compte connecté avec `Cache-Control: no-store`. Big Persona est un persona intégré, unique par compte ; son type ne peut pas être forgé via l’API et il ne peut pas servir de source partagée ni être supprimé par cette API.
+
 ### Sécurité des outils Bara
 
 Les outils `run_python`, `run_command` et `extract_document_text` sont désactivés par défaut. Ils utilisent uniquement un conteneur Docker sans réseau, avec système de fichiers en lecture seule, utilisateur non privilégié et limites de ressources. Aucun repli vers une exécution sur l’hôte n’est permis. Prépare l’image `runtime/Dockerfile` avant de configurer `BARA_CODE_EXECUTION_ENABLED=true`. La sélection d’outils d’un workspace ne peut pas contourner ce réglage serveur. Voir `FEATURES.md` pour l’installation du runtime.
@@ -122,10 +132,23 @@ Le calcul des crédits se trouve dans `chat/billing.py`, l'orchestration des éq
 
 ## Vérifications
 
+Le frontend utilise `base.css` pour les couleurs, la typographie système, les formulaires et les pages de contenu. Chaque template charge ensuite ses propres styles et scripts ; les bibliothèques Markdown et le runtime du chat sont réservés aux pages qui en ont besoin. Les scripts sont différés, les requêtes initiales du chat indépendantes partent en parallèle, et le thème sauvegardé est appliqué avant l’affichage.
+
+La séparation des ressources réduit les fichiers CSS/JS locaux suivants, en Ko décimaux avant compression (HTML, images et ressources CDN exclus) :
+
+| Page | Avant | Après |
+| --- | ---: | ---: |
+| Connexion | 206 | 28 |
+| Tarifs | 206 | 26 |
+| Recharge | 213 | 36 |
+| À propos | 200 | 24 |
+| Paramètres | 222 | 42 |
+
+Ces tailles décrivent les ressources référencées par les templates, pas un temps de chargement en production. `chat.test_frontend` protège le budget des pages de contenu et vérifie les dépendances du chat, de Bara et des tâches. La compilation WhiteNoise conserve les noms de fichiers avec empreinte et la compression en production.
+
 ```sh
 python manage.py test chat api ai_user bara barrassons
-node --test tests/js/chat_transport.test.cjs
-node --test tests/js/message_sources.test.cjs
+node --test tests/js/*.test.cjs
 python manage.py makemigrations --check --dry-run
 ```
 

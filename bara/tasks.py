@@ -13,6 +13,7 @@ from django.utils import timezone
 from chat.billing import settle_reservation
 from chat.services import estimate_cost, is_local_provider, ProviderError
 from chat.context import conversation_history
+from chat.prompt_payloads import compact_json
 from chat.sources import SourceCollector
 from chat.models import RoutingObservation
 from ai_user.models import InsufficientCreditsError
@@ -154,7 +155,7 @@ def execute_task(task):
                 result = dispatch_tool(task.workspace, name, args, mcp_map, task.conversation_id) if name in allowed else {'error': 'Outil désactivé.'}
                 result = SourceCollector(task.state.setdefault('sources', [])).collect(name, result)
                 _log_tool(task.workspace, name, args, result)
-            messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(result, ensure_ascii=False)[:24000]})
+            messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': compact_json(result)[:24000]})
             task.state.pop('inflight', None)
             if isinstance(result, dict) and result.get('status') == 'pending_confirmation':
                 task.state.setdefault('pending', []).append({'id': result['action_id'], 'call_id': call['id']})
@@ -169,7 +170,7 @@ def execute_task(task):
                 return
             for m in messages:
                 if m.get('tool_call_id') == item['call_id']:
-                    m['content'] = json.dumps({'status': action.status, 'result': action.result} if action else {'error': 'Action indisponible.'})
+                    m['content'] = compact_json({'status': action.status, 'result': action.result} if action else {'error': 'Action indisponible.'})
         task.state['pending'] = []
         if not boundary(task):
             return

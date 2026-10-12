@@ -1,15 +1,17 @@
 {% extends "base.html" %}
 
 {% block title %}Connexion — 2AI{% endblock %}
+{% block body_class %}page auth-page{% endblock %}
 
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/auth.css' %}">
+<link rel="stylesheet" href="{% static 'app/css/auth.css' %}?v=frontend-1">
 
 {% endblock %}
 
 {% block body %}
 <div class="card">
+  <a class="auth-back" href="{% url 'chat:about' %}">Découvrir 2AI <span aria-hidden="true">↗</span></a>
 
   <div class="brand">
       <span class="brand-mark" data-bot-avatar>🐘</span>
@@ -80,7 +82,8 @@
         <input type="tel" id="wa_phone" name="phone" placeholder="+225 07 00 00 00 00">
         <div class="help">Un code de vérification te sera envoyé par WhatsApp.</div>
       </div>
-      <button type="button" class="send-otp-btn" id="waSendOtp">Envoyer le code</button>
+      <button type="button" class="send-otp-btn" id="waSendOtp" data-otp-url="{% url 'whatsapp_send_otp' %}">Envoyer le code</button>
+      <p class="otp-status" role="status" aria-live="polite"></p>
     </div>
 
     <p class="switch-line">Pas encore de compte ? <a href="#" id="linkToSignup">Créer un compte</a></p>
@@ -130,12 +133,14 @@
     </a>
 
     <div id="telegram-login-wrap-signup" style="display:flex;justify-content:center;margin-bottom:10px;">
+      {% if telegram_bot_username %}
       <script async src="https://telegram.org/js/telegram-widget.js?22"
         data-telegram-login="{{ telegram_bot_username }}"
         data-size="large"
         data-radius="10"
         data-auth-url="{% url 'telegram_auth' %}?next={{ next_url|urlencode }}"
         data-request-access="write"></script>
+      {% endif %}
     </div>
 
     <button type="button" class="social-btn whatsapp" id="waToggleSignup">
@@ -148,7 +153,8 @@
         <input type="tel" id="wa_phone_signup" name="phone" placeholder="+225 07 00 00 00 00">
         <div class="help">Un code de vérification te sera envoyé par WhatsApp.</div>
       </div>
-      <button type="button" class="send-otp-btn" id="waSendOtpSignup">Envoyer le code</button>
+      <button type="button" class="send-otp-btn" id="waSendOtpSignup" data-otp-url="{% url 'whatsapp_send_otp' %}">Envoyer le code</button>
+      <p class="otp-status" role="status" aria-live="polite"></p>
     </div>
 
     <p class="switch-line">Déjà un compte ? <a href="#" id="linkToLogin">Se connecter</a></p>
@@ -156,4 +162,9 @@
 
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script defer src="{% static 'app/js/auth.js' %}?v=frontend-1"></script>
 {% endblock %}

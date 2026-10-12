@@ -17,7 +17,15 @@ class Persona(models.Model):
     temperature = models.FloatField(default=0.7)
     length = models.CharField(max_length=20, default="medium")
     is_default = models.BooleanField(default=False)
+    is_big_persona = models.BooleanField(default=False)
+    share_with_personas = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user'], condition=models.Q(is_big_persona=True), name='one_big_persona_per_user'),
+            models.CheckConstraint(condition=models.Q(is_big_persona=False) | models.Q(share_with_personas=False), name='big_persona_not_shared_source'),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.user})"

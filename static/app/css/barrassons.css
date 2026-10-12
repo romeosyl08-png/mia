@@ -1,9 +1,8 @@
 .barrassons-guide {
   width: min(860px, calc(100% - 40px));
-  height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   padding: 30px 0 64px;
-  overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   color: var(--ink, #242423);
@@ -91,7 +90,7 @@
 }
 
 .guide-section code {
-  font-family: 'Roboto Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 

@@ -1,10 +1,12 @@
 from django.urls import path
 
-from . import views, memory_views, recovery_views
+from . import views, memory_views, recovery_views, persona_views, temporary_views
 
 app_name = 'chat'
 
 urlpatterns = [
+    path('chat/api/big-persona/', persona_views.big_persona, name='big-persona'),
+    path('chat/api/personas/<int:pk>/context/', persona_views.persona_context, name='persona-context'),
     path('chat/api/recovery/<str:token>/',recovery_views.recovery,name='recovery'),
     path('memory/', memory_views.memory_settings, name='memory'),
     path('memory/project/<int:workspace_id>/', memory_views.memory_settings, name='project-memory'),
@@ -22,6 +24,7 @@ urlpatterns = [
 
 	path('api/conversations/', views.ConversationListView.as_view(), name='conversation-list'),
 	path('chat/api/conversations/sync-local/', views.LocalConversationSyncView.as_view(), name='chat-sync-local-conversation'),
+	path('chat/api/conversations/save-temporary/', temporary_views.TemporaryConversationSaveView.as_view(), name='chat-save-temporary-conversation'),
 	path('api/conversations/<int:pk>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
 	path('api/conversations/<int:pk>/delete/', views.ConversationDeleteView.as_view(), name='conversation-delete'),
 	path('chat/api/conversations/', views.ConversationListView.as_view(), name='chat-conversation-list'),

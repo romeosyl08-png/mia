@@ -4,6 +4,12 @@ from django.test import TestCase
 
 
 class SignupValidationTests(TestCase):
+    def test_login_errors_only_appear_after_an_unsuccessful_submission(self):
+        response = self.client.get('/login/')
+        self.assertNotContains(response, 'Identifiants incorrects')
+        response = self.client.post('/login/', {'username': 'unknown', 'password': 'wrong'})
+        self.assertContains(response, 'Identifiants incorrects')
+
     def signup(self, **values):
         payload = {'username': 'new-account', 'email': 'new@example.test', 'password1': 'P7!cobalt-forest-V4', 'password2': 'P7!cobalt-forest-V4'}
         payload.update(values)

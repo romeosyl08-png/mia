@@ -16,12 +16,18 @@
   }
 
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('/service-worker.js', {scope:'/'})
+    const register = () => navigator.serviceWorker.register('/service-worker.js', {scope:'/'})
       .catch(error => {
         console.error('2AI service worker registration failed.', error);
         controls.hidden = false;
         status.textContent = 'Installation PWA indisponible : ouvre 2AI en HTTPS ou sur localhost.';
       });
+    const scheduleRegistration = () => {
+      if ('requestIdleCallback' in window) window.requestIdleCallback(register, {timeout: 2000});
+      else window.setTimeout(register, 0);
+    };
+    if (document.readyState === 'complete') scheduleRegistration();
+    else window.addEventListener('load', scheduleRegistration, {once: true});
   }
 
   window.addEventListener('beforeinstallprompt', event => {

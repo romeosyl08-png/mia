@@ -4,7 +4,8 @@ import json
 from bara.agent_tools import _tools_schema, _log_tool, dispatch_tool
 from bara.services import call_llm_with_tools, call_llm_with_tools_stream
 
-from .sources import SourceCollector
+from .prompt_payloads import compact_json
+from .sources import CITATION_INSTRUCTIONS, SourceCollector
 
 MAX_FILE_TOOL_ITERATIONS = 4
 
@@ -36,6 +37,10 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
     sources = sources if sources is not None else []
     tool_events = tool_events if tool_events is not None else []
     collector = SourceCollector(sources)
+    initial_source_prompt = collector.prompt(include_instructions=False)
+    included_sources = len(sources) if initial_source_prompt and initial_source_prompt in system_prompt else 0
+    if CITATION_INSTRUCTIONS not in system_prompt:
+        system_prompt += CITATION_INSTRUCTIONS
     schemas, mcp_map = _tools_schema(workspace, public_only=workspace is None)
     allowed = {tool['function']['name'] for tool in schemas}
     system_prompt += TOOL_INSTRUCTIONS + '\nOutils disponibles : ' + ', '.join(sorted(allowed))
@@ -44,7 +49,7 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
     pending_results = {}
     for iteration in range(MAX_FILE_TOOL_ITERATIONS + 1):
         turn_tools = schemas if iteration < MAX_FILE_TOOL_ITERATIONS else None
-        prompt = system_prompt + collector.prompt()
+        prompt = system_prompt + collector.prompt(include_instructions=False, start_at=included_sources)
         if streamed:
             calls = {}
             turn_parts = []
@@ -116,7 +121,7 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
                 tool_events.append(artifact)
                 yield artifact
             yield {'type': 'tool_status', 'tool': name, 'status': 'error' if isinstance(result, dict) and result.get('error') else 'done'}
-            tool_messages.append({'role': 'tool', 'tool_call_id': call.get('id') or f'chat-tool-{iteration}-{index}', 'name': name, 'content': json.dumps(result, ensure_ascii=False)[:24_000]})
+            tool_messages.append({'role': 'tool', 'tool_call_id': call.get('id') or f'chat-tool-{iteration}-{index}', 'name': name, 'content': compact_json(result)[:24_000]})
         if assistant.get('content'):
             yield {'type': 'delta', 'content': '\n\n'}
     yield {'type': 'usage', 'input_tokens': input_tokens, 'output_tokens': output_tokens}

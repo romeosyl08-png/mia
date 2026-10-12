@@ -1,8 +1,17 @@
 {% extends "base.html" %}
+{% load static %}
+
+{% block body_class %}chat-page{% endblock %}
+{% block body_attributes %}{% endblock %}
+{% block install_controls %}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=temporary-persona-1">
+<link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+{% endblock %}
 
 {% block title %}2AI{% endblock %}
 
-{% load static %}
 
 {% block body %}
 <div class="app">
@@ -60,7 +69,8 @@
       <a href="{% url 'chat:about' %}">ⓘ &nbsp;À propos de 2AI</a>
       <a href="{% url 'chat:legal' %}">§ &nbsp;Informations juridiques</a>
     </nav>
-    <div class="sidebar-footer">Session locale — rien n'est envoyé à un serveur sans clé API renseignée.</div>
+    <div class="sidebar-footer">Tes conversations, tes assistants et tes outils dans un même espace.</div>
+    {% include "includes/pwa_controls.html" with pwa_inline=True %}
   </aside>
 
   <!-- MAIN CHAT -->
@@ -80,7 +90,7 @@
       </div>
       <div class="header-actions">
     <button type="button" class="panel-toggle" id="toggleLeftPanel" title="Masquer le panneau gauche" aria-label="Masquer le panneau gauche">‹</button>
-    <button type="button" class="temporary-toggle" id="temporaryChatBtn" aria-pressed="false" title="Conversation temporaire" aria-label="Conversation temporaire"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></button>
+    <button type="button" class="temporary-toggle" id="temporaryChatBtn" aria-pressed="false" title="Conversation temporaire" aria-label="Conversation temporaire" aria-controls="temporaryChatControls">{% include "includes/temporary_ninja.html" %}</button>
     
     <!-- Remplacement par une balise <button> -->
     <button type="button" class="credit-pill recharge-btn" id="creditPill" title="Voir les jetons" {% if not is_authenticated %}disabled{% endif %}>
@@ -92,10 +102,30 @@
 </div>
         </div>
 
+    <section class="temporary-controls" id="temporaryChatControls" aria-label="Options de la conversation temporaire" hidden>
+      <p class="temporary-description">Les échanges ne sont pas enregistrés automatiquement.</p>
+      <div class="temporary-memory-control">
+        <label for="temporaryMemoryPersona">Mémoire de persona</label>
+        <select id="temporaryMemoryPersona" aria-describedby="temporaryMemoryHint"><option value="">Sans mémoire</option></select>
+        <small id="temporaryMemoryHint">Appliquée aux prochains messages.</small>
+      </div>
+      <div class="temporary-save-control">
+        <label for="temporarySavePersona">Enregistrer dans un persona</label>
+        <div class="temporary-save-row">
+          <select id="temporarySavePersona"><option value="">Choisir un persona</option></select>
+          <button type="button" id="saveTemporaryConversationBtn" disabled>Enregistrer</button>
+        </div>
+        <small>La conversation sera conservée dans son historique.</small>
+      </div>
+      <p class="temporary-status" id="temporaryConversationStatus" role="status" aria-live="polite"></p>
+    </section>
+
     <div class="messages" id="messages">
       <div class="empty-state">
-        <div class="display">Choisis un persona, écris un message</div>
-        <div>Chaque échange consomme des jetons de ton solde prépayé, consultable en haut de la page.</div>
+        <div class="empty-state-mark" aria-hidden="true">✦</div>
+        <p class="page-eyebrow">Ton espace de réflexion</p>
+        <div class="display">Qu’allons-nous créer aujourd’hui ?</div>
+        <div class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</div>
       </div>
     </div>
 
@@ -117,7 +147,7 @@
             <button type="button" class="plus-menu-item" id="conversationVoiceBtn" aria-pressed="false">Conversation vocale</button>
           </div>
         </div>
-        <textarea id="composerInput" placeholder="Merry Christmas" rows="1"></textarea>
+        <textarea id="composerInput" placeholder="Écris ton message…" aria-label="Ton message" rows="1"></textarea>
         <button type="submit" class="send-btn" id="sendBtn" title="Envoyer le message" aria-label="Envoyer le message"><span id="sendButtonLabel">Envoyer</span></button>
       </div>
       <div class="composer-tools" aria-label="Outils du message">
@@ -377,4 +407,15 @@
 
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
+{{ chat_config|json_script:"chat-config" }}
+{% include "includes/markdown_scripts.html" %}
+<script defer src="{% static 'app/js/chat_transport.js' %}?v=recovery-1"></script>
+<script defer src="{% static 'app/js/message_sources.js' %}?v=citations-1"></script>
+<script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
+<script defer src="{% static 'app/js/chat_tools.js' %}?v=documents-1"></script>
+<script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-persona-1"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=temporary-persona-1"></script>
 {% endblock %}

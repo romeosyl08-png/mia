@@ -55,6 +55,7 @@ from .plugin_services import (
 )
 from chat.services import is_local_provider
 from chat.context import conversation_history
+from chat.prompt_payloads import compact_json
 from chat.billing import settle_reservation
 from chat.routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 
@@ -864,7 +865,7 @@ def send_message(request, workspace_id, conversation_id):
                         "role": "tool",
                         "tool_call_id": tc["id"],
                         "name": tool_name,
-                        "content": json.dumps(tool_result, ensure_ascii=False),
+                        "content": compact_json(tool_result),
                     })
             else:
                 note = "\n\n(Limite d'étapes atteinte.)"

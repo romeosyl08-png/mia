@@ -1,8 +1,8 @@
 .customize-page {
 
-    min-height: 100vh;
+    min-height: 100dvh;
 
-    background: var(--paper);
+    background: var(--canvas);
     color: var(--ink);
 
     overflow-y: auto;
@@ -15,7 +15,7 @@
 
 .customize-header {
 
-    height: 64px;
+    height: 72px;
 
     display: flex;
     align-items: center;
@@ -106,8 +106,9 @@
 
     padding: 24px;
 
-    background: var(--panel);
+    background: var(--paper);
 
+    box-shadow: var(--elevation);
     border: 1px solid var(--line);
 
     border-radius: 16px;
@@ -118,7 +119,7 @@
 
     margin: 0 0 22px;
 
-    font-family: "Space Grotesk", sans-serif;
+    font-family: var(--font-display);
 
     font-size: 20px;
     font-weight: 600;
@@ -458,7 +459,7 @@
 
     background: var(--paper);
 
-    font-family: "Roboto Mono", monospace;
+    font-family: var(--font-mono);
 
     font-size: 10.5px;
 }
@@ -510,3 +511,13 @@
     }
 
 }
+
+.persona-sharing-controls { margin: 22px 0; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.persona-sharing-controls[hidden] { display: none; }
+.persona-sharing-label { display: flex; align-items: flex-start; gap: 10px; color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
+.persona-sharing-label input { width: 17px; height: 17px; flex: none; margin: 2px 0 0; }
+.big-persona-sources { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 14px 0 22px; list-style: none; }
+.big-persona-sources li { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: 13px; }
+.big-persona-details { margin-top: 24px; font-size: 13px; }
+.big-persona-details summary { cursor: pointer; font-weight: 600; }
+.big-persona-details pre { max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; border-radius: 10px; background: var(--panel); color: var(--ink); font: 12px/1.65 var(--font-mono); }

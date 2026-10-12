@@ -636,7 +636,7 @@ class ChatHomeTests(TestCase):
 	def test_new_users_receive_default_personas(self):
 		user = User.objects.create_user(username='persona-user', password='test-password')
 
-		self.assertEqual(user.personas.count(), 3)
+		self.assertEqual(user.personas.filter(is_big_persona=False).count(), 3)
 		personas = list(user.personas.order_by('id'))
 		self.assertEqual(personas[0].name, 'Assistant général')
 		self.assertEqual(personas[0].appearance_name, '2AI')
@@ -655,7 +655,7 @@ class ChatHomeTests(TestCase):
 
 		response = self.client.get('/chat/api/personas/')
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(len(response.json()), 3)
+		self.assertEqual(len(response.json()), 4)
 
 		response = self.client.post(
 			'/chat/api/personas/',

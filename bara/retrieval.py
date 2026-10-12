@@ -71,6 +71,28 @@ def cosine(a,b):
     return sum(x*y for x,y in zip(a,b))/divisor if divisor else 0
 
 
+def merge_passages(matches):
+    """Join identical overlaps from the same file/page, retaining relevance order."""
+    merged = []
+    for rank, row in sorted(enumerate(matches), key=lambda item: (item[1]['file_id'], item[1]['start'])):
+        current = merged[-1] if merged else None
+        if (current and current['file_id'] == row['file_id']
+                and current['page'] == row['page']
+                and current['start'] <= row['start'] <= current['end']):
+            overlap = min(current['end'], row['end']) - row['start']
+            offset = row['start'] - current['start']
+            if current['text'][offset:offset + overlap] == row['text'][:overlap]:
+                current['text'] += row['text'][overlap:]
+                current['end'] = max(current['end'], row['end'])
+                current['_rank'] = min(current['_rank'], rank)
+                continue
+        merged.append({**row, '_rank': rank})
+    result = sorted(merged, key=lambda row: row['_rank'])
+    for row in result:
+        row.pop('_rank')
+    return result
+
+
 def retrieve(workspace, query, limit=6):
     query_terms = terms(query)
     if not query_terms:

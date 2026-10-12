@@ -1,6 +1,7 @@
 """Collect only actual search/page results and assign stable citation numbers."""
-import json
 from urllib.parse import urlsplit
+
+from .prompt_payloads import compact_json
 
 MAX_SOURCES = 24
 CITATION_INSTRUCTIONS = (
@@ -61,7 +62,13 @@ class SourceCollector:
                 result['citation_id'] = citation_id
         return result
 
-    def prompt(self):
-        if not self.sources:
-            return CITATION_INSTRUCTIONS
-        return CITATION_INSTRUCTIONS + '\nSources déjà consultées :\n' + json.dumps(self.sources, ensure_ascii=False)
+    def prompt(self, *, include_instructions=True, start_at=0):
+        instructions = CITATION_INSTRUCTIONS if include_instructions else ''
+        sources = [
+            {**source, 'citation_id': index + 1}
+            for index, source in enumerate(self.sources)
+            if index >= start_at
+        ]
+        if not sources:
+            return instructions
+        return instructions + '\nSources déjà consultées :\n' + compact_json(sources)

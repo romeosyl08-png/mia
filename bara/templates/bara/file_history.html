@@ -1,20 +1,13 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Historique — {{ file.original_name }}{% endblock %}
 {% block extra_head %}
-<style>
-  .hist-wrap{max-width:800px;margin:0 auto;padding:24px;height:100%;overflow-y:auto;}
-  .hist-wrap a.back{font-size:13px;color:var(--ink);opacity:.6;text-decoration:none;}
-  .hist-item{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:12px;}
-  .hist-item summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;}
-  .hist-item pre{margin-top:12px;background:var(--panel);border-radius:8px;padding:12px;font-size:12px;max-height:300px;overflow:auto;white-space:pre-wrap;}
-  .hist-restore{background:var(--accent);color:var(--accent-ink);border:0;padding:6px 12px;border-radius:7px;font-size:12px;cursor:pointer;font-weight:600;}
-  .hist-empty{opacity:.55;font-size:13.5px;padding:20px 0;}
-</style>
+<link rel="stylesheet" href="{% static 'app/css/file_history.css' %}?v=frontend-1">
 {% endblock %}
 {% block body %}
 <div class="hist-wrap">
   <a class="back" href="{% url 'bara:edit-file' workspace.id file.id %}">‹ Retour à l'éditeur</a>
-  <h1 style="font-size:18px;margin:8px 0 4px;font-family:'Roboto Mono',monospace;">{{ file.original_name }}</h1>
+  <h1 style="font-size:18px;margin:8px 0 4px;font-family:var(--font-mono);">{{ file.original_name }}</h1>
   <p style="opacity:.55;font-size:13px;">Version actuelle : {{ file.size_bytes }} octets</p>
 
   {% for version in versions %}

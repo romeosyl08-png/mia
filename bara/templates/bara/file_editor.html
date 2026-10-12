@@ -1,22 +1,8 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ file.original_name }} — {{ workspace.title }}{% endblock %}
 {% block extra_head %}
-<style>
-  .editor-wrap{max-width:900px;margin:0 auto;padding:24px;height:100%;display:flex;flex-direction:column;}
-  .editor-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-  .editor-header a{font-size:13px;color:var(--ink);opacity:.6;text-decoration:none;}
-  .editor-header h1{font-size:16px;margin:6px 0 0;font-family:'Roboto Mono',monospace;}
-  #editor-textarea{
-    flex:1;width:100%;border:1px solid var(--line);border-radius:10px;padding:16px;
-    font-family:'Roboto Mono',monospace;font-size:13px;line-height:1.5;
-    background:var(--paper);color:var(--ink);resize:none;
-  }
-  #editor-textarea:focus{outline:0;border-color:var(--accent);}
-  .editor-actions{display:flex;justify-content:space-between;align-items:center;margin-top:12px;}
-  #save-status{font-size:12px;opacity:.6;}
-  #save-btn{background:var(--accent);color:var(--accent-ink);border:0;padding:9px 20px;border-radius:8px;font-weight:600;cursor:pointer;}
-  #save-btn:disabled{opacity:.5;cursor:not-allowed;}
-</style>
+<link rel="stylesheet" href="{% static 'app/css/file_editor.css' %}?v=frontend-1">
 {% endblock %}
 {% block body %}
 <div class="editor-wrap">
@@ -35,39 +21,8 @@
     </div>
   </form>
 </div>
-<script>
-(function(){
-  const form = document.getElementById('editor-form');
-  const textarea = document.getElementById('editor-textarea');
-  const saveBtn = document.getElementById('save-btn');
-  const status = document.getElementById('save-status');
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    saveBtn.disabled = true;
-    status.textContent = 'Enregistrement…';
-    try{
-      const res = await fetch(form.action || window.location.href, {
-        method: 'POST',
-        headers: { 'X-CSRFToken': form.querySelector('[name=csrfmiddlewaretoken]').value },
-        body: new URLSearchParams({ content: textarea.value })
-      });
-      if(res.status === 413){ status.textContent = await res.text(); }
-      else { status.textContent = res.ok ? 'Enregistré.' : "Échec de l'enregistrement."; }
-    } catch(err){
-      status.textContent = 'Échec de l\'enregistrement.';
-    } finally {
-      saveBtn.disabled = false;
-      setTimeout(() => { status.textContent = ''; }, 2500);
-    }
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if((e.ctrlKey || e.metaKey) && e.key === 's'){
-      e.preventDefault();
-      form.requestSubmit();
-    }
-  });
-})();
-</script>
+{% endblock %}
+{% block extra_js %}
+<script defer src="{% static 'app/js/file_editor.js' %}?v=frontend-1"></script>
 {% endblock %}

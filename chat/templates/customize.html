@@ -4,7 +4,7 @@
 {% block title %}Paramètres — 2AI{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/customize.css' %}">
+<link rel="stylesheet" href="{% static 'app/css/customize.css' %}?v=big-persona-1">
 {% endblock %}
 
 {% block body %}
@@ -79,7 +79,16 @@
             <div class="field">
                 <label for="personaMemory">Mémoire et préférences</label>
                 <textarea id="personaMemory" maxlength="8000" placeholder="Ex. : préfère les réponses courtes, donne des exemples en Python, utilise le système métrique."></textarea>
-                <small class="field-hint">Cette mémoire est privée et ne s’applique qu’à ce persona.</small>
+                <small class="field-hint">Cette mémoire reste propre au persona tant que tu n’autorises pas sa liaison.</small>
+            </div>
+
+            <div class="persona-sharing-controls" id="personaSharingControls">
+                <label class="persona-sharing-label" for="personaShareContext">
+                    <input type="checkbox" id="personaShareContext" disabled>
+                    Autoriser la liaison avec Big Persona et les autres personas autorisés
+                </label>
+                <p class="field-hint">Seuls la mémoire et les réglages sont partagés entre les personas de ton compte. Les conversations restent séparées. Désactiver la liaison arrête le partage pour les prochaines demandes ; les messages déjà envoyés restent dans leur historique.</p>
+                <p id="personaShareStatus" class="persona-save-status" role="status" aria-live="polite"></p>
             </div>
 
             <div class="field">
@@ -110,6 +119,20 @@
                 </select>
             </div>
 
+        </section>
+
+        <section class="settings-section" id="bigPersonaSettings">
+            <p class="page-eyebrow">Assistant transversal</p>
+            <h2>Big Persona</h2>
+            <p class="settings-description">Il réunit les mémoires et les réglages des personas dont tu as autorisé la liaison. Il reçoit aussi ton profil (nom, e-mail et solde) et les réglages fonctionnels du site lorsque tu l’utilises avec un modèle IA.</p>
+            <p class="persona-save-status" id="bigPersonaStatus" role="status" aria-live="polite">Chargement des autorisations…</p>
+            <ul id="bigPersonaSources" class="big-persona-sources"></ul>
+            <a href="/" id="bigPersonaChatLink" class="button-primary">Discuter avec Big Persona</a>
+            <details class="big-persona-details">
+                <summary>Voir le profil et les réglages accessibles</summary>
+                <p class="field-hint">Ces données proviennent de ton compte et des réglages fonctionnels du site. Les mots de passe, clés API et secrets serveur ne font pas partie de ce contexte.</p>
+                <pre id="bigPersonaSnapshot"></pre>
+            </details>
         </section>
         {% endif %}
 
@@ -204,6 +227,7 @@
 
 
 {% block extra_js %}
-<script src="{% static 'app/js/customize.js' %}?v=persona-brand-2"></script>
+<script defer src="{% static 'app/js/customize.js' %}?v=big-persona-1"></script>
+{% if is_authenticated %}<script defer src="{% static 'app/js/persona_sharing.js' %}?v=big-persona-1"></script>{% endif %}
 
 {% endblock %}

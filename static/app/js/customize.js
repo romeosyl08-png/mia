@@ -56,6 +56,7 @@
         document.getElementById("personaSaveStatus");
     let appearanceSaveTimer = null;
     let activePersona = null;
+    window.AI2AIPersonaSettings = {getSelected: () => activePersona};
     let schedulePersonaSave = () => {};
 
     function scheduleAppearanceSave(){
@@ -429,6 +430,7 @@
             const temperatureLabel = document.getElementById("tempVal");
             if (temperatureLabel) temperatureLabel.textContent = personaTemp.value;
             if (personaSaveStatus) personaSaveStatus.textContent = "";
+            document.dispatchEvent(new CustomEvent('ai2ai:persona-selected', {detail: persona}));
         }
 
         async function loadPersonas() {
@@ -485,6 +487,7 @@
                 });
                 if (!response.ok) throw new Error("Enregistrement impossible.");
                 Object.assign(persona, await response.json());
+                document.dispatchEvent(new CustomEvent('ai2ai:persona-saved', {detail: persona}));
                 if (personaSaveStatus) personaSaveStatus.textContent = "Modifications enregistrées.";
             } catch (error) {
                 if (personaSaveStatus) personaSaveStatus.textContent = error.message;

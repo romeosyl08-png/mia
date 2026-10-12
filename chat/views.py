@@ -18,6 +18,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 
 from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
+from .persona_context import ensure_big_persona, persona_settings, shared_persona_context
 from .media_generation import generate_media, generate_openrouter_media, normalize_generation_options
 from .routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 from ai_user.models import InsufficientCreditsError
@@ -35,6 +36,7 @@ from .file_tools import MAX_FILE_TOOL_ITERATIONS, run_file_tools as _run_file_to
 from .sources import CITATION_INSTRUCTIONS, SourceCollector
 from .team import estimate_team_cost
 from .turns import complete_chat_turn as _complete_chat_turn
+from .temporary import persona_memory_context, selected_memory_persona
 
 logger = logging.getLogger(__name__)
 IMAGE_GENERATION_COST_USD = 0.042
@@ -173,6 +175,7 @@ def chat_home(request):
 		'loginUrl': '/auth/?next=/',
 		'hasActiveModels': bool(models),
 		'modelId': default_model_id,
+		'initialPersonaId': request.GET.get('persona', ''),
 		'defaultTopP': preferences.top_p,
 		'defaultMaxTokens': preferences.max_tokens,
 		'imageGenerationAvailable': openrouter_media_available and bool(settings.OPENROUTER_IMAGE_MODEL),
@@ -299,6 +302,12 @@ class SendMessageView(View):
 		temporary = payload.get('temporary') is True
 		if temporary and (payload.get('conversation_id') or payload.get('edit_message_id')):
 			return _chat_error('Une conversation temporaire ne peut pas reprendre ou modifier une conversation enregistrée.', 'invalid_request', 400)
+		temporary_memory_persona = None
+		if temporary:
+			try:
+				temporary_memory_persona = selected_memory_persona(request.user, payload.get('temporary_memory_persona_id'))
+			except ValueError as error:
+				return _chat_error(str(error), 'invalid_request', 400)
 		conversation_id = None if temporary else payload.get('conversation_id')
 		conversation = None
 		if conversation_id:
@@ -319,6 +328,8 @@ class SendMessageView(View):
 				role='user',
 			)
 		persona_id = payload.get('persona_id')
+		if persona_id is None and conversation:
+			persona_id = conversation.persona_id
 		persona = get_object_or_404(Persona, id=persona_id, user=request.user) if persona_id else None
 		if conversation and persona and conversation.persona_id != persona.id:
 			conversation.persona = persona
@@ -335,7 +346,7 @@ class SendMessageView(View):
 		if workspace and not auto_requested and 'anthropic' in f"{model.provider.slug} {model.provider.name}".lower():
 			return _chat_error('Les outils de fichiers ne sont pas disponibles avec ce modèle. Choisis un modèle compatible.', 'unsupported_tools', 400)
 
-		system_prompt = str(payload.get('system_prompt', ''))
+		system_prompt = str(payload.get('system_prompt', persona.prompt if persona else ''))
 		messages = []
 		if temporary:
 			history = payload.get('history', [])
@@ -359,7 +370,8 @@ class SendMessageView(View):
 
 		
 		from .memory import memory_context
-		system_prompt += '\n\n' + memory_context(request.user, workspace)
+		if not temporary:
+			system_prompt += '\n\n' + memory_context(request.user, workspace)
 		workspace_context = get_workspace_context(workspace, content)
 		full_system_prompt = (system_prompt + "\n\n" + workspace_context).strip() if workspace_context else system_prompt
 		full_system_prompt += (
@@ -368,12 +380,16 @@ class SendMessageView(View):
 			"ou analysé un fichier autrement. Si l’utilisateur demande d’analyser un document qui n’est pas accessible, "
 			"demande-lui de le déposer dans un espace Bara sélectionné via « Fichiers »."
 		)
-		if persona and persona.memory.strip():
+		if temporary:
+			full_system_prompt += persona_memory_context(temporary_memory_persona)
+		elif persona and persona.memory.strip():
 			full_system_prompt += (
 				"\n\nPréférences mémorisées par l’utilisateur pour ce persona "
 				"(à suivre si elles sont pertinentes pour la demande) :\n"
 				+ persona.memory.strip()[:8000]
 			)
+		if not temporary:
+			full_system_prompt += shared_persona_context(request.user, persona, preferences=preferences)
 		if workspace:
 			full_system_prompt += (
 				"\n\nTu peux utiliser les outils du workspace sélectionné avec les outils disponibles. "
@@ -402,10 +418,11 @@ class SendMessageView(View):
 				"en français, à partir des résultats pertinents. Utilise les outils disponibles pour compléter la recherche si besoin, "
 				"ne produis pas de balise ou de commande comme <web_search>, et n’invente pas de résultats. "
 				"Si les sources ne permettent pas de répondre, indique-le clairement.\n"
-				+ json.dumps(sources, ensure_ascii=False)
+				+ SourceCollector(sources).prompt(include_instructions=False)
 			)
-		full_system_prompt += CITATION_INSTRUCTIONS
 		tools_requested = bool(workspace) or (not team_mode and (mode == 'web' or bool(settings.SEARCH_API_KEY) or bool(re.search(r'https?://', content))))
+		if sources or tools_requested:
+			full_system_prompt += CITATION_INSTRUCTIONS
 		
 		temperature = _bounded_float(payload.get('temperature'), persona.temperature if persona else 0.7, 0, 2)
 		top_p = _bounded_float(payload.get('top_p'), preferences.top_p, 0, 1)
@@ -1164,24 +1181,14 @@ class ConversationDeleteView(View):
 
 
 def _persona_data(persona):
-	return {
-		'id': persona.id,
-		'name': persona.name,
-		'appearance_name': persona.appearance_name,
-		'appearance_avatar': persona.appearance_avatar,
-		'appearance_accent': persona.appearance_accent,
-		'appearance_theme': persona.appearance_theme,
-		'prompt': persona.prompt,
-		'memory': persona.memory,
-		'tone': persona.tone,
-		'temp': persona.temperature,
-		'length': persona.length,
-	}
+	return {**persona_settings(persona), 'is_big_persona': persona.is_big_persona,
+		'share_with_personas': persona.share_with_personas}
 
 
 @method_decorator(login_required(login_url='/auth/?next=/chat/api/personas/'), name='dispatch')
 class PersonaListView(View):
 	def get(self, request):
+		ensure_big_persona(request.user)
 		return JsonResponse([_persona_data(persona) for persona in request.user.personas.all()], safe=False)
 
 	def post(self, request):
@@ -1191,6 +1198,10 @@ class PersonaListView(View):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
 		if not isinstance(payload, dict):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		if 'is_big_persona' in payload:
+			return _chat_error('Le type Big Persona est géré par le site.', 'invalid_request', 400)
+		if 'share_with_personas' in payload and not isinstance(payload['share_with_personas'], bool):
+			return _chat_error('L’autorisation de liaison doit être un booléen.', 'invalid_request', 400)
 		appearance_accent = str(payload.get('appearance_accent', '') or '')
 		appearance_theme = str(payload.get('appearance_theme', '') or '')
 		if appearance_accent and appearance_accent not in {'#6C6FCB', '#E8A33D', '#3F8E8A', '#B4483A', '#4E9F3D'}:
@@ -1209,6 +1220,7 @@ class PersonaListView(View):
 			tone=payload.get('tone', 'neutre'),
 			temperature=payload.get('temp', 0.7),
 			length=payload.get('length', 'moyenne'),
+			share_with_personas=payload.get('share_with_personas', False),
 		)
 		return JsonResponse(_persona_data(persona), status=201)
 
@@ -1223,6 +1235,14 @@ class PersonaDetailView(View):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
 		if not isinstance(payload, dict):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
+		if 'is_big_persona' in payload:
+			return _chat_error('Le type Big Persona ne peut pas être modifié.', 'invalid_request', 400)
+		if 'share_with_personas' in payload:
+			if not isinstance(payload['share_with_personas'], bool):
+				return _chat_error('L’autorisation de liaison doit être un booléen.', 'invalid_request', 400)
+			if persona.is_big_persona and payload['share_with_personas']:
+				return _chat_error('Big Persona reçoit les données autorisées et ne sert pas de source partagée.', 'invalid_request', 400)
+			persona.share_with_personas = payload['share_with_personas']
 		if 'name' in payload:
 			if not isinstance(payload['name'], str) or not payload['name'].strip():
 				return _chat_error('Le nom du persona est obligatoire.', 'invalid_request', 400)
@@ -1248,11 +1268,19 @@ class PersonaDetailView(View):
 			persona.appearance_theme = appearance_theme
 		if 'temp' in payload:
 			persona.temperature = payload['temp']
-		persona.save()
+		fields = set(payload) & {'name', 'prompt', 'tone', 'length', 'memory', 'appearance_name',
+			'appearance_avatar', 'appearance_accent', 'appearance_theme', 'share_with_personas'}
+		if 'temp' in payload:
+			fields.add('temperature')
+		if fields:
+			persona.save(update_fields=fields)
+		persona.refresh_from_db()
 		return JsonResponse(_persona_data(persona))
 
 	def delete(self, request, pk):
 		persona = get_object_or_404(Persona, id=pk, user=request.user)
+		if persona.is_big_persona:
+			return _chat_error('Big Persona est intégré au compte et ne peut pas être supprimé.', 'invalid_request', 400)
 		persona.delete()
 		return JsonResponse({}, status=204)
 

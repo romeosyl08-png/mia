@@ -1,25 +1,16 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Journal — {{ workspace.title }}{% endblock %}
 {% block extra_head %}
-<style>
-  .journal-wrap{max-width:1000px;margin:0 auto;padding:24px;height:100%;overflow-y:auto;}
-  .journal-wrap a.back{font-size:13px;color:var(--ink);opacity:.6;text-decoration:none;}
-  table.journal{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:16px;}
-  table.journal th,table.journal td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;}
-  table.journal th{font-size:11px;text-transform:uppercase;opacity:.55;}
-  table.journal code{font-family:'Roboto Mono',monospace;font-size:11.5px;word-break:break-all;}
-  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
-  .badge.success{background:#E3F1E7;color:#2F6B3F;}
-  .badge.error,.badge.rejected{background:#FFF0ED;color:#8E2F25;}
-  .badge.pending,.badge.running{background:#FFF5DB;color:#8A6300;}
-</style>
+<link rel="stylesheet" href="{% static 'app/css/tool_journal.css' %}?v=frontend-1">
 {% endblock %}
 {% block body %}
 <div class="journal-wrap">
   <a class="back" href="{% url 'bara:detail' workspace.id %}">‹ {{ workspace.title }}</a>
-  <h1 style="font-size:18px;margin:8px 0 0;">Journal des outils</h1>
+  <h1>Journal des outils</h1>
   <p style="opacity:.55;font-size:13px;">Les 100 dernières actions de l'agent dans cet espace.</p>
 
+  <div class="table-scroll" role="region" aria-label="Journal des outils" tabindex="0">
   <table class="journal">
     <thead><tr><th>Heure</th><th>Outil</th><th>Arguments</th><th>Résultat</th><th>Statut</th></tr></thead>
     <tbody>
@@ -36,5 +27,6 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}

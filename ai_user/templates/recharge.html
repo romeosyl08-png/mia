@@ -4,7 +4,7 @@
 
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=currency-toggle-3">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=frontend-1">
 {% endblock %}
 
 {% block body %}
@@ -179,4 +179,9 @@
     <div><span>3</span><p>Retrouve tes jetons dans ton solde</p></div>
   </section>
 </main>
+{% endblock %}
+
+{% block extra_js %}
+{% load static %}
+<script defer src="{% static 'app/js/recharge.js' %}?v=frontend-1"></script>
 {% endblock %}
