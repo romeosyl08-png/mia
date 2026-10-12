@@ -1,0 +1,11 @@
+{% extends 'base.html' %}{% block body %}
+<main class="work-page">
+<a href="{% if workspace %}{% url 'bara:detail' workspace.id %}{% else %}/{% endif %}">← Retour</a>
+<h1>{% if workspace %}Mémoire de {{ workspace.title }}{% else %}Ma mémoire{% endif %}</h1>
+<p>Ces préférences sont fournies à l’assistant lorsque la mémoire est activée. Modifie-les ou efface le texte pour les supprimer.</p>
+<form method="post">{% csrf_token %}
+<label><input type="checkbox" name="enabled" {% if enabled %}checked{% endif %}> Utiliser cette mémoire</label>
+<textarea name="content" maxlength="8000" rows="12" style="display:block;width:100%">{{ content }}</textarea>
+{% if workspace %}<label><input type="checkbox" name="semantic_search" {% if workspace.semantic_search %}checked{% endif %}> Recherche par le sens (envoie les passages au fournisseur d’embeddings configuré)</label>{% endif %}
+<button>Enregistrer</button>
+</form></main>{% endblock %}

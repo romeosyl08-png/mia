@@ -25,6 +25,11 @@ SECRET_KEY = env(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", default=True)
 BARA_CODE_EXECUTION_ENABLED = env.bool("BARA_CODE_EXECUTION_ENABLED", default=False)
+BARA_SANDBOX_IMAGE = env('BARA_SANDBOX_IMAGE', default='ai2ai-runtime:1')
+BARA_SANDBOX_RUNTIME = env('BARA_SANDBOX_RUNTIME', default='docker')
+EMBEDDING_MODEL = env('EMBEDDING_MODEL', default='')
+EMBEDDING_API_URL = env('EMBEDDING_API_URL', default='https://openrouter.ai/api/v1/embeddings')
+EMBEDDING_API_KEY = env('EMBEDDING_API_KEY', default='')
 
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '')
@@ -211,7 +216,10 @@ EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=False)
 SEARCH_API_KEY = env("SEARCH_API_KEY", default="")
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(env('MEDIA_ROOT', default=str(BASE_DIR / 'media')))
+PRIVATE_MEDIA_ROOT = Path(env('PRIVATE_MEDIA_ROOT', default=str(BASE_DIR / 'private_media')))
+CHAT_HISTORY_MAX_MESSAGES = env.int('CHAT_HISTORY_MAX_MESSAGES', default=48)
+CHAT_HISTORY_MAX_CHARS = env.int('CHAT_HISTORY_MAX_CHARS', default=48_000)
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [

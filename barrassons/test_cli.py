@@ -10,8 +10,11 @@ class LocalToolsTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name).resolve()
+        self.config_env = patch.dict('os.environ', {'XDG_CONFIG_HOME': str(self.root / 'config')})
+        self.config_env.start()
 
     def tearDown(self):
+        self.config_env.stop()
         self.temp_dir.cleanup()
 
     def test_paths_cannot_escape_project(self):

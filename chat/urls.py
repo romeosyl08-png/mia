@@ -1,10 +1,13 @@
 from django.urls import path
 
-from . import views
+from . import views, memory_views, recovery_views
 
 app_name = 'chat'
 
 urlpatterns = [
+    path('chat/api/recovery/<str:token>/',recovery_views.recovery,name='recovery'),
+    path('memory/', memory_views.memory_settings, name='memory'),
+    path('memory/project/<int:workspace_id>/', memory_views.memory_settings, name='project-memory'),
 	path('', views.chat_home, name='chat-home'),
 	path('chat/api/send/', views.SendMessageView.as_view(), name='chat-send-message'),
 	path('chat/api/images/generate/', views.ImageGenerationView.as_view(), name='image-generate'),

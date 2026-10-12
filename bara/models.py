@@ -5,6 +5,71 @@ from api.models import AIModel
 from api.crypto import decrypt_value, encrypt_value
 
 
+class AgentTask(models.Model):
+    workspace = models.ForeignKey('Workspace', on_delete=models.CASCADE, related_name='agent_tasks')
+    conversation = models.ForeignKey('WorkConversation', on_delete=models.SET_NULL, null=True, blank=True)
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    model = models.ForeignKey(AIModel, on_delete=models.PROTECT)
+    objective = models.TextField()
+    status = models.CharField(max_length=20, default='queued', db_index=True)
+    state = models.JSONField(default=dict)
+    result = models.TextField(blank=True)
+    error = models.TextField(blank=True)
+    max_steps = models.PositiveIntegerField(default=12)
+    credit_limit = models.PositiveIntegerField(default=1000)
+    spent_credits = models.PositiveIntegerField(default=0)
+    steps = models.PositiveIntegerField(default=0)
+    due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    lease_token = models.CharField(max_length=32, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class TaskEvent(models.Model):
+    task = models.ForeignKey(AgentTask, on_delete=models.CASCADE, related_name='events')
+    kind = models.CharField(max_length=30)
+    data = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class EvaluationRun(models.Model):
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    model = models.ForeignKey(AIModel, on_delete=models.PROTECT)
+    report = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class WorkspaceMember(models.Model):
+    workspace = models.ForeignKey('Workspace', on_delete=models.CASCADE, related_name='members')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    role = models.CharField(max_length=10, choices=[('viewer','Lecture'),('editor','Modification')])
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['workspace','user'],name='unique_workspace_member')]
+
+
+class WorkspaceAudit(models.Model):
+    workspace = models.ForeignKey('Workspace', on_delete=models.CASCADE, related_name='audit_events')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    action = models.CharField(max_length=150)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TaskSchedule(models.Model):
+    workspace = models.ForeignKey('Workspace', on_delete=models.CASCADE, related_name='schedules')
+    creator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    objective = models.TextField()
+    next_run = models.DateTimeField(db_index=True)
+    interval_minutes = models.PositiveIntegerField(default=0)
+    credit_limit = models.PositiveIntegerField(default=1000)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class Workspace(models.Model):
     """
     Espace de travail autonome.
@@ -32,6 +97,9 @@ class Workspace(models.Model):
     )
     auto_route = models.BooleanField(default=False)
     instructions = models.TextField(blank=True)
+    memory = models.TextField(blank=True)
+    memory_enabled = models.BooleanField(default=True)
+    semantic_search = models.BooleanField(default=False)
     disabled_tools = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -50,6 +118,8 @@ class Workspace(models.Model):
 class WorkConversation(models.Model):
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="conversations")
     title = models.CharField(max_length=200, default="Nouvelle conversation")
+    summary = models.TextField(blank=True)
+    summary_through_id = models.PositiveBigIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -91,6 +161,7 @@ class WorkFile(models.Model):
     extracted_text = models.TextField(
         blank=True,
     )
+    retrieval_index = models.JSONField(default=dict, blank=True)
 
     uploaded_at = models.DateTimeField(
         auto_now_add=True,
@@ -193,10 +264,19 @@ class FileVersion(models.Model):
     file = models.ForeignKey(WorkFile, on_delete=models.CASCADE, related_name="versions")
     content = models.TextField(blank=True)
     size_bytes = models.PositiveIntegerField(default=0)
+    binary_file = models.FileField(upload_to='versions/%Y/%m/%d/', blank=True)
+    specification = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class DocumentArtifact(models.Model):
+    file = models.OneToOneField(WorkFile, on_delete=models.CASCADE, related_name='artifact')
+    kind = models.CharField(max_length=10)
+    specification = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class WorkspaceMCPServer(models.Model):
@@ -230,6 +310,9 @@ class WorkspacePluginConnection(models.Model):
         ("google_mail", "Gmail"),
         ("microsoft_mail", "Outlook"),
         ("blender", "Blender"),
+        ('google_drive','Google Drive'),
+        ('google_calendar','Google Calendar'),
+        ('github','GitHub'),
     ]
 
     workspace = models.ForeignKey(

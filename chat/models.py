@@ -126,6 +126,13 @@ class RoutingFeedback(models.Model):
         return f"{self.rating} — {self.observation}"
 
 
+class UserMemory(models.Model):
+    user = models.OneToOneField(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assistant_memory')
+    content = models.TextField(blank=True)
+    enabled = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Conversation(models.Model):
     user = models.ForeignKey(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="conversations")
     persona = models.ForeignKey(Persona, on_delete=models.SET_NULL, null=True, blank=True)
@@ -133,6 +140,8 @@ class Conversation(models.Model):
     title = models.CharField(max_length=200, default="Nouvelle conversation")
     folder = models.CharField(max_length=80, blank=True)
     is_archived = models.BooleanField(default=False)
+    summary = models.TextField(blank=True)
+    summary_through_id = models.PositiveBigIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -152,6 +161,10 @@ class Message(models.Model):
     prompt_tokens = models.PositiveIntegerField(default=0)
     completion_tokens = models.PositiveIntegerField(default=0)
     sources = models.JSONField(default=list, blank=True)
+    image_file_ids = models.JSONField(default=list, blank=True)
+    interrupted = models.BooleanField(default=False)
+    recovery_token = models.CharField(max_length=32,unique=True,null=True,blank=True)
+    tool_events = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

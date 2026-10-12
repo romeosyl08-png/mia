@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block body %}
+<main class="work-page">
+<a href="{% url 'bara:detail' file.workspace_id %}">← {{ file.workspace.title }}</a>
+<h1>{{ file.original_name }}</h1><a href="{% url 'bara:download-file' file.workspace_id file.id %}">Télécharger</a>
+<a href="{% url 'bara:file-history' file.workspace_id file.id %}">Versions</a>
+<p role="alert">{{ error }}</p>
+<form method="post">{% csrf_token %}
+<fieldset {% if not file.workspace.can_write %}disabled{% endif %}>
+<label>Titre <input name="title" value="{{ title }}" maxlength="200"></label>
+{% if file.artifact.kind == 'xlsx' %}
+<p>Sépare les colonnes par une tabulation. Les formules commencent par = et seront recalculées dans Excel ou LibreOffice.</p>
+<textarea name="table" rows="16" style="width:100%">{{ table }}</textarea>
+{% else %}<label>Texte{% if file.artifact.kind == 'pptx' %} (sépare les diapositives par une ligne ---){% endif %}
+<textarea name="body" rows="16" style="width:100%">{{ body }}</textarea></label>{% endif %}
+<button>Enregistrer une nouvelle version</button></fieldset></form>
+<h2>Aperçu du contenu</h2><pre style="white-space:pre-wrap">{{ file.extracted_text }}</pre>
+</main>{% endblock %}

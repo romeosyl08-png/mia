@@ -53,6 +53,10 @@ def _token_expiry_seconds(token_data):
 
 
 def email_oauth_config(plugin):
+    if plugin in {'google_drive','google_calendar'}:
+        scope = 'https://www.googleapis.com/auth/drive.readonly' if plugin == 'google_drive' else 'https://www.googleapis.com/auth/calendar.readonly'
+        return {'client_id':settings.GOOGLE_CLIENT_ID,'client_secret':settings.GOOGLE_CLIENT_SECRET,
+                'authorize_url':GOOGLE_AUTH_URL,'token_url':GOOGLE_TOKEN_URL,'scopes':['openid','email',scope]}
     if plugin == "google_mail":
         return {
             "client_id": settings.GOOGLE_CLIENT_ID,
@@ -121,7 +125,7 @@ def exchange_email_oauth_code(plugin, code, redirect_uri, code_verifier):
 
 
 def email_account_address(plugin, access_token):
-    if plugin == "google_mail":
+    if plugin in {'google_mail','google_drive','google_calendar'}:
         url = GOOGLE_USERINFO_URL
         params = None
     elif plugin == "microsoft_mail":
@@ -130,7 +134,7 @@ def email_account_address(plugin, access_token):
     else:
         raise PluginError("Ce fournisseur e-mail n'est pas pris en charge.")
     data = _provider_request(url, access_token, params=params)
-    address = data.get("email") if plugin == "google_mail" else data.get("mail") or data.get("userPrincipalName")
+    address = data.get("email") if plugin.startswith('google_') else data.get("mail") or data.get("userPrincipalName")
     if not isinstance(address, str) or not address:
         raise PluginError("Le fournisseur n'a pas communiqué d'adresse e-mail.")
     try:

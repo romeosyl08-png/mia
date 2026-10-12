@@ -304,6 +304,56 @@ class ChatCompletionsTests(TestCase):
         self.assertEqual(response.status_code, 502)
         self.assertEqual(self.balance(), before)
 
+    def test_connection_reset_and_unexpected_errors_are_refunded(self):
+        for error in (ConnectionResetError('reset'), RuntimeError('unexpected')):
+            with self.subTest(error=type(error).__name__):
+                before = self.balance()
+                with patch('api.views.urlopen', side_effect=error):
+                    response = self.call()
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(self.balance(), before)
+
+    def test_malformed_provider_completion_is_refunded(self):
+        for payload in ({'choices': []}, {'choices': [{'message': {'content': 'Reply'}}], 'usage': {'prompt_tokens': 'invalid'}}):
+            with self.subTest(payload=payload):
+                before = self.balance()
+                with patch('api.views.urlopen', return_value=fake_response(payload)):
+                    response = self.call()
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(self.balance(), before)
+
+    def test_stream_failure_before_first_token_refunds_reserve(self):
+        before = self.balance()
+        upstream = MagicMock()
+        upstream.__iter__.side_effect = ConnectionResetError('stream reset')
+        with patch('api.views.urlopen', return_value=upstream):
+            response = self.call({'stream': True})
+            body = b''.join(response.streaming_content)
+        self.assertIn(b'provider_error', body)
+        self.assertEqual(self.balance(), before)
+        upstream.close.assert_called()
+
+    def test_unconsumed_stream_is_refunded_when_response_closes(self):
+        before = self.balance()
+        upstream = MagicMock()
+        with patch('api.views.urlopen', return_value=upstream):
+            response = self.call({'stream': True})
+        response.close()
+        self.assertEqual(self.balance(), before)
+        upstream.close.assert_called()
+
+    def test_empty_stream_refunds_once_even_when_response_is_closed_twice(self):
+        before = self.balance()
+        upstream = MagicMock()
+        upstream.__iter__.return_value = iter([b'data: [DONE]\n\n'])
+        with patch('api.views.urlopen', return_value=upstream):
+            response = self.call({'stream': True})
+            body = b''.join(response.streaming_content)
+        response.close()
+        response.close()
+        self.assertIn(b'"credits_charged": 0', body)
+        self.assertEqual(self.balance(), before)
+
     def test_unsafe_parameters_are_not_forwarded(self):
         tool = {"type": "function", "function": {"name": "read_file", "parameters": {"type": "object", "properties": {}}}}
         with patch("api.views.urlopen", return_value=fake_response(UPSTREAM_OK)) as mocked:

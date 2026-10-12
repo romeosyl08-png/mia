@@ -1,1 +1,0 @@
-"""Assistant de développement AI2AI utilisable depuis le terminal."""

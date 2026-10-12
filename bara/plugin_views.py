@@ -53,7 +53,7 @@ def _workspace_url(workspace_id, query=None):
 @require_GET
 def connect_email(request, workspace_id, plugin):
     workspace = get_object_or_404(Workspace, id=workspace_id, user=request.user)
-    if plugin not in {"google_mail", "microsoft_mail"}:
+    if plugin not in {"google_mail", "microsoft_mail", "google_drive", "google_calendar"}:
         return HttpResponse("Fournisseur e-mail inconnu.", status=404)
     if not email_oauth_is_configured(plugin):
         return redirect(_workspace_url(workspace.id, {"automation_error": "oauth_not_configured"}))
@@ -94,7 +94,7 @@ def connect_email(request, workspace_id, plugin):
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    if plugin == "google_mail":
+    if plugin.startswith("google_"):
         params.update({"access_type": "offline", "prompt": "consent"})
     return redirect(f"{config['authorize_url']}?{urlencode(params)}")
 
@@ -102,7 +102,7 @@ def connect_email(request, workspace_id, plugin):
 @login_required
 @require_GET
 def email_oauth_callback(request, plugin):
-    if plugin not in {"google_mail", "microsoft_mail"}:
+    if plugin not in {"google_mail", "microsoft_mail", "google_drive", "google_calendar"}:
         return HttpResponse("Fournisseur e-mail inconnu.", status=404)
     state = request.GET.get("state", "")
     states = request.session.get(OAUTH_SESSION_KEY, {})
@@ -166,7 +166,7 @@ def email_oauth_callback(request, plugin):
 @require_POST
 def disconnect_plugin(request, workspace_id, plugin):
     workspace = get_object_or_404(Workspace, id=workspace_id, user=request.user)
-    if plugin not in {"google_mail", "microsoft_mail", "blender"}:
+    if plugin not in {"google_mail", "microsoft_mail", "blender", "google_drive", "google_calendar", "github"}:
         return JsonResponse({"error": "Plugin inconnu."}, status=404)
     WorkspacePluginConnection.objects.filter(workspace=workspace, plugin=plugin).delete()
     return redirect(_workspace_url(workspace.id, {"automation_status": f"{plugin}_disconnected"}))

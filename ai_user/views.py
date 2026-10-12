@@ -28,6 +28,7 @@ from chat.services import (
     is_local_provider,
 )
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
+from .forms import SignupForm
 import requests
 
 
@@ -131,17 +132,13 @@ def login_view(request):
 
 
 def signup_view(request):
-	if request.method == "POST":
-		username = request.POST.get("username", "").strip()
-		email = request.POST.get("email", "").strip()
-		password = request.POST.get("password1", "")
-		if username and email and password and password == request.POST.get("password2"):
-			if not User.objects.filter(username=username).exists():
-				user = User.objects.create_user(username, email, password)
-				login(request, user)
-				return redirect(_next_url(request))
+	form = SignupForm(request.POST if request.method == 'POST' else None)
+	if request.method == 'POST' and form.is_valid():
+		user = form.save()
+		login(request, user)
+		return redirect(_next_url(request))
 	return render(request, "losign.html", {
-		"signup_form": type("SignupForm", (), {"errors": True})(),
+		"signup_form": form,
 		"telegram_bot_username": settings.TELEGRAM_BOT_USERNAME,
 		"next_url": _next_url(request),
 	})

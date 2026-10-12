@@ -258,6 +258,8 @@ def write_file(workspace, filename, content):
     filename = _clean_name(filename)
     if not filename:
         return {"error": "Nom de fichier invalide."}
+    if filename.lower().endswith(('.docx','.xlsx','.pptx','.pdf')):
+        return {'error':'Utilise create_document pour créer un vrai document bureautique.'}
     existing = WorkFile.objects.filter(workspace=workspace, original_name=filename).first()
     try:
         if existing:
@@ -369,13 +371,11 @@ def delete_file(workspace, file_id):
         "message": "En attente de la confirmation de l'utilisateur. Informe-le et ne réessaie pas.",
     }
 
-PISTON_URL = "https://emkc.org/api/v2/piston/execute"
-
 @register_tool(
     name="run_python",
     description=(
-        "Envoie le code à l'API tierce Piston pour exécuter un court script Python. "
-        "Ne transmets aucun secret ni code confidentiel."
+        "Exécute un court script Python dans un conteneur isolé sans réseau. "
+        "Les fichiers de l’espace sont disponibles en lecture seule ; les sorties restent limitées."
     ),
     parameters={
         "type": "object",
@@ -386,26 +386,10 @@ PISTON_URL = "https://emkc.org/api/v2/piston/execute"
     },
 )
 def run_python(workspace, code):
-    try:
-        response = http_requests.post(
-            PISTON_URL,
-            json={
-                "language": "python",
-                "version": "3.10.0",
-                "files": [{"content": code}],
-            },
-            timeout=15,
-        )
-        data = response.json()
-    except Exception as error:
-        return {"error": f"Exécution échouée : {error}"}
-
-    run_result = data.get("run", {})
-    return {
-        "stdout": (run_result.get("stdout") or "")[:5000],
-        "stderr": (run_result.get("stderr") or "")[:2000],
-        "exit_code": run_result.get("code"),
-    }
+    if not isinstance(code, str) or len(code) > 100_000:
+        return {'error': 'Code Python invalide ou trop volumineux.'}
+    with materialize_workspace(workspace) as root:
+        return run_sandbox_command(['python', '-c', code], cwd=str(root))
 
 
 
@@ -424,18 +408,23 @@ def web_search(workspace, query):
     api_key = settings.SEARCH_API_KEY
     if not api_key:
         return {"error": "La recherche web n'est pas configurée sur ce serveur."}
+    if not isinstance(query, str) or not query.strip():
+        return {'error': 'La recherche doit contenir une question ou des mots-clés.'}
     try:
         response = http_requests.post(
             "https://google.serper.dev/search",
             headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
-            json={"q": query, "num": 5},
+            json={"q": query.strip()[:500], "num": 5},
             timeout=10,
         )
+        response.raise_for_status()
         data = response.json()
     except Exception as error:
         return {"error": f"Recherche échouée : {error}"}
 
-    results = data.get("organic", [])[:5]
+    if not isinstance(data, dict) or not isinstance(data.get('organic', []), list):
+        return {'error': 'Le service de recherche a renvoyé une réponse invalide.'}
+    results = [result for result in data.get('organic', []) if isinstance(result, dict)][:5]
     if not results:
         return {"results": [], "message": "Aucun résultat trouvé."}
 

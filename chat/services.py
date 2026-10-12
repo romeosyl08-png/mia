@@ -1,8 +1,8 @@
 import json
-import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from django.core.cache import cache
+from .billing import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, credits_for_usage, credits_per_million_tokens
 
 class ProviderError(Exception):
     """Erreur contrôlée lors d'un appel au fournisseur IA."""
@@ -13,21 +13,23 @@ def credit_multiplier(model):
     return 2 if any(name in provider_slug for name in ("opus", "gpt-4", "large")) else 1
 
 
-CREDITS_PER_DOLLAR = 10_000
-MARGIN_MULTIPLIER = 1.5
-DEFAULT_OUTPUT_ESTIMATE = 500  # tokens de sortie estimés par défaut
-
-
-def credits_per_million_tokens(price_usd):
-    return round(float(price_usd or 0) * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR)
+DEFAULT_OUTPUT_ESTIMATE = 500
 
 
 def estimate_cost(content, model, system_prompt="", history=None, max_output_tokens=500):
     """Estime le coût réel en $ selon les tarifs du modèle, applique la marge, convertit en crédits."""
     history = history or []
-    history_text = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
+    priced_history = []
+    image_count = 0
+    for item in history:
+        item_content = item.get('content')
+        if isinstance(item_content,list):
+            image_count += sum(1 for part in item_content if part.get('type') == 'image_url')
+            item_content = '\n'.join(part.get('text','') for part in item_content if part.get('type') == 'text')
+        priced_history.append({**item,'content':item_content})
+    history_text = json.dumps(priced_history, ensure_ascii=False, separators=(",", ":"))
     input_chars = len(content + system_prompt + history_text)
-    input_tokens = max(1, round(input_chars / 4))  # ~4 caractères par token, approximation standard
+    input_tokens = max(1, round(input_chars / 4)) + image_count*4096
     output_tokens_estimate = max_output_tokens
 
     input_price = float(model.input_price_per_million or 0) / 1_000_000
@@ -255,197 +257,14 @@ def stream_llm_provider(provider, api_key, model_id, messages, system_prompt="",
 
     yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
 
-def _configured_team_models(models):
-    configured = []
-    for model in models:
-        api_key = model.provider.keys.filter(is_active=True).order_by("id").first()
-        if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
-            continue
-        configured.append((model, api_key.get_key() if api_key else ""))
-    return configured
+def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus", usage_records=None):
+    from .team import call_llm_team as orchestrate
+    return orchestrate(models, messages, system_prompt, temperature, max_tokens, top_p, strategy, usage_records)
 
 
-def _plan_execute_verify(configured_models, messages, system_prompt, temperature, max_tokens, top_p):
-    if len(configured_models) < 2:
-        raise ProviderError("La stratégie Planifier/Réaliser/Vérifier nécessite au moins deux modèles configurés.")
-    planner, planner_key = configured_models[0]
-    executor, executor_key = configured_models[1]
-    verifier, verifier_key = configured_models[2] if len(configured_models) > 2 else configured_models[0]
-    plan_prompt = (system_prompt + "\n\nPrépare un plan d'exécution bref, avec des étapes vérifiables. Ne fournis pas la réponse finale et ne révèle aucun raisonnement privé.").strip()
-    plan, plan_input, plan_output = call_llm_provider(
-        planner.provider, planner_key, planner.model_id, messages, plan_prompt, temperature, max_tokens, top_p
-    )
-    execute_prompt = (
-        (system_prompt + "\n\nRéalise la demande en suivant le plan ci-dessous. Donne une proposition complète mais n'affirme pas qu'elle a été vérifiée.\n\nPlan:\n" + plan).strip()
-    )
-    draft, execute_input, execute_output = call_llm_provider(
-        executor.provider, executor_key, executor.model_id, messages, execute_prompt, temperature, max_tokens, top_p
-    )
-    verify_prompt = (
-        (system_prompt + "\n\nVérifie la proposition par rapport à la demande et au plan. Corrige les erreurs puis rends uniquement la réponse finale, sans détailler de raisonnement privé.\n\nPlan:\n" + plan + "\n\nProposition à vérifier:\n" + draft).strip()
-    )
-    final, verify_input, verify_output = call_llm_provider(
-        verifier.provider, verifier_key, verifier.model_id, messages, verify_prompt, temperature, max_tokens, top_p
-    )
-    return final, (plan_input or 0) + (execute_input or 0) + (verify_input or 0), (plan_output or 0) + (execute_output or 0) + (verify_output or 0)
-
-
-def call_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus"):
-    """Fait répondre plusieurs modèles puis demande au premier de synthétiser."""
-    if strategy == "plan_execute_verify":
-        return _plan_execute_verify(
-            _configured_team_models(models), messages, system_prompt, temperature, max_tokens, top_p
-        )
-    opinions = []
-    responding_models = []
-    input_tokens = 0
-    output_tokens = 0
-    for model in models:
-        api_key = model.provider.keys.filter(is_active=True).order_by("id").first()
-        if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
-            continue
-        try:
-            reply, used_input, used_output = call_llm_provider(
-                model.provider,
-                api_key.get_key() if api_key else "",
-                model.model_id,
-                messages,
-                system_prompt,
-                temperature,
-                max_tokens,
-                top_p,
-            )
-        except ProviderError:
-            continue
-        opinions.append(f"{model.name}:\n{reply}")
-        responding_models.append(model)
-        input_tokens += used_input or 0
-        output_tokens += used_output or 0
-
-    if not opinions:
-        raise ProviderError("Aucun modèle de l'équipe n'est disponible.")
-    if len(opinions) == 1:
-        return opinions[0].split("\n", 1)[1], input_tokens, output_tokens
-
-    synthesis_prompt = (
-        "Tu es le coordinateur d'une équipe de modèles IA. Compare leurs avis ci-dessous, "
-        "corrige leurs erreurs et réponds directement à la question de l'utilisateur. "
-        "Ne mentionne pas la coordination ni les modèles.\n\n"
-        + "\n\n--- AVIS SUIVANT ---\n\n".join(opinions)
-    )
-    synthesizer = responding_models[0]
-    api_key = synthesizer.provider.keys.filter(is_active=True).order_by("id").first()
-    if not api_key and not is_local_provider(synthesizer.provider):
-        raise ProviderError("Le modèle de synthèse n'est pas configuré.")
-    reply, used_input, used_output = call_llm_provider(
-        synthesizer.provider,
-        api_key.get_key() if api_key else "",
-        synthesizer.model_id,
-        [{"role": "user", "content": synthesis_prompt}],
-        "",
-        temperature,
-        max_tokens,
-        top_p,
-    )
-    return reply, input_tokens + (used_input or 0), output_tokens + (used_output or 0)
-
-
-def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus"):
-    """Stream a single team model or the team's final synthesis."""
-    if strategy == "plan_execute_verify":
-        configured = _configured_team_models(models)
-        if len(configured) < 2:
-            raise ProviderError("La stratégie Planifier/Réaliser/Vérifier nécessite au moins deux modèles configurés.")
-        planner, planner_key = configured[0]
-        executor, executor_key = configured[1]
-        verifier, verifier_key = configured[2] if len(configured) > 2 else configured[0]
-        plan_prompt = (system_prompt + "\n\nPrépare un plan d'exécution bref, avec des étapes vérifiables. Ne fournis pas la réponse finale et ne révèle aucun raisonnement privé.").strip()
-        plan, plan_input, plan_output = call_llm_provider(
-            planner.provider, planner_key, planner.model_id, messages, plan_prompt, temperature, max_tokens, top_p
-        )
-        execute_prompt = (system_prompt + "\n\nRéalise la demande en suivant le plan ci-dessous. Donne une proposition complète mais n'affirme pas qu'elle a été vérifiée.\n\nPlan:\n" + plan).strip()
-        draft, execute_input, execute_output = call_llm_provider(
-            executor.provider, executor_key, executor.model_id, messages, execute_prompt, temperature, max_tokens, top_p
-        )
-        verify_prompt = (system_prompt + "\n\nVérifie la proposition par rapport à la demande et au plan. Corrige les erreurs puis rends uniquement la réponse finale, sans détailler de raisonnement privé.\n\nPlan:\n" + plan + "\n\nProposition à vérifier:\n" + draft).strip()
-        for event in stream_llm_provider(
-            verifier.provider, verifier_key, verifier.model_id, messages, verify_prompt, temperature, max_tokens, top_p
-        ):
-            if event["type"] == "usage":
-                yield {
-                    "type": "usage",
-                    "input_tokens": (plan_input or 0) + (execute_input or 0) + event.get("input_tokens", 0),
-                    "output_tokens": (plan_output or 0) + (execute_output or 0) + event.get("output_tokens", 0),
-                }
-            else:
-                yield event
-        return
-    configured_models = []
-    for model in models:
-        api_key = model.provider.keys.filter(is_active=True).order_by("id").first()
-        if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
-            continue
-        configured_models.append((model, api_key.get_key() if api_key else ""))
-
-    if not configured_models:
-        raise ProviderError("Aucun modèle de l'équipe n'est disponible.")
-    if len(configured_models) == 1:
-        model, api_key = configured_models[0]
-        yield from stream_llm_provider(
-            model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens, top_p
-        )
-        return
-
-    opinions = []
-    responding_models = []
-    input_tokens = 0
-    output_tokens = 0
-    for model, api_key in configured_models:
-        try:
-            reply, used_input, used_output = call_llm_provider(
-                model.provider, api_key, model.model_id, messages, system_prompt, temperature, max_tokens, top_p
-            )
-        except ProviderError:
-            continue
-        opinions.append(f"{model.name}:\n{reply}")
-        responding_models.append((model, api_key))
-        input_tokens += used_input or 0
-        output_tokens += used_output or 0
-
-    if not opinions:
-        raise ProviderError("Aucun modèle de l'équipe n'est disponible.")
-    if len(opinions) == 1:
-        reply = opinions[0].split("\n", 1)[1]
-        for chunk in re.findall(r"\S+\s*", reply):
-            yield {"type": "delta", "content": chunk}
-        yield {"type": "usage", "input_tokens": input_tokens, "output_tokens": output_tokens}
-        return
-
-    synthesis_prompt = (
-        "Tu es le coordinateur d'une équipe de modèles IA. Compare leurs avis ci-dessous, "
-        "corrige leurs erreurs et réponds directement à la question de l'utilisateur. "
-        "Ne mentionne pas la coordination ni les modèles.\n\n"
-        + "\n\n--- AVIS SUIVANT ---\n\n".join(opinions)
-    )
-    synthesizer, api_key = responding_models[0]
-    for event in stream_llm_provider(
-        synthesizer.provider,
-        api_key,
-        synthesizer.model_id,
-        [{"role": "user", "content": synthesis_prompt}],
-        "",
-        temperature,
-        max_tokens,
-        top_p,
-    ):
-        if event["type"] == "usage":
-            yield {
-                "type": "usage",
-                "input_tokens": input_tokens + event.get("input_tokens", 0),
-                "output_tokens": output_tokens + event.get("output_tokens", 0),
-            }
-        else:
-            yield event
+def stream_llm_team(models, messages, system_prompt="", temperature=0.7, max_tokens=500, top_p=1.0, strategy="consensus", usage_records=None):
+    from .team import stream_llm_team as orchestrate
+    yield from orchestrate(models, messages, system_prompt, temperature, max_tokens, top_p, strategy, usage_records)
 
 
 PRICING_TIERS = {
@@ -491,12 +310,3 @@ def check_user_rate_limit(user_id, max_requests=10, window_seconds=60, key_prefi
         ttl = cache.ttl(cache_key) if hasattr(cache, "ttl") else window_seconds
         return False, ttl or window_seconds
     return True, 0
-
-
-def credits_for_usage(model, prompt_tokens, completion_tokens):
-    """Coût réel d'un appel en crédits : vrais prix du modèle × marge, converti au taux du portefeuille."""
-    cost_usd = (
-        prompt_tokens * float(model.input_price_per_million or 0)
-        + completion_tokens * float(model.output_price_per_million or 0)
-    ) / 1_000_000
-    return max(1, round(cost_usd * MARGIN_MULTIPLIER * CREDITS_PER_DOLLAR))

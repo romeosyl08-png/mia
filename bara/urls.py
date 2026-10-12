@@ -1,9 +1,18 @@
 from django.urls import path
-from . import plugin_views, views
+from . import plugin_views, views, task_views, document_views, collaboration_views, connector_views
 
 app_name = "bara"
 
 urlpatterns = [
+    path('<int:workspace_id>/files/<int:file_id>/image/',views.image_file,name='image-file'),
+    path('<int:workspace_id>/connections/', connector_views.connections, name='connections'),
+    path('<int:workspace_id>/sharing/', collaboration_views.sharing, name='sharing'),
+    path('<int:workspace_id>/schedules/', collaboration_views.schedules, name='schedules'),
+    path('<int:workspace_id>/documents/<int:file_id>/', document_views.document_detail, name='document-detail'),
+    path('<int:workspace_id>/tasks/', task_views.task_list, name='tasks'),
+    path('<int:workspace_id>/tasks/create/', task_views.create_task, name='task-create'),
+    path('<int:workspace_id>/tasks/<int:task_id>/', task_views.task_detail, name='task-detail'),
+    path('<int:workspace_id>/tasks/<int:task_id>/<str:action>/', task_views.control_task, name='task-control'),
     path('', views.workspace_home, name='home'),
     path('create/', views.create_workspace, name='create'),
     path('<int:workspace_id>/', views.workspace_detail, name='detail'),

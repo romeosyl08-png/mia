@@ -17,12 +17,12 @@
   </div>
 
   <div class="tabs">
-    <button type="button" id="tabLogin" class="active">Connexion</button>
-    <button type="button" id="tabSignup">Inscription</button>
+    <button type="button" id="tabLogin"{% if not signup_form.is_bound %} class="active"{% endif %}>Connexion</button>
+    <button type="button" id="tabSignup"{% if signup_form.is_bound %} class="active"{% endif %}>Inscription</button>
   </div>
 
   <!-- ========== CONNEXION ========== -->
-  <div id="panelLogin">
+  <div id="panelLogin"{% if signup_form.is_bound %} style="display:none;"{% endif %}>
     <h1>Content de te revoir</h1>
     <p class="subtitle">Connecte-toi pour retrouver tes conversations et tes crédits.</p>
 
@@ -87,12 +87,13 @@
   </div>
 
   <!-- ========== INSCRIPTION ========== -->
-  <div id="panelSignup" style="display:none;">
+  <div id="panelSignup"{% if not signup_form.is_bound %} style="display:none;"{% endif %}>
     <h1>Créer un compte</h1>
     <p class="subtitle">Tu démarres avec des crédits offerts, sans carte bancaire.</p>
 
     {% if signup_form.errors %}
       <ul class="errorlist">
+        {% for error in signup_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
         {% for field in signup_form %}
           {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
         {% endfor %}
@@ -104,11 +105,11 @@
       <input type="hidden" name="next" value="{{ next_url }}">
       <div class="field">
         <label for="id_signup_username">Nom d'utilisateur</label>
-        <input type="text" name="username" id="id_signup_username" autocomplete="username" required>
+        <input type="text" name="username" id="id_signup_username" autocomplete="username" value="{{ signup_form.username.value|default_if_none:'' }}" required>
       </div>
       <div class="field">
         <label for="id_signup_email">E-mail</label>
-        <input type="email" name="email" id="id_signup_email" autocomplete="email" required>
+        <input type="email" name="email" id="id_signup_email" autocomplete="email" value="{{ signup_form.email.value|default_if_none:'' }}" required>
       </div>
       <div class="field">
         <label for="id_signup_password1">Mot de passe</label>

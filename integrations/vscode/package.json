@@ -1,0 +1,9 @@
+{
+  "name": "barrassons", "displayName": "Barrassons AI2AI", "version": "0.1.0",
+  "publisher": "ai2ai", "engines": {"vscode": "^1.90.0"}, "main": "./extension.js",
+  "activationEvents": ["onCommand:barrassons.start", "onCommand:barrassons.resume"],
+  "contributes": {"commands": [
+    {"command": "barrassons.start", "title": "Barrassons : ouvrir dans ce projet"},
+    {"command": "barrassons.resume", "title": "Barrassons : reprendre la session"}
+  ]}
+}

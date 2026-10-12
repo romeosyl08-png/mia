@@ -16,6 +16,23 @@ const chatConfig = JSON.parse(chatConfigElement.textContent);
     showChatNotice.timer = window.setTimeout(() => notice.classList.remove("show"), 5000);
   }
 
+  function renderImageAttachments(){
+    const bar = document.getElementById('imageAttachmentBar');
+    const convo = activeConvo();
+    if(!bar) return;
+    bar.replaceChildren();
+    const ids = convo?.pendingImageIds || [];
+    bar.hidden = !ids.length;
+    for(const id of ids){
+      const item = document.createElement('span');
+      const img = document.createElement('img'); img.alt = 'Image à joindre';
+      img.src = `/bara/${Number(convo.workspaceId)}/files/${Number(id)}/image/`;
+      const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label','Retirer cette image du prochain message');
+      remove.onclick = () => { convo.pendingImageIds = ids.filter(v => v !== id); renderImageAttachments(); };
+      item.append(img,remove); bar.append(item);
+    }
+  }
+
   function readLocalAISettings(){
     try{
       const value = JSON.parse(localStorage.getItem(localAISettingsKey) || "null");
@@ -346,6 +363,9 @@ let state = {
           routingObservationId: m.routing_observation_id || null,
           feedback: m.routing_feedback || null,
         sources: Array.isArray(m.sources) ? m.sources : [],
+        toolEvents: Array.isArray(m.tool_events) ? m.tool_events : [],
+        imageFileIds: Array.isArray(m.image_file_ids) ? m.image_file_ids : [],
+        interrupted: Boolean(m.interrupted),
         tokens: m.role === "assistant" ? m.completion_tokens : m.prompt_tokens,
         createdAt: m.created_at
       }));
@@ -949,6 +969,14 @@ function renderMessages(){
       contentDiv.textContent = m.content;
     }
     div.appendChild(contentDiv);
+    if(m.role === 'user' && convo.workspaceId){
+      for(const id of m.imageFileIds || []){
+        if(!Number.isInteger(id)) continue;
+        const media = document.createElement('div'); media.className = 'msg-media';
+        const img = document.createElement('img'); img.alt = 'Image jointe'; img.loading = 'lazy';
+        img.src = `/bara/${Number(convo.workspaceId)}/files/${id}/image/`; media.append(img); div.append(media);
+      }
+    }
     if(m.mediaUrl){
       const media = document.createElement("div");
       media.className = "msg-media";
@@ -964,35 +992,16 @@ function renderMessages(){
       media.appendChild(mediaElement);
       div.appendChild(media);
     }
-    if(m.role === "bot" && Array.isArray(m.sources) && m.sources.length){
-      const sources = document.createElement("div");
-      sources.className = "message-sources";
-      const label = document.createElement("span");
-      label.textContent = "Sources";
-      sources.appendChild(label);
-      const list = document.createElement("ul");
-      m.sources.slice(0, 5).forEach(source => {
-        try{
-          const url = new URL(source.link, window.location.origin);
-          if(!["http:", "https:"].includes(url.protocol)) return;
-          const item = document.createElement("li");
-          const link = document.createElement("a");
-          link.href = url.href;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = source.title || url.hostname;
-          item.appendChild(link);
-          if(source.snippet){
-            const snippet = document.createElement("span");
-            snippet.textContent = source.snippet;
-            item.appendChild(snippet);
-          }
-          list.appendChild(item);
-        }catch(_error){}
-      });
-      if(list.childElementCount){
-        sources.appendChild(list);
-        div.appendChild(sources);
+    if(m.role === "bot"){
+      AI2AISources.attach(contentDiv, m.sources || [], {fallback:!m.streaming});
+      AI2AIChatTools.render(div, m.toolEvents || []);
+      if(m.streaming){
+        const status = document.createElement("div");
+        status.className = "chat-tool-status";
+        status.setAttribute("role", "status");
+        status.textContent = m.toolStatus || "";
+        status.hidden = !m.toolStatus;
+        div.appendChild(status);
       }
     }
 
@@ -1002,11 +1011,12 @@ function renderMessages(){
       const editButton = document.createElement("button");
       editButton.type = "button";
       editButton.className = "response-action";
-      editButton.textContent = "✎";
+      editButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5M4 20l4-1 13-13a2.1 2.1 0 0 0-3-3L5 16l-1 4Z"></path></svg>';
       editButton.title = "Modifier et régénérer";
       editButton.setAttribute("aria-label", "Modifier et régénérer ce message");
       editButton.addEventListener("click", () => {
         if(state.sending) return;
+        div.classList.add('is-editing');
         const form = document.createElement("form");
         form.className = "message-edit-form";
         const textarea = document.createElement("textarea");
@@ -1075,6 +1085,11 @@ function renderMessages(){
       likeBtn.classList.toggle("active", m.feedback === "positive");
       dislikeBtn.classList.toggle("active", m.feedback === "negative");
       addAction("refresh", "Régénérer la réponse", () => regenerateResponse(messageIndex));
+      if(m.interrupted && !m.streaming && (convo.id || convo.temporary || convo.localOnly)){
+        const continueBtn = document.createElement('button');continueBtn.type='button';continueBtn.className='response-action';
+        continueBtn.textContent='Continuer';continueBtn.onclick=()=>sendMessage('Continue la réponse interrompue à partir de son dernier passage, sans répéter les actions déjà effectuées.');
+        actions.append(continueBtn);
+      }
       const time = document.createElement("span");
       time.className = "response-time";
       time.textContent = relativeTime(m.createdAt);
@@ -1188,6 +1203,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     renderHeader();
     renderWorkspaceSelector();
     renderMessages();
+    renderImageAttachments();
     renderCredits();
     const conversation = activeConvo();
     const localConversation = Boolean(conversation?.localOnly && !conversation.temporary);
@@ -1227,7 +1243,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const openLink = el("workspaceOpen");
     if(openLink){
       openLink.href = workspaceId ? `/bara/${workspaceId}/` : "/dap/";
-      openLink.title = workspaceId ? "Ouvrir les fichiers dans Bara" : "Ouvrir Bara";
+      openLink.title = workspaceId ? "Ouvrir cet espace dans Bara" : "Ouvrir Bara";
     }
   }
 
@@ -1244,7 +1260,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           .find(element => element.dataset.messageKey === message.clientId);
         const content = messageElement?.querySelector(".msg-content");
         if(!content) return;
-        content.textContent = message.content;
+        content.innerHTML = DOMPurify.sanitize(marked.parse(message.content));
+        AI2AISources.attach(content, message.sources || [], {fallback:false});
+        const status = messageElement.querySelector('.chat-tool-status');
+        if(status){ status.textContent = message.toolStatus || ''; status.hidden = !message.toolStatus; }
         wrap.scrollTop = wrap.scrollHeight;
       });
     };
@@ -1281,7 +1300,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return sentences.slice(0, n).join(" ");
   }
 
-  async function callBackend(persona, userText, convo, onDelta, editMessageId){
+  async function callBackend(persona, userText, convo, onDelta, editMessageId, onEvent){
     const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
     const isMediaMode = ["image", "video", "audio"].includes(mode);
     const endpoint = isMediaMode ? "/chat/api/media/generate/" : "/chat/api/send/";
@@ -1295,6 +1314,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       body: JSON.stringify({
         conversation_id: convo.id,
         workspace_id: convo.workspaceId || null,
+        image_file_ids: convo.messages.filter(m => m.role === 'user').at(-1)?.imageFileIds || [],
         edit_message_id: editMessageId,
         temporary: Boolean(convo.temporary),
         history: convo.temporary ? convo.messages
@@ -1326,33 +1346,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       return data;
     }
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let result = null;
-    const handleEvent = eventText => {
-      const dataLine = eventText.split("\n").find(line => line.startsWith("data:"));
-      if(!dataLine) return;
-      const event = JSON.parse(dataLine.slice(5).trim());
-      if(event.type === "delta") onDelta(event.content || "");
-      if(event.type === "done") result = event;
-      if(event.type === "error") throw new Error(event.error?.message || "La génération a échoué.");
-    };
-
-    while(true){
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      let boundary = buffer.indexOf("\n\n");
-      while(boundary !== -1){
-        handleEvent(buffer.slice(0, boundary));
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-      }
-      if(done) break;
-    }
-    if(buffer.trim()) handleEvent(buffer);
-    if(!result) throw new Error("Le flux s’est terminé avant la réponse finale.");
-    return result;
+    return AI2AITransport.readCompletionStream(res, onDelta, onEvent);
   }
 
   function normalizeLocalBaseUrl(value){
@@ -1483,7 +1477,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       userMessage = { ...originalMessage, content: text, tokens: 0 };
       convo.messages.push(userMessage);
     }else if(!reuseLastUser){
-      userMessage = { role: "user", content: text, tokens: 0, createdAt: new Date().toISOString() };
+      userMessage = { role: "user", content: text, tokens: 0, createdAt: new Date().toISOString(), imageFileIds:[...(convo.pendingImageIds || [])] };
       convo.messages.push(userMessage);
     }else{
       userMessage = convo.messages[convo.messages.length - 1];
@@ -1515,7 +1509,12 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
         data = await callBackend(persona, text, convo, chunk => {
           streamingMessage.content += chunk;
           renderStreamingMessage();
-        }, editTarget?.messageId);
+        }, editTarget?.messageId, event => {
+          if(event.type === 'turn_started') streamingMessage.recoveryToken = event.recovery_token;
+          if(event.type === 'sources') streamingMessage.sources = event.sources || [];
+          if(event.type === 'tool_status') streamingMessage.toolStatus = AI2AIChatTools.statusLabel(event);
+          renderStreamingMessage();
+        });
         if(convo.id === null && data.conversation_id){
           convo.id = data.conversation_id;
           state.activeConvoId = conversationKey(convo);
@@ -1533,9 +1532,11 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
         data = { reply: simulatedReply, remaining_balance: state.credits };
       }
       const replyText = data.reply || "(réponse vide)";
+      convo.pendingImageIds = [];
       streamingMessage.mediaUrl = data.media_url || null;
       streamingMessage.mediaKind = data.media_kind || "image";
       streamingMessage.sources = Array.isArray(data.sources) ? data.sources : [];
+      streamingMessage.toolEvents = Array.isArray(data.tool_events) ? data.tool_events : [];
       const inputTokens = data.prompt_tokens ?? estimateTokens(text);
       const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
       userMessage.tokens = inputTokens;
@@ -1545,6 +1546,11 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       streamingMessage.routingObservationId = data.routing_observation_id || null;
       streamingMessage.feedback = data.routing_feedback || null;
       streamingMessage.streaming = false;
+      const conversationPosition = state.conversations.indexOf(convo);
+      if(!convo.temporary && conversationPosition > 0){
+        state.conversations.splice(conversationPosition, 1);
+        state.conversations.unshift(convo);
+      }
       if(convo.localOnly && !convo.temporary){
         if(convo.title === "Nouvelle conversation") convo.title = text.slice(0, 200);
         persistLocalConversations();
@@ -1556,13 +1562,38 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       state.usageLog.unshift({ label: "Message (" + persona.name + ")", tokens: inputTokens });
       state.usageLog.unshift({ label: "Réponse (" + persona.name + ")", tokens: replyTokens });
       renderAll();
+      if(data.billing_warning) showChatNotice(data.billing_warning);
     }catch(err){
+      let recovered = err.recovery;
+      if(!recovered && streamingMessage.recoveryToken && !convo.temporary && !editTarget){
+        for(let attempt=0;attempt<3 && !recovered;attempt++){
+          try{
+            const response = await fetch('/chat/api/recovery/'+encodeURIComponent(streamingMessage.recoveryToken)+'/');
+            if(response.ok) recovered = await response.json();
+          }catch{}
+          if(!recovered) await new Promise(resolve=>setTimeout(resolve,300));
+        }
+      }
+      if(recovered){
+        convo.id = recovered.conversation_id;
+        convo.pendingImageIds = [];
+        convo.title = recovered.title;
+        state.activeConvoId = conversationKey(convo);
+        userMessage.id = recovered.user_message_id;
+        streamingMessage.id = recovered.assistant_message_id;
+        streamingMessage.interrupted = true;
+        streamingMessage.content = recovered.reply;
+        streamingMessage.sources = recovered.sources || [];
+        streamingMessage.toolEvents = recovered.tool_events || [];
+      }
       if(previousMessages){
         convo.messages = previousMessages;
         convo.messages.push({ role: "bot", content: "⚠ " + err.message, tokens: 0 });
       }else{
+        const hadPartial = Boolean(streamingMessage.content.trim());
         streamingMessage.content = (streamingMessage.content ? streamingMessage.content + "\n\n" : "") + "⚠ " + err.message;
         streamingMessage.streaming = false;
+        streamingMessage.interrupted = Boolean(recovered) || hadPartial;
       }
       if(convo.localOnly && !convo.temporary) persistLocalConversations();
       renderAll();
@@ -2342,6 +2373,14 @@ fileInput.addEventListener("change", async () => {
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || "Erreur d'upload");
 
+    if(data.is_image){
+      convo.pendingImageIds = [...(convo.pendingImageIds || []), data.id].slice(-4);
+      renderImageAttachments();
+      showChatNotice(`"${data.name}" sera jointe au prochain message. Choisis un modèle compatible avec les images.`);
+      fileInput.value = "";
+      return;
+    }
+
     showChatNotice(data.has_text
       ? `"${data.name}" ajouté à l'espace Bara et disponible pour l'IA.`
       : `"${data.name}" est enregistré, mais son texte n'a pas pu être extrait.`);
@@ -2384,6 +2423,66 @@ fileInput.addEventListener("change", async () => {
     recognition.start();
   });
 
+  const conversationVoiceBtn = el('conversationVoiceBtn');
+  let voiceActive = false;
+  let conversationRecognition = null;
+  let voiceSpeaking = false;
+  function stopConversationVoice(){
+    voiceActive = false;
+    conversationRecognition?.abort();
+    window.speechSynthesis?.cancel();
+    conversationVoiceBtn.setAttribute('aria-pressed','false');
+    conversationVoiceBtn.textContent = 'Conversation vocale';
+    el('voiceStopBtn').hidden = true;
+  }
+  function listenConversation(){
+    if(!voiceActive || voiceSpeaking) return;
+    const recognition = new SpeechRecognition();
+    conversationRecognition = recognition;
+    recognition.lang = 'fr-FR';
+    recognition.interimResults = false;
+    conversationVoiceBtn.textContent = 'Micro actif · arrêter';
+    let answered = false;
+    recognition.onresult = async event => {
+      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
+      if(!transcript || !voiceActive) return;
+      answered = true;
+      recognition.stop();
+      conversationVoiceBtn.textContent = 'Réponse en cours · arrêter';
+      const voiceConversation = activeConvo();
+      await sendMessage(transcript);
+      if(!voiceActive) return;
+      if(activeConvo() !== voiceConversation){ stopConversationVoice(); return; }
+      const message = voiceConversation?.messages.filter(m => m.role === 'bot' && !m.streaming).at(-1);
+      if(!message?.content){ stopConversationVoice(); return; }
+      const speech = new SpeechSynthesisUtterance(message.content.replace(/\[\[sources:[^\]]+\]\]|[*#`]/g,''));
+      speech.lang = 'fr-FR';
+      voiceSpeaking = true;
+      speech.onend = () => { voiceSpeaking = false; if(voiceActive) listenConversation(); };
+      speech.onerror = () => { voiceSpeaking = false; stopConversationVoice(); };
+      conversationVoiceBtn.textContent = 'Lecture · arrêter';
+      window.speechSynthesis.speak(speech);
+    };
+    recognition.onerror = event => {
+      if(event.error !== 'aborted') showChatNotice('Micro indisponible : '+event.error);
+      stopConversationVoice();
+    };
+    recognition.onend = () => { if(voiceActive && !answered && !voiceSpeaking) setTimeout(listenConversation,500); };
+    try { recognition.start(); } catch { stopConversationVoice(); }
+  }
+  conversationVoiceBtn.addEventListener('click',() => {
+    closeComposerPlusMenu();
+    if(voiceActive){ stopConversationVoice(); return; }
+    if(!SpeechRecognition || !window.speechSynthesis){ showChatNotice('Le mode vocal demande un navigateur compatible avec la reconnaissance et la lecture vocales.'); return; }
+    voiceActive = true;
+    el('voiceStopBtn').hidden = false;
+    voiceSpeaking = false;
+    conversationVoiceBtn.setAttribute('aria-pressed','true');
+    showChatNotice('Mode vocal actif. Chaque phrase déclenche un message et utilise les crédits habituels. Arrête-le avec le même bouton.');
+    listenConversation();
+  });
+  window.addEventListener('pagehide',stopConversationVoice);
+  el('voiceStopBtn').addEventListener('click',stopConversationVoice);
   const creditPill = el("creditPill");
   const main = document.querySelector(".main");
   const updateComposerHeight = () => {
@@ -2612,4 +2711,3 @@ const tabLogin = document.getElementById("tabLogin");
     });
   });
 }
-  

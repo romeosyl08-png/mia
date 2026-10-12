@@ -76,11 +76,15 @@ Dans le chat, les votes J’aime/Je n’aime pas sont désormais persistés par 
 
 L’équipe garde « Comparer et synthétiser » comme stratégie par défaut. Une option distincte « Planifier, réaliser, vérifier » orchestre trois étapes avec deux ou trois modèles sélectionnés; le plan et le brouillon restent internes et seule la réponse vérifiée est affichée. Le mode est également transmis lors du streaming.
 
-L’API compatible OpenAI continue d’exiger un identifiant de modèle explicite : `model="auto"` n’est pas encore activé. L’Auto actif concerne le chat et les workspaces Bara; aucune orchestration automatique n’est ajoutée à l’API.
+L’API compatible OpenAI accepte aussi `model="auto"` et expose cette option dans `/v1/models` lorsqu'un fournisseur éligible est configuré. Les appels standards de l'API enregistrent toujours une recommandation shadow sans remplacer le modèle explicitement sélectionné. Le streaming avec outils n'est pas pris en charge par l'API.
+
+Chaque appel d'une équipe est facturé selon les tarifs du modèle qui l'a exécuté, y compris la synthèse ou la vérification finale. Les réservations sont ajustées avec une règle commune au chat, à Bara et à l'API ; les échecs réseau avant réponse sont remboursés. Un éventuel complément impossible à débiter est signalé dans le chat et Bara.
+
+L'historique transmis aux modèles est limité aux échanges récents avec `CHAT_HISTORY_MAX_MESSAGES=48` et `CHAT_HISTORY_MAX_CHARS=48000`. Cette limite concerne le contexte fournisseur, pas l'historique sauvegardé. Les conversations reprennent leur place dans les échanges récents après chaque nouvelle réponse.
 
 ### Sécurité des outils Bara
 
-Les outils `run_python` et `run_command` sont désactivés par défaut. `run_python` transmet le code au service tiers Piston; `run_command` lance un sous-processus sur l’hôte applicatif et ne constitue pas un bac à sable de sécurité, même si les fichiers du workspace sont copiés dans un répertoire temporaire. N'active ces outils qu'avec `BARA_CODE_EXECUTION_ENABLED=true` sur une instance isolée et sans données sensibles. La sélection individuelle dans un workspace ne peut pas contourner ce réglage serveur.
+Les outils `run_python`, `run_command` et `extract_document_text` sont désactivés par défaut. Ils utilisent uniquement un conteneur Docker sans réseau, avec système de fichiers en lecture seule, utilisateur non privilégié et limites de ressources. Aucun repli vers une exécution sur l’hôte n’est permis. Prépare l’image `runtime/Dockerfile` avant de configurer `BARA_CODE_EXECUTION_ENABLED=true`. La sélection d’outils d’un workspace ne peut pas contourner ce réglage serveur. Voir `FEATURES.md` pour l’installation du runtime.
 
 Bara ajuste le débit après la réponse selon les tokens d’entrée/sortie réellement rapportés et les tarifs configurés pour le modèle. Si le coût dépasse la réserve prélevée et que le solde ne suffit plus, l’interface indique explicitement les jetons qui n’ont pas pu être débités.
 
@@ -94,11 +98,38 @@ Pour Blender, connecte le module complémentaire téléchargeable dans le pannea
 
 Le panneau `VISUALISATIONS` ouvre un site directement dans le navigateur, dans un iframe sandboxé, ou prépare une demande de graphique. Le site n'est pas récupéré par le serveur ; certains sites refusent les iframes ou leur authentification ne fonctionne pas dans le cadre isolé, et doivent alors être ouverts dans un nouvel onglet. L'outil `visualize_chart` affiche des graphiques SVG avec infobulles à partir des données fournies dans la conversation ou les fichiers.
 
-Dans le chat, sélectionne un espace Bara dans le contrôle **Fichiers** avant d'ajouter un document. Les fichiers sont conservés dans cet espace, limités à 10 Mo chacun, et leur texte extrait peut servir de contexte aux échanges. Les formats texte courants, PDF, DOCX, XLSX et PPTX sont pris en charge ; les images et les documents scannés sans couche texte ne sont pas interprétés comme contenu visuel.
+Dans le chat, sélectionne un espace Bara dans le contrôle **Espace** avant d'ajouter un document. Les fichiers sont conservés dans cet espace, limités à 10 Mo chacun, et leur texte extrait peut servir de contexte aux échanges. Les formats texte courants, PDF, DOCX, XLSX et PPTX sont pris en charge ; les images peuvent être jointes au prochain message avec un modèle acceptant les images (quatre images de 5 Mo maximum). Les références sont sauvegardées pour les échanges suivants. Les documents scannés peuvent être traités par l’outil OCR lorsque le runtime isolé est configuré.
+
+Le chat utilise le même catalogue d'outils que Bara pour l'espace sélectionné : lecture et modification de fichiers, comparaison, recherche, graphiques et connexions actives. Les outils désactivés et le réglage serveur d'exécution de code restent respectés. Les suppressions, envois d'e-mails, modifications Blender et appels MCP affichent leurs confirmations dans la réponse du chat. Les graphiques et les confirmations sont conservés avec le message et restaurés à la réouverture de la conversation.
+
+Configure `SEARCH_API_KEY` avec la même clé Serper que Bara pour activer la recherche Web. En chat simple avec un modèle compatible avec les outils, l'IA peut rechercher et lire les pages pertinentes de sa propre initiative, même sans espace sélectionné. Le bouton **Recherche web** lance une première recherche explicitement, puis le modèle peut la compléter avec les outils. Le mode Équipe conserve la première recherche et sa synthèse ; l'usage des outils de workspace concerne le mode à un seul modèle.
+
+Les références sont des pastilles intégrées après les affirmations : nom du site, icône et `+1`, `+2`, etc. pour les citations regroupées. Un clic ouvre les titres, liens et extraits des références. Les numéros renvoient uniquement aux résultats effectivement obtenus par la recherche ou la lecture d'une page ; une source inventée ou une URL non HTTP(S) ne devient pas une pastille. Quand un modèle ne place aucune citation, une ligne compacte « Sources consultées » reste disponible sous la réponse.
+
+La migration `chat.0020_message_tool_events` ajoute les données de graphiques et de confirmations aux messages. Applique-la avec `python manage.py migrate` avant d'utiliser cette version ; le démarrage Render applique automatiquement les migrations au prochain déploiement.
 
 2AI est installable comme PWA sur HTTPS (et sur `localhost` en développement). Le service worker met uniquement en cache les ressources publiques sous `/static/` ; les pages, conversations et réponses privées ne sont pas disponibles hors ligne. Sur iOS, utilise Safari puis **Partager → Sur l’écran d’accueil**.
 
-Les serveurs MCP activés peuvent agir sans confirmation individuelle : limite leurs permissions et ne connecte que des services de confiance.
+Chaque appel à un serveur MCP dans Bara demande une confirmation individuelle. Limite également les permissions des services connectés.
+
+## Stockage et dépôt
+
+`MEDIA_ROOT` et `PRIVATE_MEDIA_ROOT` permettent de placer les fichiers Bara et les médias générés sur un stockage persistant ; leurs valeurs locales par défaut restent `media/` et `private_media/`. Le Blueprint Render utilise un disque de 1 Go et un service web payant `starter`, avec les deux répertoires sous `/var/data`. Voir `RENDER.md` pour préparer une instance existante.
+
+Les documents uploadés, médias privés, fichiers Python compilés et artefacts de packaging ne sont plus suivis par Git. Ils restent présents localement. L'exclusion du suivi courant ne supprime pas les fichiers des anciens commits.
+
+Le calcul des crédits se trouve dans `chat/billing.py`, l'orchestration des équipes dans `chat/team.py`, la gestion du contexte dans `chat/context.py`, les outils du chat dans `chat/file_tools.py` et la sauvegarde d'un échange dans `chat/turns.py`. Le catalogue, l'exécution et le journal des outils sont partagés dans `bara/agent_tools.py`. Le lecteur de flux SSE du navigateur est isolé dans `static/app/js/chat_transport.js`, les références dans `message_sources.js`, les actions dans `chat_tools.js` et les graphiques dans `charts.js`.
+
+## Vérifications
+
+```sh
+python manage.py test chat api ai_user bara barrassons
+node --test tests/js/chat_transport.test.cjs
+node --test tests/js/message_sources.test.cjs
+python manage.py makemigrations --check --dry-run
+```
+
+Les tests couvrent les tarifs distincts d'une équipe, les remboursements lors d'une coupure réseau, les outils de fichiers en streaming, la validation à l'inscription et le sandbox des prévisualisations HTML.
 
 ## Barrassons CLI
 
@@ -124,3 +155,7 @@ remove the locally stored key.
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed
 tool calls are not currently supported by this CLI.
+
+## Tâches, mémoire, documents et collaboration
+
+Les six chantiers et leurs réglages sont décrits dans [FEATURES.md](FEATURES.md). Les nouvelles migrations doivent être appliquées avant de lancer cette version. Render démarre désormais le serveur Web et le worker sur le même volume avec `python manage.py run_services`.

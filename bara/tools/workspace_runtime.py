@@ -37,11 +37,11 @@ def materialize_workspace(workspace):
             destination = root / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
 
-            content = work_file.extracted_text or ""
-
-            destination.write_text(
-                content,
-                encoding="utf-8",
-            )
+            if work_file.file:
+                with work_file.file.open('rb') as source, destination.open('wb') as target:
+                    import shutil
+                    shutil.copyfileobj(source,target)
+            else:
+                destination.write_text(work_file.extracted_text or '',encoding='utf-8')
 
         yield root

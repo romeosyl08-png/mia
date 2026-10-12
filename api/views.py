@@ -24,6 +24,7 @@ from chat.services import (
 from chat.routing import record_shadow_run, safe_shadow_run, task_category
 from chat.routing import eligible_models, model_key, recommend_model
 from chat.models import ChatPreferences
+from chat.billing import settle_reservation
 
 from .models import AIModel
 
@@ -325,14 +326,7 @@ def _openai_from_anthropic(model, data):
 def _settle(account, model, reserve, prompt_tokens, completion_tokens):
     """Remplace la réserve par le coût réel : rembourse l'excédent, débite le complément."""
     actual = credits_for_usage(model, prompt_tokens, completion_tokens)
-    if actual < reserve:
-        account.credit(reserve - actual, reason="adjustment", note=f"Ajustement API — {model.model_id}")
-    elif actual > reserve:
-        try:
-            account.debit(actual - reserve, reason="usage", note=f"Complément API — {model.model_id}")
-        except InsufficientCreditsError:
-            actual = reserve
-    return actual
+    return settle_reservation(account, reserve, actual, f'API — {model.model_id}').charged_credits
 
 
 def _balance(account):
@@ -511,6 +505,17 @@ def chat_completions(request):
                 provider_data = json.loads(response.read().decode("utf-8"))
             if not isinstance(provider_data, dict):
                 raise ValueError("unexpected provider payload")
+            result = _openai_from_anthropic(model, provider_data) if is_anthropic else provider_data
+            usage = result.get('usage') or {}
+            choices = result.get('choices')
+            if not isinstance(usage, dict) or not isinstance(choices, list) or not choices:
+                raise ValueError('Provider returned no usable completion.')
+            completion_text = ''.join((choice.get('message') or {}).get('content') or '' for choice in choices)
+            prompt_tokens = usage.get('prompt_tokens') or est_input
+            completion_tokens = usage.get('completion_tokens') or max(1, round(len(completion_text) / 4))
+            if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (prompt_tokens, completion_tokens)):
+                raise ValueError('Provider returned invalid usage.')
+            clean = _clean_completion(result, model, prompt_tokens, completion_tokens)
     except _ConfigError as exc:
         account.credit(reserve, reason="adjustment", note="Remboursement API — configuration")
         record_shadow_run(user, shadow_run, "error")
@@ -519,11 +524,16 @@ def chat_completions(request):
         account.credit(reserve, reason="adjustment", note="Remboursement API — erreur fournisseur")
         record_shadow_run(user, shadow_run, "error")
         return _upstream_error(exc)
-    except (URLError, TimeoutError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         logger.warning("Upstream failure: %s", exc)
         account.credit(reserve, reason="adjustment", note="Remboursement API — fournisseur indisponible")
         record_shadow_run(user, shadow_run, "error")
         return _error("Provider request failed.", "provider_error", 502)
+    except Exception:
+        logger.exception('Unexpected API provider failure (user_id=%s)', user.pk)
+        account.credit(reserve, reason='adjustment', note='Remboursement API — erreur fournisseur inattendue')
+        record_shadow_run(user, shadow_run, 'error')
+        return _error('Provider request failed.', 'provider_error', 502)
 
     _touch_keys(user_key, provider_key)
 
@@ -533,6 +543,11 @@ def chat_completions(request):
 
         def settle():
             if state["charged"] is None:
+                if not any(state[name] for name in ('prompt', 'completion', 'chars')):
+                    state['tokens'] = (0, 0)
+                    state['charged'] = settle_reservation(account, reserve, 0, f'API — {model.model_id}').charged_credits
+                    record_shadow_run(user, shadow_run, 'error', charged_credits=0)
+                    return state['charged']
                 prompt = state["prompt"] or est_input
                 completion = state["completion"] or max(1, round(state["chars"] / 4))
                 state["tokens"] = (prompt, completion)
@@ -584,26 +599,30 @@ def chat_completions(request):
                                     state["prompt"] = usage.get("prompt_tokens", state["prompt"])
                                     state["completion"] = usage.get("completion_tokens", state["completion"])
                                 for choice in chunk.get("choices") or []:
-                                    state["chars"] += len((choice.get("delta") or {}).get("content") or "")
+                                    delta = choice.get('delta') or {}
+                                    state["chars"] += len(delta.get("content") or "")
+                                    state['chars'] += sum(len(json.dumps(call)) for call in delta.get('tool_calls') or [])
                     yield raw
+            except Exception:
+                logger.exception('API stream interrupted by provider error (user_id=%s)', user.pk)
+                error = {'error': {'message': 'Provider stream interrupted.', 'type': 'provider_error'}}
+                yield ('data: ' + json.dumps(error) + '\n\n').encode()
+                yield b'data: [DONE]\n\n'
             finally:
-                upstream.close()
-                settle()  # couvre aussi le cas où le client coupe la connexion en plein flux
+                try:
+                    upstream.close()
+                finally:
+                    settle()
 
         response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
+        # A response may close before its generator is ever consumed.
+        response._resource_closers.append(upstream.close)
+        response._resource_closers.append(settle)
         return response
 
     # ----- Réponse complète -----
-    result = _openai_from_anthropic(model, provider_data) if is_anthropic else provider_data
-    result["model"] = model.model_id
-    usage = result.setdefault("usage", {})
-    completion_text = "".join(
-        (c.get("message") or {}).get("content") or "" for c in result.get("choices") or []
-    )
-    prompt_tokens = usage.get("prompt_tokens") or est_input
-    completion_tokens = usage.get("completion_tokens") or max(1, round(len(completion_text) / 4))
     charged = _settle(account, model, reserve, prompt_tokens, completion_tokens)
     record_shadow_run(
         user,
@@ -614,7 +633,6 @@ def chat_completions(request):
         completion_tokens=completion_tokens,
     )
     balance = _balance(account)
-    clean = _clean_completion(result, model, prompt_tokens, completion_tokens)
     clean["usage"]["credits_charged"] = charged
     clean["usage"]["remaining_balance"] = balance
 

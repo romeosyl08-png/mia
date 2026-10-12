@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+from .project import load_session, save_session, record_edit, preview, undo_last, git, git_context, make_worktree
 
 
 DEFAULT_API_BASE = "https://ai-2ai.onrender.com/v1"
@@ -180,10 +181,13 @@ def execute_tool(name, args, root):
             content = args["content"]
             if len(content) > 200_000:
                 return {"error": "Contenu trop volumineux (limite 200 ko)."}
+            before = path.read_text(encoding='utf-8') if path.exists() else None
+            print(preview(path.relative_to(root), before, content)[:20000])
             if not _confirm(f"Créer/remplacer {path.relative_to(root)} ({len(content)} caractères)"):
                 return {"status": "refused"}
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
+            record_edit(root, str(path.relative_to(root)), before, content)
             return {"status": "written", "path": str(path.relative_to(root))}
 
         if name == "edit_file":
@@ -195,9 +199,12 @@ def execute_tool(name, args, root):
             count = content.count(old_text)
             if count != 1:
                 return {"error": f"Le passage apparaît {count} fois; il doit apparaître exactement une fois."}
+            after = content.replace(old_text, new_text, 1)
+            print(preview(path.relative_to(root), content, after)[:20000])
             if not _confirm(f"Modifier {path.relative_to(root)} : remplacer un passage de {len(old_text)} caractères"):
                 return {"status": "refused"}
-            path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
+            path.write_text(after, encoding="utf-8")
+            record_edit(root, str(path.relative_to(root)), content, after)
             return {"status": "updated", "path": str(path.relative_to(root))}
 
         if name == "run_command":
@@ -206,6 +213,7 @@ def execute_tool(name, args, root):
                 return {"status": "refused"}
             result = subprocess.run(
                 command, cwd=root, shell=True, text=True, capture_output=True, timeout=120, check=False,
+                env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'},
             )
             return {
                 "exit_code": result.returncode,
@@ -235,16 +243,32 @@ def _select_model(config):
     raise ValueError("Modèle inconnu dans la liste.")
 
 
-def run_session(config, root, model):
+def run_session(config, root, model, resume=False, test_command=None):
     system = (
         "Tu es Barrassons, un agent de développement qui travaille dans le dossier local indiqué. "
         "Inspecte le code avant de proposer des changements. Utilise les outils pour lire, rechercher et modifier les fichiers. "
         "Ne prétends jamais avoir exécuté une action si l'outil ne le confirme pas. "
-        "Les écritures et commandes sont soumises à confirmation par l'utilisateur. Réponds en français sauf demande contraire."
+        "Les écritures et commandes sont soumises à confirmation par l'utilisateur. "
+        "Après des modifications, exécute les tests appropriés, observe les résultats et corrige les erreurs. "
+        "Lis AGENTS.md et les instructions du projet lorsqu’ils existent. Réponds en français sauf demande contraire."
     )
     messages = [{"role": "system", "content": system + f"\nDossier courant: {root}"}]
+    saved = load_session(root)
+    if resume and isinstance(saved.get('messages'), list):
+        messages = saved['messages']
+        # Resolve unfinished calls without executing them again.
+        answered = {m.get('tool_call_id') for m in messages if m.get('role') == 'tool'}
+        for m in list(messages):
+            for call in m.get('tool_calls', []):
+                if call.get('id') not in answered:
+                    messages.append({'role':'tool','tool_call_id':call['id'],'content':'Exécution précédente interrompue. Résultat incertain ; ne pas répéter automatiquement.'})
+    def persist():
+        state = load_session(root)
+        state.update(messages=messages, model=model, root=str(root))
+        save_session(root, state)
     print(f"\nBarrassons · {root} · {model}")
-    print("Entre une demande; /exit quitte, /clear efface le contexte, /help affiche l'aide.\n")
+    print(git_context(root))
+    print("Commandes : /diff, /undo, /verify, /review, /clear, /exit. Sessions sauvegardées automatiquement.\n")
     while True:
         try:
             text = input("barrassons> ").strip()
@@ -257,12 +281,41 @@ def run_session(config, root, model):
             return
         if text == "/clear":
             messages = messages[:1]
+            persist()
             print("Contexte effacé.")
             continue
         if text == "/help":
-            print("Outils: liste, lecture, recherche, modification de fichiers, commandes shell avec confirmation.\nCommandes: /clear, /exit, /help")
+            print("/diff affiche le diff Git; /undo annule la dernière édition; /verify lance --test-command; /review demande une revue; /clear efface le contexte.")
             continue
+        if text == '/diff':
+            try:
+                print(git(root, 'diff', 'HEAD') or 'Aucun diff suivi par Git. Les nouveaux fichiers sont visibles dans git status.')
+            except ValueError as error:
+                print(error)
+            continue
+        if text == '/undo':
+            print(undo_last(root, _confirm))
+            continue
+        if text == '/verify':
+            if not test_command:
+                print('Configure --test-command, par exemple "python -m pytest".')
+            else:
+                result = execute_tool('run_command', {'command':test_command}, root)
+                print(json.dumps(result, ensure_ascii=False))
+                messages.append({'role':'user','content':'Résultat réel de la vérification : ' + json.dumps(result, ensure_ascii=False)})
+                persist()
+            continue
+        if text == '/review':
+            try:
+                text = 'Revois ce diff : cherche les bugs et régressions, puis indique les vérifications nécessaires.\n' + git(root,'diff','HEAD')[:60000]
+            except ValueError as error:
+                print(error)
+                continue
+        messages[0] = {'role':'system','content':system + f'\nDossier: {root}\n' + git_context(root) + ('\nCommande de tests configurée : '+test_command if test_command else '')}
         messages.append({"role": "user", "content": text})
+        persist()
+        changed_files = False
+        verification_attempts = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             response = api_request(config, "/chat/completions", {
                 "model": model,
@@ -274,10 +327,23 @@ def run_session(config, root, model):
             choice = response["choices"][0]
             assistant = choice["message"]
             messages.append(assistant)
+            persist()
             tool_calls = assistant.get("tool_calls") or []
             if not tool_calls:
+                if changed_files and test_command and verification_attempts < 2:
+                    verification_attempts += 1
+                    verification = execute_tool('run_command',{'command':test_command},root)
+                    print('Vérification : '+json.dumps(verification,ensure_ascii=False))
+                    messages.append({'role':'user','content':'Résultat réel des tests configurés : '+json.dumps(verification,ensure_ascii=False)+'. Corrige les erreurs si possible ; indique clairement une vérification refusée ou échouée.'})
+                    persist()
+                    if verification.get('exit_code') == 0:
+                        changed_files = False
+                    elif verification.get('status') != 'refused':
+                        continue
                 answer = assistant.get("content") or "(réponse vide)"
                 print("\n" + answer + "\n")
+                if changed_files and test_command:
+                    print('La vérification configurée reste non validée. Consulte les résultats ci-dessus.')
                 break
             for call in tool_calls:
                 function = call.get("function") or {}
@@ -286,6 +352,10 @@ def run_session(config, root, model):
                 try:
                     args = json.loads(function.get("arguments") or "{}")
                     result = execute_tool(name, args, root)
+                    if result.get('status') in {'written','updated'}:
+                        changed_files = True
+                    if name == 'run_command' and args.get('command') == test_command and result.get('exit_code') == 0:
+                        changed_files = False
                 except (TypeError, ValueError) as error:
                     result = {"error": f"Arguments invalides: {error}"}
                 print(json.dumps(result, ensure_ascii=False)[:1000])
@@ -293,6 +363,7 @@ def run_session(config, root, model):
                     "role": "tool", "tool_call_id": call.get("id", ""),
                     "name": name, "content": json.dumps(result, ensure_ascii=False),
                 })
+                persist()
         else:
             print("Limite d'itérations d'outils atteinte pour cette demande.")
         if len(messages) > 41:
@@ -306,6 +377,9 @@ def run_session(config, root, model):
 def main():
     parser = argparse.ArgumentParser(prog="barrassons", description="Assistant de développement AI2AI dans le terminal")
     parser.add_argument("command", nargs="?", choices=["login", "logout"], help="Gérer la connexion AI2AI")
+    parser.add_argument('--resume', action='store_true', help='Reprendre la session du projet')
+    parser.add_argument('--worktree', action='store_true', help='Créer une branche isolée dans un worktree Git')
+    parser.add_argument('--test-command', help='Commande de vérification à utiliser avec /verify')
     args = parser.parse_args()
     config = load_config()
     try:
@@ -316,8 +390,12 @@ def main():
         if args.command == "login" or not config.get("api_key"):
             config = connect(config)
         root = Path.cwd().resolve()
+        if args.worktree:
+            if not _confirm('Créer une branche et un worktree Git pour cette session ?'):
+                return 0
+            root = make_worktree(root)
         model = _select_model(config)
-        run_session(config, root, model)
+        run_session(config, root, model, resume=args.resume, test_command=args.test_command)
         return 0
     except (KeyboardInterrupt, EOFError):
         print("\nConnexion annulée.")

@@ -307,7 +307,7 @@ class WorkspaceToolTests(TestCase):
         with patch(
             "bara.views.call_llm_with_tools_stream",
             side_effect=[iter(tool_call), iter(final_answer)],
-        ) as provider_call, patch("bara.views.execute_tool") as execute_tool:
+        ) as provider_call, patch("bara.agent_tools.execute_tool") as execute_tool:
             response = self.client.post(
                 reverse("bara:message", args=[self.workspace.id, conversation.id]),
                 {"content": "Lance une commande"},
@@ -417,38 +417,25 @@ class WorkspaceToolTests(TestCase):
         self.assertTrue(self.workspace.auto_route)
         self.assertEqual(self.workspace.active_model_id, fallback_model.id)
 
-    def test_run_command_preserves_environment_home(self):
-        old_home = os.environ.get("HOME")
-        os.environ["HOME"] = "/tmp/workspace-home"
-        try:
-            result = run_sandbox_command([
-                "python3",
-                "-c",
-                "import os; print(os.environ.get('HOME', ''))",
-            ], cwd="/tmp", timeout=10)
-        finally:
-            if old_home is None:
-                os.environ.pop("HOME", None)
-            else:
-                os.environ["HOME"] = old_home
+    @override_settings(BARA_CODE_EXECUTION_ENABLED=False)
+    def test_run_command_disabled_never_executes_on_host(self):
+        with patch('bara.tools.sandbox.subprocess.run') as process:
+            result = run_sandbox_command(['python3', '-c', 'print(1)'], cwd='/tmp')
+        self.assertIn('error',result)
+        process.assert_not_called()
 
-        self.assertEqual(result.get("exit_code"), 0)
-        self.assertIn("/tmp/workspace-home", result["stdout"])
-
-    def test_run_command_executes_in_temp_workspace(self):
-        WorkFile.objects.create(
-            workspace=self.workspace,
-            original_name="notes.txt",
-            content_type="text/plain",
-            size_bytes=12,
-            extracted_text="bonjour\n",
-        )
-
-        result = run_command(self.workspace, ["python3", "-c", "from pathlib import Path; print(Path('notes.txt').read_text())"], timeout=15)
-
-        self.assertEqual(result.get("exit_code"), 0)
-        self.assertIn("bonjour", result.get("stdout", ""))
-        self.assertEqual(result.get("workspace"), "temporary")
+    def test_run_command_materializes_only_workspace_files(self):
+        WorkFile.objects.create(workspace=self.workspace, original_name='notes.txt',
+                                content_type='text/plain', size_bytes=12, extracted_text='bonjour\n')
+        def isolated(command,cwd,timeout):
+            from pathlib import Path
+            self.assertEqual((Path(cwd)/'notes.txt').read_text(),'bonjour\n')
+            self.assertNotEqual(Path(cwd),Path('/tmp'))
+            return {'exit_code':0,'stdout':'bonjour','isolated':True}
+        with patch('bara.tools.definitions.run_sandbox_command',side_effect=isolated):
+            result = run_command(self.workspace,['python3','-c','print(1)'],timeout=15)
+        self.assertTrue(result['isolated'])
+        self.assertEqual(result['workspace'],'temporary')
 
 
 class WorkspaceMCPTests(TestCase):

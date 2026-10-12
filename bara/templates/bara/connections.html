@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block body %}<main class="work-page">
+<a href="{% url 'bara:detail' workspace.id %}">← {{ workspace.title }}</a><h1>Connexions</h1>
+<p>Drive, calendrier et GitHub sont utilisés en lecture seule. Les membres avec le rôle Modification peuvent utiliser les connexions de cet espace.</p>
+<a href="{% url 'bara:plugin-email-connect' workspace.id 'google_drive' %}">Connecter Google Drive</a>
+<a href="{% url 'bara:plugin-email-connect' workspace.id 'google_calendar' %}">Connecter Google Calendar</a>
+<p role="alert">{{ error }}</p><form method="post">{% csrf_token %}<label>Jeton GitHub à permissions limitées aux dépôts choisis, Contents en lecture seule <input type="password" name="token" required autocomplete="off"></label><button>Connecter GitHub</button></form>
+<ul>{% for connection in connections %}<li>{{ connection.get_plugin_display }} {{ connection.account_email }}
+<form method="post" action="{% url 'bara:plugin-disconnect' workspace.id connection.plugin %}">{% csrf_token %}<button>Déconnecter</button></form></li>{% endfor %}</ul>
+</main>{% endblock %}

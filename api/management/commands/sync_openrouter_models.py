@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from api.constants import OPENROUTER_RANKING_OPTIONS
 from api.models import AIModel, APIKey, APIProvider
@@ -18,7 +19,20 @@ PRICE_SCALE = Decimal("1000000")
 class Command(BaseCommand):
     help = "Synchronise les modèles texte et leurs tarifs depuis OpenRouter."
 
+    def add_arguments(self, parser):
+        parser.add_argument('--allow-stale', action='store_true', help='Continue avec le catalogue existant si OpenRouter est indisponible.')
+
     def handle(self, *args, **options):
+        try:
+            return self._sync_catalog()
+        except CommandError as error:
+            if options.get('allow_stale') and AIModel.objects.filter(provider__slug='openrouter', provider__is_active=True, is_active=True).exists():
+                self.stderr.write(self.style.WARNING(f'{error} Le catalogue existant est conservé.'))
+                return
+            raise
+
+    @transaction.atomic
+    def _sync_catalog(self):
         provider = APIProvider.objects.filter(slug="openrouter", is_active=True).first()
         if provider is None:
             raise CommandError("OpenRouter est absent ou inactif. Lance seed_providers d'abord.")
@@ -81,6 +95,7 @@ class Command(BaseCommand):
                 defaults={
                     "name": str(row.get("name") or model_id)[:100],
                     "is_active": True,
+                    "input_modalities": inputs,
                     "input_price_per_million": input_price,
                     "output_price_per_million": output_price,
                 },

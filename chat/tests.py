@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from unittest.mock import MagicMock, patch
 from http.client import RemoteDisconnected
 from bs4 import BeautifulSoup
@@ -18,6 +18,7 @@ from chat.routing import recommend_model
 from .models import ChatPreferences, Conversation, GeneratedMedia, Message, Persona, RoutingFeedback, RoutingObservation
 
 
+@override_settings(SEARCH_API_KEY='')
 class ChatHomeTests(TestCase):
 	def setUp(self):
 		cache.clear()
@@ -878,7 +879,7 @@ class ChatHomeTests(TestCase):
 
 		with patch('chat.views.bara_tool_definitions.web_search', return_value={
 			'results': [{'title': 'Source', 'snippet': 'Current fact', 'link': 'https://example.test/source'}],
-		}) as search, patch('chat.views.call_llm_provider', return_value=('Réponse sourcée.', 10, 5)) as provider_call:
+		}) as search, patch('chat.file_tools.call_llm_with_tools', return_value=({'content': 'Réponse sourcée.'}, 10, 5)) as provider_call:
 			response = self.client.post('/chat/api/send/', data=json.dumps({
 				'mode': 'web', 'model_id': 'web-mode-model', 'content': 'Cherche le fait actuel',
 			}), content_type='application/json')
@@ -913,7 +914,7 @@ class ChatHomeTests(TestCase):
 
 		with patch('chat.views.bara_tool_definitions.web_search', return_value={
 			'results': [{'title': 'Résultats des Bleus', 'snippet': 'Résultats récents', 'link': 'https://example.test/bleus'}],
-		}) as search, patch('chat.views.call_llm_provider', return_value=('Voici les résultats trouvés.', 10, 5)) as provider_call:
+		}) as search, patch('chat.file_tools.call_llm_with_tools', return_value=({'content': 'Voici les résultats trouvés.'}, 10, 5)) as provider_call:
 			response = self.client.post('/chat/api/send/', data=json.dumps({
 				'conversation_id': conversation.id,
 				'mode': 'web',
@@ -936,8 +937,8 @@ class ChatHomeTests(TestCase):
 		self.client.force_login(user)
 
 		with patch('chat.views.bara_tool_definitions.web_search', return_value={'results': []}), patch(
-			'chat.views.call_llm_provider',
-			return_value=('Je lance une recherche <web_search>résultats</web_search>', 10, 5),
+			'chat.file_tools.call_llm_with_tools',
+			return_value=({'content': 'Je lance une recherche <web_search>résultats</web_search>'}, 10, 5),
 		):
 			response = self.client.post('/chat/api/send/', data=json.dumps({
 				'mode': 'web',
@@ -1529,7 +1530,9 @@ class ChatHomeTests(TestCase):
 		self.assertIn('"type": "error"', body)
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, 1000)
-		self.assertFalse(Conversation.objects.filter(user=user).exists())
+		partial = Message.objects.get(conversation__user=user,interrupted=True)
+		self.assertEqual(partial.content,'Partiel')
+		self.assertTrue(partial.recovery_token)
 
 	@patch('chat.services.urlopen')
 	def test_stream_llm_provider_parses_openai_sse(self, urlopen):

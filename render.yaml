@@ -2,8 +2,13 @@ services:
   - type: web
     name: ai-2ai
     runtime: python
+    plan: starter
+    disk:
+      name: ai-2ai-files
+      mountPath: /var/data
+      sizeGB: 1
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --no-input
-    startCommand: python manage.py migrate --noinput && python manage.py seed_providers && python manage.py sync_provider_keys && exec gunicorn ai_2ai.wsgi:application --bind 0.0.0.0:$PORT --timeout 120 --worker-class gthread --threads 4
+    startCommand: python manage.py migrate --noinput && python manage.py seed_providers && python manage.py sync_provider_keys && python manage.py sync_openrouter_models --allow-stale && exec python manage.py run_services
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -13,6 +18,12 @@ services:
         generateValue: true
       - key: FERNET_KEY
         sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: PRIVATE_MEDIA_ROOT
+        value: /var/data/private_media
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
@@ -26,8 +37,6 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_BOT_USERNAME
-        sync: false
-      - key: API_COMPATIBLE_KEY
         sync: false
       - key: REDIS_URL
         sync: false
