@@ -30,5 +30,6 @@ urlpatterns = [
     path('', include('ai_user.urls')),
     path('', include('chat.urls')),
     path('bara/', include('bara.urls')),
+    path('studio/', include('studio.urls')),
 ]
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

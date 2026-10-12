@@ -53,6 +53,8 @@ PAYDUNYA_CHECKOUT_URL = env(
 )
 OPENROUTER_IMAGE_MODEL = env('OPENROUTER_IMAGE_MODEL', default='bytedance-seed/seedream-4.5')
 OPENROUTER_VIDEO_MODEL = env('OPENROUTER_VIDEO_MODEL', default='alibaba/wan-3.0')
+STUDIO_IMAGE_EDIT_MODEL = env('STUDIO_IMAGE_EDIT_MODEL', default='google/gemini-3.1-flash-image')
+STUDIO_MEDIA_TIMEOUT_SECONDS = env.int('STUDIO_MEDIA_TIMEOUT_SECONDS', default=600)
 MEDIA_GENERATION_CREDITS = {
     'image': env.int('MEDIA_IMAGE_CREDITS', default=630),
     'video': env.int('MEDIA_VIDEO_CREDITS', default=16_800),
@@ -95,6 +97,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'chat.apps.ChatConfig',
+    'studio.apps.StudioConfig',
     'ai_user.apps.AiUserConfig',
     'api.apps.ApiConfig',
     'bara',

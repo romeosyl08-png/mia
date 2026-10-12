@@ -61,6 +61,10 @@ self.addEventListener("fetch", event => {
       const cache = await caches.open(STATIC_CACHE);
       const cachedResponse = await cache.match(request);
       const update = fetchStaticAsset(request, cachedResponse);
+      // The page and its interactive scripts must use the same deployed version.
+      if (url.pathname.endsWith(".js")) {
+        return (await update) || unavailableResponse();
+      }
       if (cachedResponse) {
         event.waitUntil(update);
         return cachedResponse;

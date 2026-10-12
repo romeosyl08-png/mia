@@ -196,8 +196,14 @@ let state = {
 
   function conversationKey(convo){ return convo.id ?? convo.localId ?? convo.draftId; }
 
+  const temporaryFallbackPersona = {
+    id: null, name: "Assistant général", prompt: "Tu es un assistant poli, clair et utile.",
+    tone: "neutre", temp: 0.7, length: "moyenne"
+  };
+
   async function newConversation(personaId, temporary = state.temporaryChat){
-    const persona = state.personas.find(p => p.id === personaId) || state.personas[0];
+    const persona = state.personas.find(p => p.id === personaId) || state.personas[0]
+      || (temporary ? temporaryFallbackPersona : null);
     if(!persona) return null;
     const localOnly = state.modelId.startsWith("local:");
     const convo = {
@@ -391,7 +397,8 @@ let state = {
   function activePersona(){
     const convo = activeConvo();
     const pid = convo ? convo.personaId : state.activePersonaId;
-    return state.personas.find(p => p.id === pid) || state.personas[0];
+    return state.personas.find(p => p.id === pid) || state.personas[0]
+      || (convo?.temporary ? temporaryFallbackPersona : null);
   }
   function activeConvo(){
     return state.conversations.find(c => conversationKey(c) === state.activeConvoId) || null;
@@ -907,7 +914,7 @@ function renderHeader(){
   const temporaryButton = el("temporaryChatBtn");
   temporaryButton.classList.toggle("active", Boolean(convo?.temporary));
   temporaryButton.setAttribute("aria-pressed", String(Boolean(convo?.temporary)));
-  temporaryButton.disabled = Boolean(state.sending || state.savingTemporary);
+  temporaryButton.disabled = Boolean(state.initializing || state.sending || state.savingTemporary);
   el("temporaryBadge").hidden = !convo?.temporary;
   renderTemporaryControls(convo);
   const memoryButton = el("memorySuggestBtn");
@@ -935,7 +942,13 @@ function renderHeader(){
   function renderTemporaryControls(convo){
     const controls = el("temporaryChatControls");
     controls.hidden = !convo?.temporary;
-    if(!convo?.temporary) return;
+    if(!convo?.temporary){
+      el("temporaryMemoryControl").hidden = true;
+      el("temporarySaveControl").hidden = true;
+      el("temporaryMemoryBtn").setAttribute("aria-expanded", "false");
+      el("temporarySaveBtn").setAttribute("aria-expanded", "false");
+      return;
+    }
     const personas = state.personas.filter(persona => Number.isInteger(persona.id));
     const memorySelect = el("temporaryMemoryPersona");
     const saveSelect = el("temporarySavePersona");
@@ -948,8 +961,18 @@ function renderHeader(){
     memorySelect.value = String(convo.temporaryMemoryPersonaId || "");
     saveSelect.value = String(convo.temporarySavePersonaId || "");
     const busy = Boolean(state.sending || state.savingTemporary);
-    memorySelect.disabled = busy || !state.isAuthenticated;
-    saveSelect.disabled = busy || !state.isAuthenticated;
+    memorySelect.disabled = busy || !state.isAuthenticated || !personas.length;
+    saveSelect.disabled = busy || !state.isAuthenticated || !personas.length;
+    const memoryPersona = personas.find(persona => String(persona.id) === String(convo.temporaryMemoryPersonaId));
+    const memoryButton = el("temporaryMemoryBtn");
+    const savePanelButton = el("temporarySaveBtn");
+    memoryButton.classList.toggle("active", Boolean(memoryPersona));
+    memoryButton.textContent = memoryPersona ? `Mémoire : ${memoryPersona.name}` : "Mémoire";
+    memoryButton.disabled = busy;
+    savePanelButton.disabled = busy;
+    el("temporaryPrivacySummary").textContent = memoryPersona
+      ? `Mémoire de ${memoryPersona.name} · non enregistrée`
+      : "Sans mémoire · non enregistrée";
     const saveButton = el("saveTemporaryConversationBtn");
     saveButton.disabled = busy || !state.isAuthenticated || !saveSelect.value
       || !convo.messages?.some(message => message.role === "user")
@@ -957,7 +980,8 @@ function renderHeader(){
     saveButton.textContent = state.savingTemporary ? "Enregistrement…" : "Enregistrer";
     el("temporaryConversationStatus").textContent = !state.isAuthenticated
       ? "Connecte-toi pour utiliser la mémoire et enregistrer dans un persona."
-      : convo.temporarySaveStatus || "";
+      : convo.temporarySaveStatus || (!personas.length
+        ? "Session temporaire ouverte. Les personas sont indisponibles pour le moment." : "");
   }
 
   function updateBrowserIdentity(){
@@ -1672,20 +1696,46 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     await loadConversationHistory();
     renderAll();
   });
-  el("temporaryChatBtn").addEventListener("click", () => {
-    if(state.sending || state.savingTemporary) return;
-    state.temporaryChat = !state.temporaryChat;
+  el("temporaryChatBtn").addEventListener("click", async () => {
+    if(state.initializing || state.sending || state.savingTemporary) return;
+    state.temporaryChat = !Boolean(activeConvo()?.temporary);
     if(!state.temporaryChat){
       state.conversations = state.conversations.filter(convo => !convo.temporary);
     }
     const persona = activePersona();
-    newConversation(persona?.id, state.temporaryChat);
+    const convo = await newConversation(persona?.id, state.temporaryChat);
     renderAll();
+    if(convo?.temporary && state.isAuthenticated && !state.personas.length){
+      await loadPersonas();
+      if(state.personas.length && convo.personaId === null){
+        convo.personaId = state.personas[0].id;
+      }
+      renderAll();
+    }
+  });
+  el("temporaryMemoryBtn").addEventListener("click", () => {
+    const panel = el("temporaryMemoryControl");
+    const other = el("temporarySaveControl");
+    panel.hidden = !panel.hidden;
+    other.hidden = true;
+    el("temporaryMemoryBtn").setAttribute("aria-expanded", String(!panel.hidden));
+    el("temporarySaveBtn").setAttribute("aria-expanded", "false");
+    if(!panel.hidden) el("temporaryMemoryPersona").focus();
+  });
+  el("temporarySaveBtn").addEventListener("click", () => {
+    const panel = el("temporarySaveControl");
+    const other = el("temporaryMemoryControl");
+    panel.hidden = !panel.hidden;
+    other.hidden = true;
+    el("temporarySaveBtn").setAttribute("aria-expanded", String(!panel.hidden));
+    el("temporaryMemoryBtn").setAttribute("aria-expanded", "false");
+    if(!panel.hidden) el("temporarySavePersona").focus();
   });
   el("temporaryMemoryPersona").addEventListener("change", event => {
     const convo = activeConvo();
     if(!convo?.temporary || state.sending || state.savingTemporary) return;
     convo.temporaryMemoryPersonaId = event.currentTarget.value ? Number(event.currentTarget.value) : null;
+    renderHeader();
   });
   el("temporarySavePersona").addEventListener("change", event => {
     const convo = activeConvo();
@@ -2272,7 +2322,7 @@ el("modelChips").addEventListener("click", (e) => {
   if(pickerButton){
     e.stopPropagation();
     el("modelPickerSearch").value = "";
-    document.querySelectorAll(".model-picker-item").forEach(item => { item.hidden = false; });
+    filterModelPicker("");
     el("modelPickerDialog").showModal();
     el("modelPickerSearch").focus();
   }
@@ -2296,11 +2346,18 @@ el("modelPickerList").addEventListener("click", event => {
   switchModel(item.dataset.modelId);
 });
 
-el("modelPickerSearch").addEventListener("input", event => {
-  const query = event.target.value.trim().toLocaleLowerCase();
+function filterModelPicker(value){
+  const query = value.trim().toLocaleLowerCase();
+  let visible = 0;
   document.querySelectorAll(".model-picker-item").forEach(item => {
     item.hidden = !item.textContent.toLocaleLowerCase().includes(query);
+    if(!item.hidden) visible++;
   });
+  const empty = el("modelPickerNoResults");
+  if(empty) empty.hidden = visible > 0;
+}
+el("modelPickerSearch").addEventListener("input", event => {
+  filterModelPicker(event.target.value);
 });
 el("modelTaskCategory").addEventListener("change", event => {
   sortModelsForTask(event.target.value);
@@ -2449,6 +2506,12 @@ el("plusImageBtn").addEventListener("click", () => {
 });
 document.addEventListener("click", event => {
   if(!el("composerPlusWrap").contains(event.target)) closeComposerPlusMenu();
+});
+document.addEventListener("keydown", event => {
+  if(event.key === "Escape" && !composerPlusMenu.hidden){
+    closeComposerPlusMenu();
+    el("attachBtn").focus();
+  }
 });
 
 fileInput.addEventListener("change", async () => {

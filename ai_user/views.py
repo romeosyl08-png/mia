@@ -116,11 +116,17 @@ def auth_page(request):
 
 def login_view(request):
 	if request.method == "POST":
+		identifier = request.POST.get("username", "").strip()
+		password = request.POST.get("password", "")
 		user = authenticate(
 			request,
-			username=request.POST.get("username", ""),
-			password=request.POST.get("password", ""),
+			username=identifier,
+			password=password,
 		)
+		if user is None and '@' in identifier:
+			matches = list(User.objects.filter(email__iexact=identifier).values_list('username', flat=True)[:2])
+			if len(matches) == 1:
+				user = authenticate(request, username=matches[0], password=password)
 		if user is not None:
 			login(request, user)
 			return redirect(_next_url(request))
@@ -134,7 +140,8 @@ def login_view(request):
 def signup_view(request):
 	form = SignupForm(request.POST if request.method == 'POST' else None)
 	if request.method == 'POST' and form.is_valid():
-		user = form.save()
+		with transaction.atomic():
+			user = form.save()
 		login(request, user)
 		return redirect(_next_url(request))
 	return render(request, "losign.html", {

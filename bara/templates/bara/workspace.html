@@ -76,6 +76,7 @@
       <div class="credit-pill" id="creditPill"><span id="creditPillText">{{ credits|floatformat:0 }} jetons</span></div>
       <a class="tool-link" href="{% url 'bara:tool-journal' workspace.id %}">Journal</a>
       <a class="tool-link" href="{% url 'bara:tasks' workspace.id %}">Tâches</a>
+      <a class="tool-link" href="{% url 'studio:index' %}?workspace_id={{ workspace.id }}">Studio</a>
       <a class="tool-link" href="{% url 'chat:project-memory' workspace.id %}">Mémoire</a>
       {% if workspace.user_id == request.user.id %}<a class="tool-link" href="{% url 'bara:connections' workspace.id %}">Connexions</a><a class="tool-link" href="{% url 'bara:schedules' workspace.id %}">Programmer</a><a class="tool-link" href="{% url 'bara:sharing' workspace.id %}">Partager</a>{% endif %}
       <a class="tool-link" href="{% url 'bara:export-zip' workspace.id %}">Exporter (ZIP)</a>
@@ -125,8 +126,8 @@
       <details class="side-details side-block" id="workspace-tools-panel">
         <summary>Outils intégrés</summary>
         <div class="tool-warning" role="note">
-          <strong>Exécution de code :</strong> run_python transmet le code au service tiers Piston. run_command s'exécute sur le serveur de l'application et n'est pas isolé du système hôte.
-          {% if not code_execution_enabled %}<br>Ces outils sont désactivés par la configuration du serveur.{% else %}<br>N'active-les que si tu fais confiance aux demandes de l'IA et que le serveur est isolé des données sensibles.{% endif %}
+          <strong>Exécution de code :</strong> run_python et run_command utilisent un conteneur isolé sans réseau. Les fichiers de l’espace y sont accessibles en lecture seule et les ressources sont limitées.
+          {% if not code_execution_enabled %}<br>Ces outils sont désactivés par la configuration du serveur.{% endif %}
         </div>
         <form id="tool-selection-form" class="tool-options" action="{% url 'bara:update-tools' workspace.id %}">
           {% csrf_token %}

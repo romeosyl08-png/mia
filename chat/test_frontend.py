@@ -60,6 +60,18 @@ class FrontendAssetTests(TestCase):
             self.assertLess(scripts.index('/static/app/js/' + dependency), scripts.index('/static/app/js/script.js'))
         self.assertFalse(page.body.has_attr('data-keep-title'))
 
+    def test_temporary_chat_starts_without_memory_and_exposes_separate_actions(self):
+        self.client.force_login(self.user)
+        page = self.page(reverse('chat:chat-home'))
+        controls = page.select_one('#temporaryChatControls')
+        self.assertIsNotNone(controls)
+        self.assertIsNotNone(controls.select_one('#temporaryPrivacySummary'))
+        self.assertEqual(controls.select_one('#temporaryMemoryPersona option')['value'], '')
+        self.assertTrue(controls.select_one('#temporaryMemoryControl').has_attr('hidden'))
+        self.assertTrue(controls.select_one('#temporarySaveControl').has_attr('hidden'))
+        self.assertEqual(controls.select_one('#temporaryMemoryBtn')['aria-expanded'], 'false')
+        self.assertEqual(controls.select_one('#temporarySaveBtn')['aria-expanded'], 'false')
+
     def test_workspace_index_skips_markdown_and_detail_retains_its_dependencies(self):
         self.client.force_login(self.user)
         index = self.page(reverse('bara:home'))

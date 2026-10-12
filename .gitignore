@@ -15,3 +15,5 @@ dist/
 htmlcov/
 .venv/
 venv/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

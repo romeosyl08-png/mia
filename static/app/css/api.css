@@ -1,4 +1,4 @@
-.api-wrap{width:min(900px,calc(100% - 48px));margin:0 auto;padding:32px 0 64px;min-height:100dvh;}
+.api-wrap{width:min(900px,calc(100% - 48px));margin:0 auto;padding:32px 0 64px;min-height:100dvh;overflow-wrap:anywhere;}
   .api-wrap h1{font-size:24px;margin:0 0 6px;}
   .api-wrap h2{font-size:16px;margin:32px 0 10px;}
   .api-wrap p,.api-wrap li{font-size:14px;line-height:1.6;}

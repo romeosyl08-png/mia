@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% load static %}
+{% block title %}Studio multimédia · 2AI{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=1">{% endblock %}
+{% block body %}
+<main class="studio-shell">
+  <header class="studio-header"><a href="/">‹ Chat</a><a href="{% url 'bara:home' %}">Bara</a><a href="{% url 'recharge-page' %}">Jetons</a></header>
+  <div class="studio-intro"><span class="studio-kicker">2AI · STUDIO</span><h1>De l’idée au montage.</h1><p>Images modifiables, plans vidéo et pistes audio dans un projet qui garde son histoire.</p></div>
+  <div class="studio-home-grid">
+    <section class="studio-panel"><h2>Nouveau projet</h2>
+      <form method="post" action="{% url 'studio:create' %}" class="studio-form">{% csrf_token %}
+        <label>Nom du projet<input name="title" maxlength="120" required placeholder="Mon film, mon univers, ma bande-son…"></label>
+        <label>Direction artistique du persona<select name="persona"><option value="">Sans persona</option>{% for persona in personas %}<option value="{{ persona.id }}">{{ persona.name }}</option>{% endfor %}</select></label>
+        <p class="studio-hint">Le persona apporte ses instructions et sa mémoire. Les médias restent attachés au projet.</p>
+        <label>Espace Bara associé<select name="workspace"><option value="">Projet indépendant</option>{% for workspace in workspaces %}<option value="{{ workspace.id }}" {% if workspace_id == workspace.id|stringformat:'s' %}selected{% endif %}>{{ workspace.title }}</option>{% endfor %}</select></label>
+        <button class="primary" type="submit">Créer le projet</button>
+      </form>
+    </section>
+    <section><h2>Mes projets</h2><div class="studio-projects">
+      {% for project in projects %}<a class="studio-panel studio-project" href="{% url 'studio:detail' project.pk %}"><span class="studio-kicker">IMAGE · VIDÉO · AUDIO</span><h3>{{ project.title }}</h3><p>{% if project.persona %}{{ project.persona.name }} · {% endif %}{{ project.updated_at|date:'d/m/Y H:i' }}</p><span>Ouvrir le studio ↗</span></a>{% empty %}<div class="studio-panel studio-empty">Ton premier projet commence ici. Importe des médias ou prépare une génération.</div>{% endfor %}
+    </div></section>
+  </div>
+</main>
+{% endblock %}

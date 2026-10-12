@@ -5,7 +5,7 @@
 {% block body_attributes %}{% endblock %}
 {% block install_controls %}{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=temporary-persona-1">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=temporary-actions-2">
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 {% endblock %}
@@ -59,6 +59,7 @@
     <div class="list" id="convoList"></div>
 
     <nav class="quick-nav" aria-label="Navigation principale">
+      <a href="{% url 'studio:index' %}">◈ &nbsp;Studio multimédia</a>
       <button type="button" id="openImageGalleryBtn">▧ &nbsp;Images</button>
       <button type="button" id="openVideoGalleryBtn">▷ &nbsp;Vidéos</button>
       <button type="button" id="openAudioGalleryBtn">♫ &nbsp;Audio</button>
@@ -103,13 +104,22 @@
         </div>
 
     <section class="temporary-controls" id="temporaryChatControls" aria-label="Options de la conversation temporaire" hidden>
-      <p class="temporary-description">Les échanges ne sont pas enregistrés automatiquement.</p>
-      <div class="temporary-memory-control">
+      <div class="temporary-summary">
+        <div>
+          <strong>Conversation temporaire</strong>
+          <span id="temporaryPrivacySummary">Sans mémoire · non enregistrée</span>
+        </div>
+        <div class="temporary-actions">
+          <button type="button" id="temporaryMemoryBtn" aria-expanded="false" aria-controls="temporaryMemoryControl">Mémoire</button>
+          <button type="button" id="temporarySaveBtn" aria-expanded="false" aria-controls="temporarySaveControl">Enregistrer</button>
+        </div>
+      </div>
+      <div class="temporary-memory-control" id="temporaryMemoryControl" hidden>
         <label for="temporaryMemoryPersona">Mémoire de persona</label>
         <select id="temporaryMemoryPersona" aria-describedby="temporaryMemoryHint"><option value="">Sans mémoire</option></select>
-        <small id="temporaryMemoryHint">Appliquée aux prochains messages.</small>
+        <small id="temporaryMemoryHint">Facultatif. La mémoire choisie s’appliquera aux prochains messages seulement.</small>
       </div>
-      <div class="temporary-save-control">
+      <div class="temporary-save-control" id="temporarySaveControl" hidden>
         <label for="temporarySavePersona">Enregistrer dans un persona</label>
         <div class="temporary-save-row">
           <select id="temporarySavePersona"><option value="">Choisir un persona</option></select>
@@ -378,6 +388,7 @@
         </span>
         <span class="model-picker-price">Locale · non tarifée</span>
       </button>
+      <p class="model-picker-empty" id="modelPickerNoResults" hidden>Aucune IA ne correspond à cette recherche.</p>
     </div>
     {{ model_rankings_by_id|json_script:"openrouterModelRankings" }}
   </dialog>
@@ -416,6 +427,6 @@
 <script defer src="{% static 'app/js/message_sources.js' %}?v=citations-1"></script>
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
 <script defer src="{% static 'app/js/chat_tools.js' %}?v=documents-1"></script>
-<script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-persona-1"></script>
-<script defer src="{% static 'app/js/script.js' %}?v=temporary-persona-1"></script>
+<script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-actions-2"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=temporary-actions-2"></script>
 {% endblock %}

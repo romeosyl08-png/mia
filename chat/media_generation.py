@@ -244,25 +244,25 @@ def _reported_usage_cost(response):
     return cost
 
 
-def _run_openrouter_image(model_id, api_key, prompt, options):
+def _run_openrouter_image(model_id, api_key, prompt, options, input_references=None, timeout_seconds=None):
     aspect_ratio = {
         "1024x1024": "1:1",
         "1024x1536": "2:3",
         "1536x1024": "3:2",
     }[options["image_size"]]
+    payload = {
+        "model": model_id, "prompt": prompt, "resolution": "1K",
+        "aspect_ratio": aspect_ratio, "provider": {"sort": "price"},
+    }
+    if input_references:
+        payload['input_references'] = [{'type':'image_url','image_url':{'url':value}} for value in input_references]
     response = _json_request(
         f"{OPENROUTER_API_BASE}/images",
         api_key,
         "openrouter",
-        {
-            "model": model_id,
-            "prompt": prompt,
-            "resolution": "1K",
-            "aspect_ratio": aspect_ratio,
-            "provider": {"sort": "price"},
-        },
+        payload,
         "POST",
-        timeout=MEDIA_TIMEOUT_SECONDS,
+        timeout=timeout_seconds or MEDIA_TIMEOUT_SECONDS,
     )
     if not isinstance(response, dict):
         raise ProviderError("Le service a renvoyé une réponse d’image invalide.")
@@ -316,19 +316,21 @@ def _download_openrouter_video(url, api_key):
     return media_bytes, content_type
 
 
-def _run_openrouter_video(model_id, api_key, prompt, options):
+def _run_openrouter_video(model_id, api_key, prompt, options, input_references=None, first_frame=None, timeout_seconds=None, progress=None):
+    payload = {
+        "model": model_id, "prompt": prompt, "duration": options["duration_seconds"],
+        "resolution": options["resolution"], "aspect_ratio": options["aspect_ratio"],
+        "generate_audio": options["generate_audio"],
+    }
+    if input_references:
+        payload['input_references'] = [{'type':'image_url','image_url':{'url':value}} for value in input_references]
+    if first_frame:
+        payload['frame_images'] = [{'type':'image_url','image_url':{'url':first_frame},'frame_type':'first_frame'}]
     submitted = _json_request(
         f"{OPENROUTER_API_BASE}/videos",
         api_key,
         "openrouter",
-        {
-            "model": model_id,
-            "prompt": prompt,
-            "duration": options["duration_seconds"],
-            "resolution": options["resolution"],
-            "aspect_ratio": options["aspect_ratio"],
-            "generate_audio": options["generate_audio"],
-        },
+        payload,
         "POST",
         timeout=30,
     )
@@ -347,8 +349,10 @@ def _run_openrouter_video(model_id, api_key, prompt, options):
     ):
         raise ProviderError("Le service a renvoyé une adresse de suivi invalide.")
 
-    deadline = time.monotonic() + MEDIA_TIMEOUT_SECONDS
+    deadline = time.monotonic() + (timeout_seconds or MEDIA_TIMEOUT_SECONDS)
     while time.monotonic() < deadline:
+        if progress:
+            progress('Génération vidéo en cours')
         status = _json_request(polling_url, api_key, "openrouter", timeout=30)
         if not isinstance(status, dict):
             raise ProviderError("Le service a renvoyé un état vidéo invalide.")
@@ -441,10 +445,14 @@ def generate_media(provider, api_key, media_type, prompt, model_id, options=None
     return _download_output(output_url, provider.slug, media_type, api_key)
 
 
-def generate_openrouter_media(api_key, media_type, prompt, model_id, options=None):
+def generate_openrouter_media(api_key, media_type, prompt, model_id, options=None, *, input_references=None, first_frame=None, timeout_seconds=None, progress=None):
     options = normalize_generation_options(media_type, "openrouter", model_id, options)
     if media_type == "image":
+        if input_references or timeout_seconds:
+            return _run_openrouter_image(model_id, api_key, prompt, options, input_references, timeout_seconds)
         return _run_openrouter_image(model_id, api_key, prompt, options)
     if media_type == "video":
+        if input_references or first_frame or timeout_seconds or progress:
+            return _run_openrouter_video(model_id, api_key, prompt, options, input_references, first_frame, timeout_seconds, progress)
         return _run_openrouter_video(model_id, api_key, prompt, options)
     raise ProviderError("Le mode sélectionné ne peut pas générer ce type de média.")
