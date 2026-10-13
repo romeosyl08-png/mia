@@ -1,6 +1,39 @@
 # ai_2ai
 # mia
 
+## Démarrage
+
+Le projet exige **Python 3.12 ou plus** (Django 6.1) et Node 22 pour les tests
+JavaScript.
+
+```sh
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env      # puis renseigne au moins FERNET_KEY et SECRET_KEY
+python manage.py migrate
+python manage.py seed_providers && python manage.py sync_provider_keys
+python manage.py runserver
+# Dans un second terminal, pour les tâches Bara et Studio :
+python manage.py agent_worker
+```
+
+`FERNET_KEY` est **obligatoire** : elle chiffre les clés fournisseur en base et
+l'application refuse de démarrer sans elle. Génère-la avec :
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Vérifications avant de pousser :
+
+```sh
+ruff check --exclude node_modules,.venv .
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test --noinput
+node --test tests/js/*.cjs
+```
+
 ## Modèles texte : OpenRouter et IA locale
 
 Le chat cloud utilise OpenRouter. Ajoute la clé au fichier `.env` du projet, puis initialise le fournisseur, sa clé chiffrée et le catalogue des modèles :
@@ -164,6 +197,26 @@ python manage.py makemigrations --check --dry-run
 ```
 
 Les tests couvrent les tarifs distincts d'une équipe, les remboursements lors d'une coupure réseau, les outils de fichiers en streaming, la validation à l'inscription et le sandbox des prévisualisations HTML.
+
+## Sécurité et confidentialité
+
+- **Fichiers des espaces Bara** : les pièces jointes sont stockées hors de
+  `MEDIA_ROOT` et ne sont plus servies par `/media/`, même en production. Le
+  téléchargement passe par des vues qui vérifient l'appartenance à l'espace.
+  Après mise à jour, lance `python manage.py migrate_files_to_private_storage`
+  pour déplacer les fichiers déjà présents.
+- **Aucune bibliothèque tierce à l'exécution** : `marked`, `DOMPurify` et
+  `highlight.js` sont servis par l'application depuis `static/app/vendor/`, avec
+  attribut `integrity`. Une `Content-Security-Policy` stricte est envoyée sur
+  chaque page ; seules deux dérogations existent (l'IA locale sur
+  `localhost`, et le widget de connexion Telegram).
+- **Compte** : `Paramètres → Compte et sécurité` permet de se déconnecter, de
+  changer son mot de passe et d'en demander la réinitialisation. Les tentatives
+  de connexion sont plafonnées (`AUTH_MAX_FAILURES`) et l'adresse e-mail est
+  unique, pour éviter les comptes doubles et l'usurpation.
+- **Journalisation** : `LOGGING` est configuré, `/healthz` vérifie la base de
+  données et peut servir de sonde à l'hébergeur. `python manage.py check
+  --deploy` signale les réglages à corriger avant la production.
 
 ## Barrassons CLI
 

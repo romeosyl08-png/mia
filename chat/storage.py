@@ -4,10 +4,21 @@ from django.utils.deconstruct import deconstructible
 
 
 @deconstructible
-class PrivateGeneratedMediaStorage(FileSystemStorage):
-	def __init__(self, *args, **kwargs):
-		kwargs.setdefault("location", settings.PRIVATE_MEDIA_ROOT)
-		super().__init__(*args, **kwargs)
+class PrivateMediaStorage(FileSystemStorage):
+    """Stockage hors de MEDIA_ROOT, jamais exposé par le serveur Web.
 
-	def url(self, name):
-		raise ValueError("Generated media must be served through the owner-checked view.")
+    `url()` lève volontairement une erreur : les fichiers concernés
+    (médias générés, pièces jointes des espaces Bara) ne doivent être
+    servis que par une vue qui vérifie les droits de l'utilisateur.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("location", settings.PRIVATE_MEDIA_ROOT)
+        super().__init__(*args, **kwargs)
+
+    def url(self, name):
+        raise ValueError("Private media must be served through the owner-checked view.")
+
+
+# Ancien nom, conservé pour ne pas casser les migrations existantes.
+PrivateGeneratedMediaStorage = PrivateMediaStorage

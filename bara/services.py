@@ -209,7 +209,6 @@ def store_file_content(work_file, content):
     work_file.size_bytes = len(data)
     work_file.save()
     
-import io
 from openpyxl import load_workbook
 from pptx import Presentation
 

@@ -6,10 +6,11 @@
 
 {% block extra_head %}
 {% if workspace %}
-<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
 {% endif %}
-{% if workspace %}<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">{% endif %}
+{% if workspace %}<link rel="stylesheet" href="{% static 'app/vendor/highlight.github-dark.min.css' %}?v=11.9.0"
+      integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
+      crossorigin="anonymous">{% endif %}
 <link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=vscode-1">
 {% endblock %}
 
@@ -410,7 +411,9 @@
 {% if workspace %}
 {% include "includes/markdown_scripts.html" %}
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script defer src="{% static 'app/vendor/highlight.min.js' %}?v=11.9.0"
+        integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp"
+        crossorigin="anonymous"></script>
 <script defer src="{% static 'app/js/workspace.js' %}?v=vscode-1"></script>
 {% endif %}
 {% endblock %}

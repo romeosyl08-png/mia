@@ -6,10 +6,35 @@ build-backend = "setuptools.build_meta"
 name = "barrassons"
 version = "0.1.0"
 description = "Assistant de développement AI2AI dans le terminal"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 [project.scripts]
 barrassons = "barrassons.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["barrassons*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["node_modules", ".venv", "staticfiles", "*/migrations/*"]
+
+[tool.ruff.lint]
+# Jeu de règles appliqué en intégration continue. Il est volontairement
+# limité aux erreurs qui ne souffrent aucune exception (noms indéfinis,
+# imports dupliqués, erreurs de syntaxe) : le reste du code porte une dette
+# de style (tabulations, imports non triés, `except Exception` trop larges)
+# qui sera résorbée progressivement. Règles à activer ensuite :
+#   I001 (imports triés), RUF012, BLE001, TRY004, SIM117, F401, E501
+# Erreurs qui ne souffrent aucune exception : noms indéfinis, imports
+# dupliqués, comparaison à None/littéraux avec `==`, `except` sans type…
+# E701/E702 (instructions sur une seule ligne) et E402 (imports tardifs)
+# restent exclus : la dette correspondante sera résorbée séparément.
+select = [
+    "E9",
+    "F7", "F63", "F81", "F82", "F821", "F822",
+    "E711", "E712", "E713", "E714", "E721", "E722",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]

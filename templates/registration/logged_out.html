@@ -1,0 +1,7 @@
+{% extends "registration/base_auth.html" %}
+{% block auth_title %}Déconnexion — 2AI{% endblock %}
+{% block auth_heading %}Tu es déconnecté{% endblock %}
+{% block auth_content %}
+<p>Ta session est fermée sur cet appareil.</p>
+<p><a class="auth-link" href="{% url 'auth-page' %}">Se reconnecter</a></p>
+{% endblock %}

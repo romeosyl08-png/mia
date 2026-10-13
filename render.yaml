@@ -3,6 +3,7 @@ services:
     name: ai-2ai
     runtime: python
     plan: starter
+    healthCheckPath: /healthz
     disk:
       name: ai-2ai-files
       mountPath: /var/data

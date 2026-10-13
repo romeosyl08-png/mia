@@ -120,15 +120,10 @@
     if(source.publisher === "YouTube"){ fallback.textContent = "▶"; fallback.style.background = "#ff0033"; }
     if(source.publisher === "Alloprof") fallback.style.background = "#11ad78";
     if(source.publisher === "Larousse") fallback.style.background = "#284991";
-    const img = document.createElement("img");
-    img.className = "citation-icon";
-    img.hidden = true;
-    img.alt = "";
-    img.loading = "lazy";
-    img.referrerPolicy = "no-referrer";
-    img.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(source.host)}&sz=32`;
-    img.addEventListener("load", () => { img.hidden = false; fallback.hidden = true; });
-    wrap.append(fallback, img);
+    // Anciennement une icône récupérée sur google.com/s2/favicons : chaque
+    // citation déclenchait une requête vers un tiers, qui apprenait ainsi les
+    // sites consultés. La pastille colorée suffit et reste locale.
+    wrap.append(fallback);
     return wrap;
   }
 

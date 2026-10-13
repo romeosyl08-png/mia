@@ -1,3 +1,4 @@
+# Attention : Django 6.1 exige Python >= 3.12 (voir runtime.txt).
 asgiref==3.12.1
 certifi==2026.7.22
 cffi==2.1.1
@@ -25,3 +26,10 @@ openpyxl==3.1.5
 python-pptx==1.0.2
 Pillow==12.3.0
 mcp==1.26.0
+# Importé directement par bara/mcp_client.py : il ne doit plus dépendre du
+# jeu de dépendances de `mcp`, qui peut le faire évoluer sans préavis.
+httpx==0.28.1
+# Dépendance transitive de beautifulsoup4, utilisée par les tests via
+# soup.select(). La branche 3.x est incompatible et casse la suite de tests :
+# on l'épingle explicitement.
+soupsieve==2.10

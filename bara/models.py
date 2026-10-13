@@ -3,6 +3,7 @@ from django.db import models
 
 from api.models import AIModel
 from api.crypto import decrypt_value, encrypt_value
+from chat.storage import PrivateMediaStorage
 
 
 class AgentTask(models.Model):
@@ -141,7 +142,10 @@ class WorkFile(models.Model):
         related_name="files",
     )
 
+    # Stockage privé : jamais servi par /media/. Le téléchargement passe
+    # par des vues qui vérifient l'appartenance à l'espace de travail.
     file = models.FileField(
+        storage=PrivateMediaStorage(),
         upload_to="workspaces/%Y/%m/%d/",
     )
 
@@ -264,7 +268,7 @@ class FileVersion(models.Model):
     file = models.ForeignKey(WorkFile, on_delete=models.CASCADE, related_name="versions")
     content = models.TextField(blank=True)
     size_bytes = models.PositiveIntegerField(default=0)
-    binary_file = models.FileField(upload_to='versions/%Y/%m/%d/', blank=True)
+    binary_file = models.FileField(storage=PrivateMediaStorage(), upload_to='versions/%Y/%m/%d/', blank=True)
     specification = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

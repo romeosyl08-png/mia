@@ -1,11 +1,15 @@
 import hashlib
 import hmac
+import random
 import time
 from urllib.parse import parse_qs, urlparse
 
 from bs4 import BeautifulSoup
 from django.contrib.auth.models import User
+from django.core import mail
+from django.core.cache import cache
 from django.test import TestCase, override_settings
+from django.urls import reverse
 from unittest.mock import patch
 
 from ai_user.models import TelegramIdentity
@@ -114,6 +118,10 @@ class SignupValidationTests(TestCase):
         response = self.client.post('/login/', {'username': 'unknown', 'password': 'wrong'})
         self.assertContains(response, 'Identifiants incorrects')
 
+    def setUp(self):
+        # Le plafond d'inscription vit dans le cache, partagé entre les tests.
+        cache.clear()
+
     def signup(self, **values):
         payload = {'username': 'new-account', 'email': 'new@example.test', 'password1': 'P7!cobalt-forest-V4', 'password2': 'P7!cobalt-forest-V4'}
         payload.update(values)
@@ -160,3 +168,187 @@ class SignupValidationTests(TestCase):
         self.assertFalse(User.objects.filter(username='new-account').exists())
         self.assertFalse(CreditAccount.objects.exists())
         self.assertFalse(Persona.objects.exists())
+
+
+@override_settings(
+    SECURE_SSL_REDIRECT=False,
+    STORAGES=TEST_STATIC_STORAGES,
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+)
+class AccountRecoveryTests(TestCase):
+    """Déconnexion, changement et réinitialisation du mot de passe."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "account-owner", email="owner@example.test", password="P7!cobalt-forest-V4"
+        )
+
+    def test_logout_requires_post_and_closes_the_session(self):
+        self.client.force_login(self.user)
+        # Depuis Django 5, une déconnexion en GET n'est plus acceptée.
+        self.assertEqual(self.client.get("/logout/").status_code, 405)
+        self.assertIn("_auth_user_id", self.client.session)
+
+        response = self.client.post("/logout/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("auth-page"))
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_password_change_updates_the_credentials(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get("/password/change/").status_code, 200)
+        response = self.client.post(
+            "/password/change/",
+            {
+                "old_password": "P7!cobalt-forest-V4",
+                "new_password1": "N3!w-quartz-harbour-X9",
+                "new_password2": "N3!w-quartz-harbour-X9",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("N3!w-quartz-harbour-X9"))
+
+    def test_password_change_rejects_a_wrong_current_password(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            "/password/change/",
+            {
+                "old_password": "wrong-password",
+                "new_password1": "N3!w-quartz-harbour-X9",
+                "new_password2": "N3!w-quartz-harbour-X9",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("P7!cobalt-forest-V4"))
+
+    def test_password_reset_emails_a_link_that_sets_a_new_password(self):
+        response = self.client.post("/password/reset/", {"email": "owner@example.test"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+
+        body = mail.outbox[0].body
+        link = next(line.strip() for line in body.splitlines() if "/password/reset/" in line)
+        path = urlparse(link).path
+        confirm = self.client.get(path, follow=True)
+        self.assertEqual(confirm.status_code, 200)
+        self.assertTrue(confirm.context["validlink"])
+        # Django remplace le jeton de l'URL par "set-password" pour éviter
+        # qu'il fuite dans un en-tête Referer : la saisie se fait sur cette URL.
+        final_path = confirm.redirect_chain[-1][0] if confirm.redirect_chain else path
+
+        response = self.client.post(
+            final_path,
+            {"new_password1": "R3set!granite-bay-Z2", "new_password2": "R3set!granite-bay-Z2"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("R3set!granite-bay-Z2"))
+
+    def test_password_reset_does_not_disclose_existing_accounts(self):
+        response = self.client.post("/password/reset/", {"email": "nobody@example.test"}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_password_reset_survives_an_unconfigured_mail_server(self):
+        with patch(
+            "django.contrib.auth.forms.PasswordResetForm.save",
+            side_effect=OSError("Connexion refusée"),
+        ):
+            response = self.client.post("/password/reset/", {"email": "owner@example.test"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "le serveur de messagerie n’est pas")
+
+    def test_google_or_telegram_accounts_are_offered_to_set_a_password(self):
+        social_user = User.objects.create_user("social-account", email="social@example.test")
+        social_user.set_unusable_password()
+        social_user.save()
+        self.client.force_login(social_user)
+        page = self.client.get("/customize/")
+        self.assertContains(page, "Définir un mot de passe")
+
+
+@override_settings(
+    SECURE_SSL_REDIRECT=False,
+    STORAGES=TEST_STATIC_STORAGES,
+    AUTH_MAX_FAILURES=3,
+    TRUST_X_FORWARDED_FOR=False,
+)
+class BruteForceProtectionTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.password = "P7!cobalt-forest-V4"
+        self.user = User.objects.create_user("brute-target", password=self.password)
+
+    def login(self, username, password, **extra):
+        return self.client.post("/login/", {"username": username, "password": password}, **extra)
+
+    def test_repeated_failures_are_blocked_then_released(self):
+        for _ in range(3):
+            self.assertEqual(self.login("brute-target", "wrong-password").status_code, 200)
+
+        blocked = self.login("brute-target", self.password)
+        self.assertEqual(blocked.status_code, 429)
+        self.assertContains(blocked, "Trop de tentatives", status_code=429)
+
+        cache.clear()
+        response = self.login("brute-target", self.password)
+        self.assertEqual(response.status_code, 302)
+
+    def test_the_lockout_is_scoped_to_the_identifier(self):
+        other = User.objects.create_user("brute-other", password=self.password)
+        for _ in range(3):
+            self.login("brute-target", "wrong-password")
+        response = self.login("brute-other", self.password)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), other.pk)
+
+    def test_a_spoofed_forwarded_for_header_does_not_reset_the_counter(self):
+        # Sans TRUST_X_FORWARDED_FOR, l'en-tête est ignoré : changer d'IP
+        # déclarée ne remet pas le compteur à zéro.
+        for _ in range(3):
+            self.login(
+                "brute-target",
+                "wrong-password",
+                HTTP_X_FORWARDED_FOR=f"10.0.0.{random.randint(1, 250)}",
+            )
+        self.assertEqual(
+            self.login("brute-target", self.password, HTTP_X_FORWARDED_FOR="10.0.0.99").status_code,
+            429,
+        )
+
+
+@override_settings(SECURE_SSL_REDIRECT=False, STORAGES=TEST_STATIC_STORAGES, SIGNUP_MAX_PER_WINDOW=2)
+class SignupAbuseTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def signup(self, username, email):
+        return self.client.post(
+            "/signup/",
+            {
+                "username": username,
+                "email": email,
+                "password1": "P7!cobalt-forest-V4",
+                "password2": "P7!cobalt-forest-V4",
+            },
+        )
+
+    def test_signup_is_capped_per_address(self):
+        self.assertEqual(self.signup("creator-1", "one@example.test").status_code, 302)
+        self.assertEqual(self.signup("creator-2", "two@example.test").status_code, 302)
+        blocked = self.signup("creator-3", "three@example.test")
+        self.assertEqual(blocked.status_code, 429)
+        self.assertFalse(User.objects.filter(username="creator-3").exists())
+
+    def test_email_must_be_unique_regardless_of_case(self):
+        User.objects.create_user("existing", email="taken@example.test")
+        response = self.signup("fresh-account", "TAKEN@example.test")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="fresh-account").exists())
+        self.assertContains(response, "déjà utilisée")
+
+    def test_email_is_stored_normalized(self):
+        self.assertEqual(self.signup("normalize-me", "MiXeD@Example.TEST").status_code, 302)
+        self.assertEqual(User.objects.get(username="normalize-me").email, "mixed@example.test")

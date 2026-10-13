@@ -2,13 +2,16 @@ import json
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
+from cryptography.fernet import Fernet
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from ai_user.models import UserAPIKey
 from api.constants import OPENROUTER_RANKING_OPTIONS
+from api.crypto import decrypt_value, encrypt_value
 from api.models import AIModel, APIKey, APIProvider
 from chat.models import RoutingObservation
 from chat.services import call_llm_provider
@@ -433,3 +436,34 @@ class ChatCompletionsTests(TestCase):
         self.assertIn("max_completion_tokens", sent)
         self.assertNotIn("token_field", sent)
         self.assertEqual(sent["max_completion_tokens"], 128)
+
+
+class FernetRotationTests(SimpleTestCase):
+    """La rotation de FERNET_KEY ne doit pas rendre les clés illisibles."""
+
+    def setUp(self):
+        cache.clear()
+
+    def test_old_keys_stay_readable_after_a_rotation(self):
+        old_key = Fernet.generate_key().decode()
+        new_key = Fernet.generate_key().decode()
+        with override_settings(FERNET_KEY=old_key, FERNET_PREVIOUS_KEYS=""):
+            encrypted = encrypt_value("cle-fournisseur")
+        # Après rotation : l'ancienne clé passe en secondaire, tout se lit encore.
+        with override_settings(FERNET_KEY=new_key, FERNET_PREVIOUS_KEYS=old_key):
+            self.assertEqual(decrypt_value(encrypted), "cle-fournisseur")
+            # Et les nouvelles écritures utilisent bien la clé courante.
+            self.assertNotEqual(encrypt_value("cle-fournisseur"), encrypted)
+
+    def test_an_undeclared_previous_key_is_rejected_with_a_clear_message(self):
+        with override_settings(FERNET_KEY=Fernet.generate_key().decode()):
+            secret = encrypt_value("cle-fournisseur")
+        with override_settings(FERNET_KEY=Fernet.generate_key().decode(), FERNET_PREVIOUS_KEYS=""):
+            with self.assertRaises(Exception):
+                decrypt_value(secret)
+
+    def test_a_missing_key_explains_how_to_generate_one(self):
+        with override_settings(FERNET_KEY="", FERNET_PREVIOUS_KEYS=""):
+            with self.assertRaises(ImproperlyConfigured) as caught:
+                encrypt_value("x")
+        self.assertIn("FERNET_KEY", str(caught.exception))
