@@ -1,0 +1,14 @@
+<svg class="logo-filters" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <defs>
+    <filter id="appLogoThemeFilter" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  10 0 0 0 -0.8" result="logoMask"/>
+      <feComposite in="SourceGraphic" in2="logoMask" operator="in" result="cutout"/>
+      <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  -48 0 60 0 0" result="letterSelector"/>
+      <feComposite in="letterSelector" in2="logoMask" operator="in" result="letterMask"/>
+      <feFlood class="logo-ink" result="letterInk"/>
+      <feComposite in="letterInk" in2="letterMask" operator="in" result="letters"/>
+      <feComposite in="cutout" in2="letterSelector" operator="out" result="orbit"/>
+      <feMerge><feMergeNode in="orbit"/><feMergeNode in="letters"/></feMerge>
+    </filter>
+  </defs>
+</svg>

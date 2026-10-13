@@ -983,14 +983,6 @@ function renderHeader(){
         ? "Session temporaire ouverte. Les personas sont indisponibles pour le moment." : "");
   }
 
-  function updateBrowserIdentity(){
-    const favicon = el("botFavicon");
-    if(!favicon) return;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text x="32" y="50" text-anchor="middle" font-size="48">${state.botAvatar}</text></svg>`;
-    favicon.href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-    document.title = state.botName || "Chatbot";
-  }
-
 function renderMessages(){
   const wrap = el("messages");
   if(state.initializing){

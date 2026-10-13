@@ -48,6 +48,8 @@ body {
 }
 
 .recharge-brand {
+  display: inline-flex;
+  align-items: center;
   color: var(--ink-soft);
   font-size: 10px;
   font-weight: 700;

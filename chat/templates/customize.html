@@ -4,7 +4,7 @@
 {% block title %}Paramètres — 2AI{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/customize.css' %}?v=big-persona-1">
+<link rel="stylesheet" href="{% static 'app/css/customize.css' %}?v=logo-1">
 {% endblock %}
 
 {% block body %}
@@ -18,8 +18,7 @@
         </a>
 
         <div class="customize-brand">
-            <span class="brand-avatar" id="customizeAvatar" data-bot-avatar>🐘</span>
-            <span id="customizeBotName" data-bot-name>2AI</span>
+            {% include "includes/app_logo.html" %}
         </div>
 
     </header>
@@ -142,8 +141,10 @@
             {% if is_authenticated %}
             <p class="settings-description">Ces réglages appartiennent au persona sélectionné ci-dessus.</p>
             {% endif %}
-
-
+            <div class="customize-brand persona-preview">
+                <span class="brand-avatar" id="customizeAvatar" data-bot-avatar>🐘</span>
+                <span id="customizeBotName" data-bot-name>2AI</span>
+            </div>
             <div class="field">
                 <label for="botNameInput">Nom du bot</label>
                 <div class="editable-field">

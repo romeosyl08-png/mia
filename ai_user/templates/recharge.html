@@ -2,13 +2,13 @@
 {% block title %}Recharger mes jetons{% endblock %}
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=currency-1">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=logo-1">
 {% endblock %}
 {% block body %}
 <main class="recharge-page">
   <nav class="recharge-nav" aria-label="Navigation de recharge">
     <a class="recharge-back" href="{% url 'chat:chat-home' %}"><span aria-hidden="true">←</span> Retour au chat</a>
-    <span class="recharge-brand">2AI <span aria-hidden="true">/</span> MON COMPTE</span>
+    <span class="recharge-brand">{% include "includes/app_logo.html" with logo_class="app-logo--compact" %} <span aria-hidden="true">/</span> MON COMPTE</span>
   </nav>
   <header class="recharge-hero">
     <p class="recharge-eyebrow">Crédits 2AI</p>
