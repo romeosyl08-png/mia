@@ -212,8 +212,10 @@ def customize(request):
         },
     )
 
-def _chat_error(message, error_type, status):
-	return JsonResponse({'error': {'message': message, 'type': error_type}}, status=status)
+def _chat_error(message, error_type, status, **extra):
+	payload = {'error': {'message': message, 'type': error_type}}
+	payload.update(extra)
+	return JsonResponse(payload, status=status)
 
 
 def _bounded_float(value, default, minimum, maximum):
@@ -894,7 +896,11 @@ class ImageGenerationView(View):
 		try:
 			account.debit(charge, reason='usage', note=f'Génération {media_type} {provider_slug}')
 		except InsufficientCreditsError:
-			return _chat_error('Crédits insuffisants pour générer ce média.', 'insufficient_credits', 402)
+			return _chat_error(
+				'Crédits insuffisants pour générer ce média.',
+				'insufficient_credits', 402,
+				remaining_balance=account.balance,
+			)
 
 		usage_cost_usd = None
 		try:
@@ -908,11 +914,18 @@ class ImageGenerationView(View):
 				)
 		except (ProviderError, ValueError) as error:
 			account.credit(charge, reason='adjustment', note='Remboursement génération média échouée')
-			return _chat_error(str(error), 'media_generation_failed', 502)
+			return _chat_error(
+				str(error), 'media_generation_failed', 502,
+				remaining_balance=account.balance,
+			)
 		except Exception:
 			logger.exception('Unexpected media generation failure (user_id=%s)', request.user.pk)
 			account.credit(charge, reason='adjustment', note='Remboursement génération média échouée')
-			return _chat_error('La génération du média a échoué. Aucun crédit n’a été conservé.', 'media_generation_failed', 502)
+			return _chat_error(
+				'La génération du média a échoué. Aucun crédit n’a été conservé.',
+				'media_generation_failed', 502,
+				remaining_balance=account.balance,
+			)
 
 		if usage_cost_usd is not None:
 			actual_charge = max(

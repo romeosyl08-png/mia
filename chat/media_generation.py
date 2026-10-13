@@ -83,7 +83,7 @@ def _allowed_url(url, allowed_hosts):
 
 
 def _json_request(url, api_key, provider_slug, payload=None, method=None, timeout=30):
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "User-Agent": "2AI-media/1.0"}
     if provider_slug == "fal":
         headers["Authorization"] = f"Key {api_key}"
     elif provider_slug == "apiframe":
@@ -99,8 +99,24 @@ def _json_request(url, api_key, provider_slug, payload=None, method=None, timeou
         with urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
-        error.read(4096)
-        raise ProviderError(f"Le service a renvoyé une erreur ({error.code}).") from error
+        body = error.read(4096)
+        detail = ""
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+            upstream_error = parsed.get("error") if isinstance(parsed, dict) else None
+            if isinstance(upstream_error, dict):
+                detail = upstream_error.get("message") or ""
+            elif isinstance(upstream_error, str):
+                detail = upstream_error
+            elif isinstance(parsed, dict):
+                detail = parsed.get("message") or parsed.get("detail") or ""
+        except (UnicodeDecodeError, ValueError):
+            detail = ""
+        detail = " ".join(str(detail).split())[:240]
+        message = f"Le service a renvoyé une erreur ({error.code})"
+        if detail:
+            message += f" : {detail}"
+        raise ProviderError(message + ".", status_code=error.code) from error
     except (OSError, URLError, ValueError) as error:
         raise ProviderError("Le service est temporairement indisponible.") from error
 
@@ -252,18 +268,36 @@ def _run_openrouter_image(model_id, api_key, prompt, options, input_references=N
     }[options["image_size"]]
     payload = {
         "model": model_id, "prompt": prompt, "resolution": "1K",
-        "aspect_ratio": aspect_ratio, "provider": {"sort": "price"},
+        "aspect_ratio": aspect_ratio,
     }
     if input_references:
         payload['input_references'] = [{'type':'image_url','image_url':{'url':value}} for value in input_references]
-    response = _json_request(
+    request_args = (
         f"{OPENROUTER_API_BASE}/images",
         api_key,
         "openrouter",
-        payload,
-        "POST",
-        timeout=timeout_seconds or MEDIA_TIMEOUT_SECONDS,
     )
+    try:
+        response = _json_request(
+            *request_args,
+            payload,
+            "POST",
+            timeout=timeout_seconds or MEDIA_TIMEOUT_SECONDS,
+        )
+    except ProviderError as error:
+        if error.status_code != 400:
+            raise
+        # OpenRouter can temporarily route to an endpoint that rejects optional
+        # controls. Retry once with the documented minimum request.
+        fallback_payload = {"model": model_id, "prompt": prompt}
+        if input_references:
+            fallback_payload["input_references"] = payload["input_references"]
+        response = _json_request(
+            *request_args,
+            fallback_payload,
+            "POST",
+            timeout=timeout_seconds or MEDIA_TIMEOUT_SECONDS,
+        )
     if not isinstance(response, dict):
         raise ProviderError("Le service a renvoyé une réponse d’image invalide.")
     images = response.get("data")

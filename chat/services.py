@@ -7,6 +7,10 @@ from .billing import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, credits_for_usage, c
 class ProviderError(Exception):
     """Erreur contrôlée lors d'un appel au fournisseur IA."""
 
+    def __init__(self, message, *, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
 
 def credit_multiplier(model):
     provider_slug = (model.provider.slug or "").lower()

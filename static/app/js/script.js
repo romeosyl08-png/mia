@@ -1150,10 +1150,13 @@ function renderMessages(){
       div.appendChild(actions);
     }
 
-    const footer = document.createElement("div");
-    footer.className = "msg-footer";
-    footer.innerHTML = `<span class="meta">${m.tokens} jetons</span>`;
-    div.appendChild(footer);
+    const tokenCount = Number(m.tokens);
+    if(Number.isFinite(tokenCount) && tokenCount > 0){
+      const footer = document.createElement("div");
+      footer.className = "msg-footer";
+      footer.innerHTML = `<span class="meta">${Math.round(tokenCount).toLocaleString("fr-FR")} tokens</span>`;
+      div.appendChild(footer);
+    }
 
     wrap.appendChild(div);
   });
@@ -1392,6 +1395,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     });
     if(!res.ok){
       const data = await res.json().catch(() => ({}));
+      const remainingBalance = Number(data.remaining_balance);
+      if(Number.isFinite(remainingBalance)) state.credits = remainingBalance;
       throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
     }
     if(res.headers.get("Content-Type")?.includes("application/json")){
@@ -1516,7 +1521,13 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       renderCredits();
       return;
     }
-    const persona = state.personas.find(p => p.id === convo.personaId) || state.personas[0];
+    const persona = activePersona();
+    if(!persona){
+      state.sending = false;
+      renderCredits();
+      showChatNotice("Impossible de charger le persona. Recharge la page puis réessaie.");
+      return;
+    }
 
     let previousMessages = null;
     let userMessage;

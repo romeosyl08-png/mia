@@ -6,6 +6,7 @@ from http.client import RemoteDisconnected
 from bs4 import BeautifulSoup
 from types import SimpleNamespace
 import json
+from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -1115,6 +1116,24 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(request.call_args.args[2], 'openrouter')
 		self.assertEqual(request.call_args.args[3]['model'], 'bytedance-seed/seedream-4.5')
 		self.assertEqual(request.call_args.args[3]['aspect_ratio'], '2:3')
+		self.assertNotIn('provider', request.call_args.args[3])
+
+	def test_openrouter_image_adapter_retries_a_400_with_minimum_payload(self):
+		with patch('chat.media_generation._json_request', side_effect=[
+			ProviderError('Paramètre refusé.', status_code=400),
+			{'data': [{'b64_json': 'cG5n', 'media_type': 'image/png'}]},
+		]) as request:
+			media, content_type, usage_cost = generate_openrouter_media(
+				'server-secret', 'image', 'Un fond d’écran',
+				'bytedance-seed/seedream-4.5', {'image_size': '1024x1536'},
+			)
+
+		self.assertEqual((media, content_type, usage_cost), (b'png', 'image/png', None))
+		self.assertEqual(request.call_count, 2)
+		self.assertEqual(request.call_args_list[1].args[3], {
+			'model': 'bytedance-seed/seedream-4.5',
+			'prompt': 'Un fond d’écran',
+		})
 
 	def test_openrouter_video_adapter_polls_downloads_and_returns_usage_cost(self):
 		with patch('chat.media_generation._json_request', side_effect=[
@@ -1161,6 +1180,17 @@ class ChatHomeTests(TestCase):
 
 		request = urlopen.call_args.args[0]
 		self.assertEqual(request.get_header('Authorization'), 'Bearer server-secret')
+
+	def test_json_media_request_preserves_safe_upstream_error_detail(self):
+		error = HTTPError(
+			'https://openrouter.ai/api/v1/images', 400, 'Bad Request', {},
+			BytesIO(json.dumps({'error': {'message': 'Unsupported aspect ratio'}}).encode()),
+		)
+		with patch('chat.media_generation.urlopen', side_effect=error), self.assertRaises(ProviderError) as raised:
+			_json_request('https://openrouter.ai/api/v1/images', 'server-secret', 'openrouter', {}, 'POST')
+
+		self.assertEqual(raised.exception.status_code, 400)
+		self.assertIn('Unsupported aspect ratio', str(raised.exception))
 
 	def test_media_options_are_mapped_to_apiframe_payloads(self):
 		cases = [
@@ -1220,6 +1250,7 @@ class ChatHomeTests(TestCase):
 
 		self.assertEqual(response.status_code, 502)
 		self.assertEqual(response.json()['error']['type'], 'media_generation_failed')
+		self.assertEqual(response.json()['remaining_balance'], 50000)
 		user.credit_account.refresh_from_db()
 		self.assertEqual(user.credit_account.balance, 50000)
 		self.assertEqual(generate_video.call_args.args[4], {
