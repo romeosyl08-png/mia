@@ -19,9 +19,10 @@ from django.urls import include, path
 
 from django.conf import settings
 from django.conf.urls.static import static
-from . import pwa_views
+from . import healthcheck_views, pwa_views
 
 urlpatterns = [
+    path('healthz', healthcheck_views.healthz, name='healthz'),
     path('manifest.webmanifest', pwa_views.web_manifest, name='pwa-manifest'),
     path('service-worker.js', pwa_views.service_worker, name='pwa-service-worker'),
     path('admin/', admin.site.urls),
@@ -32,4 +33,9 @@ urlpatterns = [
     path('bara/', include('bara.urls')),
     path('studio/', include('studio.urls')),
 ]
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# MEDIA_ROOT ne doit jamais être servi directement en production : il a
+# longtemps exposé les pièces jointes Bara de tous les espaces de travail.
+# Les fichiers confidentiels passent par le stockage privé et par des vues
+# qui vérifient les droits ; seules les démos locales gardent ce raccourci.
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

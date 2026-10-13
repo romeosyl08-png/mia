@@ -217,6 +217,25 @@
 
         <!-- API -->
 
+        {% if is_authenticated %}
+        <section class="settings-section" id="accountSecurity">
+            <h2>Compte et sécurité</h2>
+            <p class="settings-description">Ferme ta session sur cet appareil, change ton mot de passe ou récupère un compte dont tu as oublié le mot de passe.</p>
+            <div class="settings-actions">
+                {% if user.has_usable_password %}
+                <a class="settings-action" href="{% url 'password_change' %}">Changer mon mot de passe</a>
+                {% else %}
+                <p class="settings-note">Ce compte utilise Telegram ou Google. Définis un mot de passe pour activer la réinitialisation par e-mail&nbsp;:</p>
+                <a class="settings-action" href="{% url 'password_change' %}">Définir un mot de passe</a>
+                {% endif %}
+                <a class="settings-action" href="{% url 'password_reset' %}">Mot de passe oublié</a>
+            </div>
+            <form method="post" action="{% url 'logout' %}" class="settings-logout">
+                {% csrf_token %}
+                <button type="submit" class="settings-action settings-action-danger">Se déconnecter</button>
+            </form>
+        </section>
+        {% endif %}
 
 
     </main>

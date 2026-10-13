@@ -1,2 +1,11 @@
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.0/purify.min.js"></script>
+{% load static %}
+{# Markdown et assainissement auto-hébergés (voir static/app/vendor/).
+   Aucun script tiers : une compromission de CDN ne peut plus retirer DOMPurify,
+   qui est la seule barrière XSS avant l'injection de HTML dans le chat.
+   L'attribut integrity reste posé en défense en profondeur. #}
+<script defer src="{% static 'app/vendor/marked.min.js' %}?v=12.0.0"
+        integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz"
+        crossorigin="anonymous"></script>
+<script defer src="{% static 'app/vendor/purify.min.js' %}?v=3.1.0"
+        integrity="sha384-+ZgamUWQw/BPHEEAlUG7Xyiadn/Gu08Uhov5psPTfjfrtPjdHth6u6snv1fRNAfX"
+        crossorigin="anonymous"></script>

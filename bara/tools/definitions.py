@@ -12,12 +12,9 @@ from ..models import ToolExecution, WorkFile
 from .workspace_runtime import materialize_workspace
 from .registry import register_tool
 from django.core.files.base import ContentFile
-from .registry import register_tool
 import requests as http_requests
 from django.conf import settings
 import os
-from django.core.files.base import ContentFile
-from ..models import WorkFile
 
 
 
@@ -571,7 +568,6 @@ def create_folder(workspace, folder_name):
     return {"status": "created", "folder": folder_name}
 
 
-import re
 
 @register_tool(
     name="search_code",

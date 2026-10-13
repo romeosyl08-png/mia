@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'app/css/auth.css' %}?v=auth-2">
+{% endblock %}
+
+{% block title %}{% block auth_title %}Compte — 2AI{% endblock %}{% endblock %}
+
+{% block body %}
+<div class="auth-page">
+  <div class="card">
+    <a class="auth-back" href="{% url 'auth-page' %}">Connexion et inscription <span aria-hidden="true">↗</span></a>
+    <h1 class="brand-name" style="margin:8px 0 2px">{% block auth_heading %}Compte{% endblock %}</h1>
+    {% block auth_content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}

@@ -2,6 +2,9 @@ import logging
 import math
 import time
 
+from django.db.models import Avg, Count, Q
+from django.db.models.functions import Coalesce, NullIf
+
 from api.models import APIKey, AIModel
 
 from .models import RoutingFeedback, RoutingObservation
@@ -56,34 +59,76 @@ def eligible_models(surface="chat", workspace=False, streamed=False, tools=False
 	return eligible
 
 
-def _observation_scope(user, category):
+def _aggregate_observations(queryset):
+	"""Agrège en SQL : échantillons, succès, durée et coût moyens par modèle.
+
+	Remplace le chargement de `MAX_SCORING_OBSERVATIONS` lignes suivies d'un
+	filtre en Python, exécuté à chaque message en mode « Auto 2AI ».
+	"""
+	rows = (
+		queryset.values("provider_slug", "model_id")
+		.annotate(
+			sample_count=Count("id"),
+			successes=Count("id", filter=Q(outcome="success")),
+			average_duration=Avg("duration_ms"),
+			average_credits=Avg(Coalesce(NullIf("charged_credits", 0), "estimated_credits")),
+		)
+	)
+	return {
+		(row["provider_slug"], row["model_id"]): {
+			"sample_count": row["sample_count"],
+			"successes": row["successes"],
+			"average_duration": float(row["average_duration"] or 0),
+			"average_credits": float(row["average_credits"] or 0),
+		}
+		for row in rows
+	}
+
+
+def _observation_stats(user, category):
+	"""Renvoie (statistiques par modèle, portée retenue)."""
 	category_rows = RoutingObservation.objects.filter(task_category=category)
 	if user is not None:
-		user_rows = category_rows.filter(user=user)
-		if user_rows.count() >= MIN_SCOPE_OBSERVATIONS:
-			return user_rows[:MAX_SCORING_OBSERVATIONS], "user_category"
-	if category_rows.count() >= MIN_SCOPE_OBSERVATIONS:
-		return category_rows[:MAX_SCORING_OBSERVATIONS], "category"
-	all_rows = RoutingObservation.objects.all()
-	if all_rows.count() >= MIN_SCOPE_OBSERVATIONS:
-		return all_rows[:MAX_SCORING_OBSERVATIONS], "global"
-	return [], "prior"
+		stats = _aggregate_observations(category_rows.filter(user=user)[:MAX_SCORING_OBSERVATIONS])
+		if sum(row["sample_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS:
+			return stats, "user_category"
+	stats = _aggregate_observations(category_rows[:MAX_SCORING_OBSERVATIONS])
+	if sum(row["sample_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS:
+		return stats, "category"
+	stats = _aggregate_observations(RoutingObservation.objects.all()[:MAX_SCORING_OBSERVATIONS])
+	if sum(row["sample_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS:
+		return stats, "global"
+	return {}, "prior"
 
 
-def _feedback_scope(user, category):
-	category_feedback = RoutingFeedback.objects.select_related("observation").filter(
-		observation__task_category=category,
+def _aggregate_feedback(queryset):
+	rows = (
+		queryset.values("observation__provider_slug", "observation__model_id")
+		.annotate(
+			rating_count=Count("id"),
+			positives=Count("id", filter=Q(rating="positive")),
+		)
 	)
+	return {
+		(row["observation__provider_slug"], row["observation__model_id"]): {
+			"rating_count": row["rating_count"],
+			"positives": row["positives"],
+		}
+		for row in rows
+	}
+
+
+def _feedback_stats(user, category):
+	category_feedback = RoutingFeedback.objects.filter(observation__task_category=category)
 	if user is not None:
-		user_feedback = category_feedback.filter(user=user)
-		if user_feedback.count() >= MIN_SCOPE_OBSERVATIONS:
-			return list(user_feedback[:MAX_SCORING_OBSERVATIONS])
-	if category_feedback.count() >= MIN_SCOPE_OBSERVATIONS:
-		return list(category_feedback[:MAX_SCORING_OBSERVATIONS])
-	global_feedback = RoutingFeedback.objects.select_related("observation").all()
-	if global_feedback.count() >= MIN_SCOPE_OBSERVATIONS:
-		return list(global_feedback[:MAX_SCORING_OBSERVATIONS])
-	return []
+		stats = _aggregate_feedback(category_feedback.filter(user=user)[:MAX_SCORING_OBSERVATIONS])
+		if sum(row["rating_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS:
+			return stats
+	stats = _aggregate_feedback(category_feedback[:MAX_SCORING_OBSERVATIONS])
+	if sum(row["rating_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS:
+		return stats
+	stats = _aggregate_feedback(RoutingFeedback.objects.all()[:MAX_SCORING_OBSERVATIONS])
+	return stats if sum(row["rating_count"] for row in stats.values()) >= MIN_SCOPE_OBSERVATIONS else {}
 
 
 def recommend_model(user, candidates, category, estimated_costs=None, current_model=None):
@@ -100,25 +145,12 @@ def recommend_model(user, candidates, category, estimated_costs=None, current_mo
 		}
 
 	try:
-		rows, basis = _observation_scope(user, category)
-		observations = list(rows)
-		feedback_rows = _feedback_scope(user, category)
+		stats, basis = _observation_stats(user, category)
+		feedback_stats = _feedback_stats(user, category)
 	except Exception:
 		logger.exception("Could not load AI routing observations")
-		observations, feedback_rows, basis = [], [], "prior"
+		stats, feedback_stats, basis = {}, {}, "prior"
 
-	candidate_ids = {model_key(model) for model in candidates}
-	per_model = {
-		key: [row for row in observations if (row.provider_slug, row.model_id) == key]
-		for key in candidate_ids
-	}
-	feedback_by_model = {key: [] for key in candidate_ids}
-	for feedback in feedback_rows:
-		key = (feedback.observation.provider_slug, feedback.observation.model_id)
-		if key in feedback_by_model:
-			feedback_by_model[key].append(feedback.rating)
-	quality_sample_count = sum(len(ratings) for ratings in feedback_by_model.values())
-	use_quality_feedback = quality_sample_count >= MIN_SCOPE_OBSERVATIONS
 	costs = estimated_costs or {}
 	finite_costs = [
 		max(1, costs.get(model_key(model), costs.get(model.model_id, 0)))
@@ -126,28 +158,25 @@ def recommend_model(user, candidates, category, estimated_costs=None, current_mo
 		if costs.get(model_key(model), costs.get(model.model_id, 0)) > 0
 	]
 	min_cost = min(finite_costs) if finite_costs else 0
-	latencies = [
-		(sum(row.duration_ms for row in per_model[model_key(model)]) / len(per_model[model_key(model)]))
-		for model in candidates if per_model[model_key(model)]
-	]
+	latencies = [stats[model_key(model)]["average_duration"] for model in candidates if stats.get(model_key(model))]
 	min_latency = min(latencies) if latencies else 0
+
+	quality_sample_count = sum(row["rating_count"] for row in feedback_stats.values())
+	use_quality_feedback = quality_sample_count >= MIN_SCOPE_OBSERVATIONS
 
 	scored = []
 	for model in candidates:
-		model_rows = per_model[model_key(model)]
-		sample_count = len(model_rows)
-		successes = sum(row.outcome == "success" for row in model_rows)
+		key = model_key(model)
+		row = stats.get(key)
+		sample_count = row["sample_count"] if row else 0
+		successes = row["successes"] if row else 0
 		reliability = (successes + 2) / (sample_count + 4)
-		ratings = feedback_by_model[model_key(model)]
-		quality_successes = sum(rating == "positive" for rating in ratings)
-		quality = (quality_successes + 2) / (len(ratings) + 4)
+		ratings = feedback_stats.get(key)
+		quality = ((ratings["positives"] + 2) / (ratings["rating_count"] + 4)) if ratings else 0.5
 		confidence = sample_count / (sample_count + MIN_SCOPE_OBSERVATIONS) if sample_count else 0
-		cost = costs.get(model_key(model), costs.get(model.model_id)) or (
-			sum(row.charged_credits or row.estimated_credits for row in model_rows) / sample_count
-			if sample_count else 0
-		)
+		cost = costs.get(key, costs.get(model.model_id)) or (row["average_credits"] if row else 0)
 		cost_score = min_cost / max(1, cost) if min_cost and cost else 0.5
-		latency = sum(row.duration_ms for row in model_rows) / sample_count if sample_count else 0
+		latency = row["average_duration"] if row else 0
 		latency_score = min_latency / max(1, latency) if min_latency and latency else 0.5
 		exploration_bonus = 0.1 / math.sqrt(sample_count + 1)
 		if use_quality_feedback:

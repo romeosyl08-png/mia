@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import re
 import time
 from decimal import Decimal, ROUND_DOWN
@@ -9,6 +10,8 @@ from urllib.parse import urlencode, urlparse
 from django.conf import settings
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import PasswordResetView
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
@@ -40,6 +43,8 @@ from .currency import (
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 from .forms import SignupForm
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def _payment_customer_details(request):
@@ -121,6 +126,47 @@ def _google_redirect_uri(request):
 	)
 
 
+def _client_identifier(request):
+    """Adresse IP utilisée pour la limitation des tentatives d'authentification.
+
+    `X-Forwarded-For` n'est pris en compte que si l'application déclare être
+    derrière un proxy de confiance : sinon l'en-tête est contrôlable par le
+    client et la limitation serait contournable en une ligne.
+    """
+    if getattr(settings, "TRUST_X_FORWARDED_FOR", False):
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+        if forwarded:
+            return forwarded.split(",")[-1].strip() or "inconnue"
+    return request.META.get("REMOTE_ADDR") or "inconnue"
+
+
+def _signup_rate_limited(request):
+    """Plafonne les créations de compte par adresse IP."""
+    key = f"signup:{_client_identifier(request)}"
+    if cache.get(key, 0) >= getattr(settings, "SIGNUP_MAX_PER_WINDOW", 5):
+        return True
+    window = getattr(settings, "SIGNUP_WINDOW_SECONDS", 3600)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=window)
+    return False
+
+
+def _auth_failures_blocked(request, identifier):
+    key = f"auth-failures:{_client_identifier(request)}:{(identifier or '').strip().lower()}"
+    return cache.get(key, 0) >= getattr(settings, "AUTH_MAX_FAILURES", 10)
+
+
+def _record_auth_failure(request, identifier):
+    key = f"auth-failures:{_client_identifier(request)}:{(identifier or '').strip().lower()}"
+    window = getattr(settings, "AUTH_FAILURE_WINDOW_SECONDS", 300)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=window)
+
+
 def _auth_context(request, **extra):
 	next_url = _next_url(request)
 	telegram_configured = bool(
@@ -149,6 +195,13 @@ def login_view(request):
 	if request.method == "POST":
 		identifier = request.POST.get("username", "").strip()
 		password = request.POST.get("password", "")
+		if _auth_failures_blocked(request, identifier):
+			logger.warning("Authentification bloquée après trop d'échecs (identifiant=%r)", identifier[:40])
+			return render(request, "losign.html", _auth_context(
+				request,
+				form=type("LoginForm", (), {"errors": True})(),
+				login_error="Trop de tentatives infructueuses. Patiente quelques minutes puis réessaie.",
+			), status=429)
 		user = authenticate(
 			request,
 			username=identifier,
@@ -161,6 +214,7 @@ def login_view(request):
 		if user is not None:
 			login(request, user)
 			return redirect(_next_url(request))
+		_record_auth_failure(request, identifier)
 	return render(request, "losign.html", _auth_context(
 		request,
 		form=type("LoginForm", (), {"errors": request.method == "POST"})(),
@@ -169,12 +223,57 @@ def login_view(request):
 
 def signup_view(request):
 	form = SignupForm(request.POST if request.method == 'POST' else None)
+	if request.method == 'POST' and _signup_rate_limited(request):
+		logger.warning("Inscription refusée : trop de créations depuis %s", _client_identifier(request))
+		return render(request, "losign.html", _auth_context(
+			request,
+			signup_form=form,
+			signup_error="Trop de comptes créés depuis cette connexion. Patiente quelques minutes.",
+		), status=429)
 	if request.method == 'POST' and form.is_valid():
 		with transaction.atomic():
 			user = form.save()
 		login(request, user)
 		return redirect(_next_url(request))
 	return render(request, "losign.html", _auth_context(request, signup_form=form))
+
+
+class SafePasswordResetView(PasswordResetView):
+    """Réinitialisation du mot de passe, sans 500 si l’envoi d’e-mail échoue.
+
+    Sans serveur SMTP configuré, `PasswordResetView` propage l’erreur de
+    connexion. On préfère un message explicite, l’utilisateur conservant
+    Telegram ou Google comme porte de secours.
+    """
+
+    template_name = "registration/password_reset_form.html"
+    email_template_name = "registration/password_reset_email.html"
+    subject_template_name = "registration/password_reset_subject.txt"
+    success_url = None
+
+    def get_success_url(self):
+        from django.urls import reverse
+
+        return reverse("password_reset_done")
+
+    def get_extra_email_context(self):
+        from django.contrib.auth import PASSWORD_RESET_TIMEOUT
+
+        return {
+            "password_reset_timeout_days": PASSWORD_RESET_TIMEOUT // 86400,
+        }
+
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except Exception:
+            logger.exception("Password reset email could not be sent")
+            form.add_error(
+                None,
+                "L’envoi de l’e-mail a échoué : le serveur de messagerie n’est pas "
+                "configuré. Utilise Telegram ou Google pour te connecter.",
+            )
+            return self.form_invalid(form)
 
 
 def whatsapp_send_otp(request):
@@ -604,7 +703,6 @@ def telegram_auth(request):
 		) else reverse("chat:chat-home"))
 
 import secrets
-import requests
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -695,7 +793,6 @@ def google_callback(request):
 
 
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import redirect, render
 
 from .models import UserAPIKey
 

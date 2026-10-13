@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-only-secret-key
+      DJANGO_SETTINGS_MODULE: ai_2ai.settings
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Clé de chiffrement de test
+        # FERNET_KEY est obligatoire au démarrage. Une clé jetable suffit ici :
+        # elle ne protège aucune donnée réelle, les tests n'en chiffrent aucune.
+        run: |
+          echo "FERNET_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+
+      - name: Règles de lint
+        run: ruff check --exclude node_modules,.venv .
+
+      - name: Vérifications Django
+        run: python manage.py check
+
+      - name: Vérifications de déploiement
+        run: python manage.py check --deploy
+        continue-on-error: true
+
+      - name: Cohérence des migrations
+        # Échoue si un changement de modèle n'a pas sa migration.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Construction des fichiers statiques
+        # En production, WhiteNoise utilise un manifeste avec empreinte : une
+        # ressource manquante ou une source map absente casse le déploiement.
+        env:
+          DEBUG: "False"
+          SECRET_KEY: ci-only-secret-key
+        run: python manage.py collectstatic --no-input
+
+      - name: Suite de tests
+        run: python manage.py test --noinput
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Tests JavaScript
+        run: node --test tests/js/*.cjs
+
+      - name: Syntaxe des scripts du navigateur
+        run: |
+          status=0
+          for file in static/app/js/*.js; do node --check "$file" || status=1; done
+          exit $status

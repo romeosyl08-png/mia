@@ -28,7 +28,11 @@
     <h1>Content de te revoir</h1>
     <p class="subtitle">Connecte-toi pour retrouver tes conversations et tes crédits.</p>
 
-    {% if form.errors %}
+    {% if login_error %}
+      <ul class="errorlist">
+        <li>{{ login_error }}</li>
+      </ul>
+    {% elif form.errors %}
       <ul class="errorlist">
         <li>Identifiants incorrects. Réessaie.</li>
       </ul>
@@ -93,7 +97,11 @@
     <h1>Créer un compte</h1>
     <p class="subtitle">Tu démarres avec des crédits offerts, sans carte bancaire.</p>
 
-    {% if signup_form.errors %}
+    {% if signup_error %}
+      <ul class="errorlist">
+        <li>{{ signup_error }}</li>
+      </ul>
+    {% elif signup_form.errors %}
       <ul class="errorlist">
         {% for error in signup_form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
         {% for field in signup_form %}

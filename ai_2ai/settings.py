@@ -11,7 +11,10 @@ env = environ.Env()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 environ.Env.read_env(BASE_DIR / ".env")
-FERNET_KEY = env("FERNET_KEY")
+# Chiffrement des clés fournisseur. `FERNET_PREVIOUS_KEYS` accepte les
+# anciennes clés (séparées par des virgules) pour une rotation sans coupure.
+FERNET_KEY = env("FERNET_KEY")  # obligatoire : échoue au démarrage, pas à la première requête
+FERNET_PREVIOUS_KEYS = env("FERNET_PREVIOUS_KEYS", default="")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -92,6 +95,16 @@ MEDIA_GENERATION_MODELS = {
         'audio': env('APIFRAME_AUDIO_MODEL', default='suno'),
     },
 }
+# Authentification : sans plafond d'échecs, un mot de passe peut être deviné
+# sans limite. Le compteur est suivi par identifiant ET par adresse IP.
+AUTH_MAX_FAILURES = env.int('AUTH_MAX_FAILURES', default=10)
+AUTH_FAILURE_WINDOW_SECONDS = env.int('AUTH_FAILURE_WINDOW_SECONDS', default=300)
+# A n'activer que derrière un proxy de confiance (Render, nginx…) : sinon
+# l'en-tête X-Forwarded-For est contrôlable par le client.
+TRUST_X_FORWARDED_FOR = env.bool('TRUST_X_FORWARDED_FOR', default=False)
+SIGNUP_MAX_PER_WINDOW = env.int('SIGNUP_MAX_PER_WINDOW', default=5)
+SIGNUP_WINDOW_SECONDS = env.int('SIGNUP_WINDOW_SECONDS', default=3600)
+
 API_RATE_LIMIT_REQUESTS = env.int('API_RATE_LIMIT_REQUESTS', default=60)
 API_RATE_LIMIT_WINDOW_SECONDS = env.int('API_RATE_LIMIT_WINDOW_SECONDS', default=60)
 
@@ -120,6 +133,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'ai_2ai.middleware.SecurityHeadersMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -134,7 +148,9 @@ ROOT_URLCONF = 'ai_2ai.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        # Cherché avant les gabarits des applications : indispensable pour
+        # remplacer ceux de l'admin sur l'authentification (mot de passe…).
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -148,6 +164,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'ai_2ai.wsgi.application'
 
+
+# Journalisation : sans configuration, une panne en production ne laisse
+# aucune trace exploitable au-delà de la sortie standard du conteneur.
+LOG_LEVEL = env("LOG_LEVEL", default="INFO" if not DEBUG else "DEBUG")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "console": {"format": "{asctime} {levelname} {name} {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "console"},
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        # Les appels fournisseur passent par ces modules : on garde leurs
+        # journaux même si le niveau racine est remonté.
+        "api": {"level": LOG_LEVEL, "propagate": True},
+        "bara": {"level": LOG_LEVEL, "propagate": True},
+        "chat": {"level": LOG_LEVEL, "propagate": True},
+        "studio": {"level": LOG_LEVEL, "propagate": True},
+        "ai_user": {"level": LOG_LEVEL, "propagate": True},
+    },
+}
 
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
@@ -262,3 +303,8 @@ BARA_USER_FILE_LIMIT = env.int("BARA_USER_FILE_LIMIT", default=300)
 
 API_MAX_OUTPUT_TOKENS = env.int("API_MAX_OUTPUT_TOKENS", default=4096)
 LOGIN_URL = "/auth/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/auth/"
+
+# Enregistre les vérifications de déploiement (ai_2ai/checks.py).
+from . import checks  # noqa: E402,F401

@@ -1,3 +1,4 @@
+from django.contrib.auth import views as auth_views
 from django.urls import path
 
 from . import views
@@ -6,6 +7,24 @@ urlpatterns = [
     path("auth/", views.auth_page, name="auth-page"),
     path("login/", views.login_view, name="login"),
     path("signup/", views.signup_view, name="signup"),
+    # Déconnexion, changement et réinitialisation du mot de passe :
+    # sans eux, aucun moyen de fermer une session ni de reprendre la main
+    # sur un compte dont le mot de passe a fuité.
+    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+    path("password/change/", auth_views.PasswordChangeView.as_view(), name="password_change"),
+    path("password/change/done/", auth_views.PasswordChangeDoneView.as_view(), name="password_change_done"),
+    path("password/reset/", views.SafePasswordResetView.as_view(), name="password_reset"),
+    path("password/reset/done/", auth_views.PasswordResetDoneView.as_view(), name="password_reset_done"),
+    path(
+        "password/reset/<uidb64>/<token>/",
+        auth_views.PasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "password/reset/complete/",
+        auth_views.PasswordResetCompleteView.as_view(),
+        name="password_reset_complete",
+    ),
     path("telegram/auth/", views.telegram_auth, name="telegram_auth"),
     path("whatsapp/send-otp/", views.whatsapp_send_otp, name="whatsapp_send_otp"),
     path('auth/google/', views.google_login, name='google-login'),

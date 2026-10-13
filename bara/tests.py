@@ -1,10 +1,18 @@
+import io
 import os
+import shutil
+import tempfile
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.base import ContentFile
+from django.core.files.storage import FileSystemStorage
+from django.core.management import call_command
 from django.test import TestCase, override_settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from api.models import AIModel, APIProvider
@@ -74,16 +82,80 @@ class WorkspaceToolTests(TestCase):
 
     def test_chat_file_upload_uses_selected_workspace_and_is_owner_scoped(self):
         self.client.force_login(self.user)
-        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+        with TemporaryDirectory() as storage_root:
+            # Le champ porte son propre stockage privé : on le redirige vers un
+            # dossier temporaire pour isoler le test du disque du projet.
+            with patch.object(
+                WorkFile._meta.get_field("file"), "storage", FileSystemStorage(location=storage_root)
+            ):
+                response = self.client.post(
+                    reverse("bara:upload", args=[self.workspace.id]),
+                    {"file": SimpleUploadedFile("notes.txt", b"Important notes", content_type="text/plain")},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.json()["has_text"])
+                uploaded_file = WorkFile.objects.get(workspace=self.workspace, original_name="notes.txt")
+                self.assertEqual(uploaded_file.extracted_text, "Important notes")
+                self.assertEqual(uploaded_file.file.read(), b"Important notes")
+                self.addCleanup(uploaded_file.file.delete, save=False)
+
+            other_user = User.objects.create_user(username="other-workspace-user", password="test-password")
+            self.client.force_login(other_user)
             response = self.client.post(
                 reverse("bara:upload", args=[self.workspace.id]),
-                {"file": SimpleUploadedFile("notes.txt", b"Important notes", content_type="text/plain")},
+                {"file": SimpleUploadedFile("private.txt", b"private", content_type="text/plain")},
             )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()["has_text"])
-        uploaded_file = WorkFile.objects.get(workspace=self.workspace, original_name="notes.txt")
-        self.assertEqual(uploaded_file.extracted_text, "Important notes")
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(WorkFile.objects.filter(workspace=self.workspace, original_name="private.txt").exists())
+
+    def test_workspace_files_use_a_private_storage_without_public_url(self):
+        """Régression : les pièces jointes étaient écrites dans MEDIA_ROOT."""
+        storage = WorkFile._meta.get_field("file").storage
+        self.assertNotEqual(
+            Path(storage.location).resolve(),
+            Path(settings.MEDIA_ROOT).resolve(),
+        )
+        self.assertEqual(Path(storage.location).resolve(), Path(settings.PRIVATE_MEDIA_ROOT).resolve())
+        with self.assertRaises(ValueError):
+            storage.url("workspaces/secret.txt")
+
+    def test_public_media_root_is_not_served(self):
+        """Régression : /media/ servait les fichiers de tous les espaces de travail."""
+        # Le lanceur de tests force DEBUG=False, comme en production.
+        self.assertFalse(settings.DEBUG)
+        self.assertEqual(self.client.get("/media/workspaces/2026/01/01/secret.txt").status_code, 404)
+
+    def test_workspace_file_download_stays_scoped_to_the_workspace(self):
+        self.client.force_login(self.user)
+        with TemporaryDirectory() as storage_root:
+            with patch.object(
+                WorkFile._meta.get_field("file"), "storage", FileSystemStorage(location=storage_root)
+            ):
+                response = self.client.post(
+                    reverse("bara:upload", args=[self.workspace.id]),
+                    {"file": SimpleUploadedFile("secret.txt", b"confidentiel", content_type="text/plain")},
+                )
+                self.assertEqual(response.status_code, 200)
+                uploaded_file = WorkFile.objects.get(workspace=self.workspace, original_name="secret.txt")
+                self.addCleanup(uploaded_file.file.delete, save=False)
+
+                # Le seul accès légitime passe par la vue qui vérifie l'appartenance.
+                authorized = self.client.get(
+                    reverse("bara:download-file", args=[self.workspace.id, uploaded_file.id])
+                )
+                self.assertEqual(authorized.status_code, 200)
+                self.assertEqual(b"".join(authorized.streaming_content), b"confidentiel")
+
+                intruder = User.objects.create_user(username="intruder", password="test-password")
+                self.client.force_login(intruder)
+                self.assertEqual(
+                    self.client.get(
+                        reverse("bara:download-file", args=[self.workspace.id, uploaded_file.id])
+                    ).status_code,
+                    404,
+                )
 
         other_user = User.objects.create_user(username="other-workspace-user", password="test-password")
         self.client.force_login(other_user)
@@ -535,8 +607,10 @@ class WorkspaceMCPTests(TestCase):
         self.assertRegex(response.content.decode(), r'aria-label="(?:Connecter Outlook|Outlook OAuth non configuré|Outlook connecté)"')
         self.assertRegex(response.content.decode(), r'aria-label="(?:Connecter|Renouveler) (?:la connexion )?Blender"')
         self.assertContains(response, "Connecter l'automatisation")
-        self.assertContains(response, "transmet le code au service tiers Piston")
-        self.assertContains(response, "désactivé côté serveur")
+        # Le panneau décrit le runtime réel (conteneur isolé), plus l'ancien service Piston.
+        self.assertContains(response, "conteneur isolé sans réseau")
+        self.assertNotContains(response, "Piston")
+        self.assertContains(response, "désactivés par la configuration du serveur")
 
     def test_workspace_tool_preferences_are_saved(self):
         self.client.force_login(self.user)
@@ -583,3 +657,108 @@ class WorkspaceMCPTests(TestCase):
         action.refresh_from_db()
         self.assertEqual(action.status, "success")
         self.assertTrue(conversation.messages.filter(content__contains="done").exists())
+
+
+class ToolExecutorErrorTests(TestCase):
+    """Les erreurs d'outil ne doivent pas fuiter dans le contexte du modèle."""
+
+    class Boom:
+        pass
+
+    def test_unexpected_errors_are_logged_and_summarized(self):
+        from bara.tools import executor
+
+        def failing(workspace):
+            raise RuntimeError("secret /srv/app/config.py et détails internes")
+
+        executor.TOOLS["probe_failure"] = {"function": failing}
+        self.addCleanup(executor.TOOLS.pop, "probe_failure", None)
+
+        with self.assertLogs("bara.tools.executor", level="ERROR") as logs:
+            result = executor.execute_tool("probe_failure", None, {})
+
+        self.assertEqual(result, {"error": executor.GENERIC_ERROR})
+        self.assertIn("secret /srv/app/config.py", "\n".join(logs.output))
+
+    def test_bad_arguments_stay_explicit_for_the_model(self):
+        from bara.tools import executor
+
+        def needs_argument(workspace, required):
+            return required
+
+        executor.TOOLS["probe_arguments"] = {"function": needs_argument}
+        self.addCleanup(executor.TOOLS.pop, "probe_arguments", None)
+
+        result = executor.execute_tool("probe_arguments", None, {})
+        self.assertIn("Arguments invalides", result["error"])
+
+    def test_unknown_tools_are_reported(self):
+        from bara.tools import executor
+
+        self.assertEqual(executor.execute_tool("inexistant", None, {})["error"], "Outil inconnu : inexistant")
+
+
+class PrivateStorageMigrationTests(TestCase):
+    """La commande déplace les pièces jointes déjà enregistrées dans MEDIA_ROOT."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("migration-user")
+        self.workspace = Workspace.objects.create(user=self.user, title="Migration")
+        self.public = tempfile.mkdtemp(prefix="2ai-media-")
+        self.private = tempfile.mkdtemp(prefix="2ai-private-")
+        self.addCleanup(shutil.rmtree, self.public, True)
+        self.addCleanup(shutil.rmtree, self.private, True)
+
+    def create_legacy_file(self, name="secret.txt", content=b"confidentiel"):
+        """Écrit une pièce jointe là où l'ancienne version l'aurait mise."""
+        legacy = FileSystemStorage(location=self.public)
+        saved = legacy.save(f"workspaces/2026/01/01/{name}", ContentFile(content))
+        return WorkFile.objects.create(
+            workspace=self.workspace, original_name=name, file=saved, size_bytes=len(content)
+        )
+
+    def run_command(self, dry_run=False):
+        with override_settings(MEDIA_ROOT=self.public, PRIVATE_MEDIA_ROOT=self.private):
+            with patch.object(WorkFile._meta.get_field("file"), "storage", _PrivateStorage(self.private)):
+                out = io.StringIO()
+                call_command("migrate_files_to_private_storage",
+                             *(["--dry-run"] if dry_run else []), stdout=out, stderr=out)
+                return out.getvalue()
+
+    def test_files_are_moved_out_of_the_public_media_root(self):
+        work_file = self.create_legacy_file()
+        output = self.run_command()
+        self.assertIn("1 fichier(s) déplacé(s)", output)
+        self.assertTrue((Path(self.private) / work_file.file.name).is_file())
+        self.assertFalse((Path(self.public) / work_file.file.name).exists())
+
+    def test_dry_run_changes_nothing(self):
+        work_file = self.create_legacy_file()
+        output = self.run_command(dry_run=True)
+        self.assertIn("[simulation]", output)
+        self.assertFalse((Path(self.private) / work_file.file.name).exists())
+        self.assertTrue((Path(self.public) / work_file.file.name).exists())
+
+    def test_already_private_files_are_left_alone(self):
+        work_file = self.create_legacy_file()
+        (Path(self.private) / work_file.file.name).parent.mkdir(parents=True, exist_ok=True)
+        (Path(self.private) / work_file.file.name).write_bytes(b"deja la")
+        output = self.run_command()
+        self.assertIn("1 déjà en place", output)
+
+    def test_missing_files_are_reported(self):
+        WorkFile.objects.create(
+            workspace=self.workspace, original_name="absent.txt", file="workspaces/2026/01/01/absent.txt"
+        )
+        output = self.run_command()
+        self.assertIn("1 introuvable(s)", output)
+
+
+class _PrivateStorage(FileSystemStorage):
+    """Stockage privé reconstruit à la volée pour que la commande lise le bon dossier."""
+
+    def __init__(self, location):
+        super().__init__(location=location)
+
+    def url(self, name):
+        raise ValueError("Private media must be served through the owner-checked view.")

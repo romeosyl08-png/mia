@@ -521,3 +521,14 @@
 .big-persona-details { margin-top: 24px; font-size: 13px; }
 .big-persona-details summary { cursor: pointer; font-weight: 600; }
 .big-persona-details pre { max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; border-radius: 10px; background: var(--panel); color: var(--ink); font: 12px/1.65 var(--font-mono); }
+
+/* --- Compte et sécurité --- */
+.settings-actions{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0 0}
+.settings-action{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid var(--line);
+  border-radius:10px;background:var(--paper);color:var(--ink);font-size:14px;font-weight:600;
+  text-decoration:none;cursor:pointer;transition:border-color .15s,background .15s}
+.settings-action:hover{border-color:var(--accent);background:var(--accent-soft)}
+.settings-action-danger{border-color:var(--danger);color:var(--danger)}
+.settings-action-danger:hover{border-color:var(--danger);background:rgba(217,74,86,.08)}
+.settings-logout{margin-top:14px}
+.settings-note{margin:10px 0 0;font-size:13px;opacity:.75}
