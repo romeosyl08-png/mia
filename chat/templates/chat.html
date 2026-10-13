@@ -5,7 +5,7 @@
 {% block body_attributes %}{% endblock %}
 {% block install_controls %}{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=temporary-actions-2">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=chat-light-1">
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
 {% endblock %}
 
@@ -24,13 +24,11 @@
       <div class="persona-switcher-top">
         <div class="mark" id="brandMark" data-bot-avatar aria-hidden="true">🐘</div>
         <div class="persona-switcher-copy">
-          <span class="persona-switcher-label">Persona actif</span>
-          <strong id="activePersonaName">Assistant général</strong>
+          <label class="persona-switcher-label" for="personaTopSelect">Persona</label>
         </div>
         <button type="button" class="persona-action" id="renamePersonaBtn" title="Renommer le persona sélectionné" aria-label="Renommer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg></button>
       </div>
       <div class="persona-switcher-controls">
-        <label class="sr-only" for="personaTopSelect">Choisir un persona</label>
         <select id="personaTopSelect" aria-label="Changer de persona"></select>
         <button type="button" class="persona-action" id="newPersonaBtn" title="Créer un persona" aria-label="Créer un persona"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
         <button type="button" class="persona-action danger-action" id="deletePersonaBtn" title="Supprimer le persona sélectionné" aria-label="Supprimer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"></path></svg></button>
@@ -59,17 +57,17 @@
 
     <nav class="quick-nav" aria-label="Navigation principale">
       <a href="{% url 'studio:index' %}">◈ &nbsp;Studio multimédia</a>
-      <button type="button" id="openImageGalleryBtn">▧ &nbsp;Images</button>
-      <button type="button" id="openVideoGalleryBtn">▷ &nbsp;Vidéos</button>
-      <button type="button" id="openAudioGalleryBtn">♫ &nbsp;Audio</button>
-      <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
+      <button type="button" id="openMediaGalleryBtn">▧ &nbsp;Médiathèque</button>
       <button id="customizeBtn" type="button" data-url="{% url 'chat:customize' %}">⚙ &nbsp;Paramètres</button>
       <a href="{% url 'chat:memory' %}">Mémoire</a>
-      <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
-      <a href="{% url 'chat:about' %}">ⓘ &nbsp;À propos de 2AI</a>
-      <a href="{% url 'chat:legal' %}">§ &nbsp;Informations juridiques</a>
+      <details class="secondary-nav">
+        <summary>Plus</summary>
+        <a href="{% url 'bara:home' %}">Espaces de travail</a>
+        <a href="{% url 'api-home' %}">API</a>
+        <a href="{% url 'chat:about' %}">À propos</a>
+        <a href="{% url 'chat:legal' %}">Informations juridiques</a>
+      </details>
     </nav>
-    <div class="sidebar-footer">Tes conversations, tes assistants et tes outils dans un même espace.</div>
     {% include "includes/pwa_controls.html" with pwa_inline=True %}
   </aside>
 
@@ -82,9 +80,6 @@
         <div>
           <h2 id="chatTitle">Nouvelle conversation</h2>
           <div class="persona-name" id="chatPersonaName">Assistant général</div>
-          {% if is_authenticated %}
-          <button type="button" class="memory-suggest-button" id="memorySuggestBtn" title="Analyser cette conversation pour proposer des préférences au persona">✦ Proposer des préférences</button>
-          {% endif %}
           <span class="temporary-badge" id="temporaryBadge" hidden>Session temporaire</span>
         </div>
       </div>
@@ -92,7 +87,6 @@
     <button type="button" class="panel-toggle" id="toggleLeftPanel" title="Masquer le panneau gauche" aria-label="Masquer le panneau gauche">‹</button>
     <button type="button" class="temporary-toggle" id="temporaryChatBtn" aria-pressed="false" title="Conversation temporaire" aria-label="Conversation temporaire" aria-controls="temporaryChatControls">{% include "includes/temporary_ninja.html" %}</button>
     
-    <!-- Remplacement par une balise <button> -->
     <button type="button" class="credit-pill recharge-btn" id="creditPill" title="Voir les jetons" {% if not is_authenticated %}disabled{% endif %}>
         <span id="creditPillText">— jetons</span>
         <div class="bar">
@@ -131,10 +125,8 @@
 
     <div class="messages" id="messages">
       <div class="empty-state">
-        <div class="empty-state-mark" aria-hidden="true">✦</div>
-        <p class="page-eyebrow">Ton espace de réflexion</p>
         <div class="display">Qu’allons-nous créer aujourd’hui ?</div>
-        <div class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</div>
+        <p class="empty-state-copy">Écris une question ou partage une idée.</p>
       </div>
     </div>
 
@@ -147,13 +139,11 @@
           <button type="button" class="composer-icon composer-plus" id="attachBtn" title="Ajouter au message" aria-label="Ajouter au message" aria-controls="composerPlusMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
           <div class="composer-plus-menu" id="composerPlusMenu" hidden>
             <button type="button" class="plus-menu-item" id="plusFilesBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg><span>Joindre un fichier</span></button>
-            {% if chat_config.imageGenerationAvailable %}
-            <button type="button" class="plus-menu-item" id="plusImageBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Générer une image</span></button>
-            {% else %}
-            <button type="button" class="plus-menu-item" id="plusImageBtn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Génération d’image indisponible</span></button>
-            {% endif %}
             <button type="button" class="plus-menu-item" id="voiceBtn" title="Dicter un message"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg><span>Dicter un message</span></button>
             <button type="button" class="plus-menu-item" id="conversationVoiceBtn" aria-pressed="false">Conversation vocale</button>
+            {% if is_authenticated %}
+            <button type="button" class="plus-menu-item" id="memorySuggestBtn" title="Proposer des préférences au persona"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg><span>Proposer des préférences</span></button>
+            {% endif %}
           </div>
         </div>
         <textarea id="composerInput" placeholder="Écris ton message…" aria-label="Ton message" rows="1"></textarea>
@@ -179,8 +169,6 @@
         <button type="button" class="tool-btn" id="webModeBtn" data-mode="web" aria-pressed="false" title="Rechercher sur le Web et citer les sources" aria-label="Recherche web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button>
         <button type="button" class="tool-btn" id="deepModeBtn" data-mode="deep" aria-pressed="false" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
         <button type="button" class="tool-btn" id="generationControlsBtn" title="Contrôles de génération" aria-label="Contrôles de génération" aria-controls="generationControlsPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="8" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="10" cy="18" r="2"></circle></svg></button>
-        <span class="tool-spacer"></span>
-        <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
       </div>
       <div class="media-options" id="mediaOptionsPanel" hidden>
         <label class="media-option" id="imageOptions" hidden>
@@ -251,6 +239,8 @@
           <input id="maxTokensControl" type="number" min="1" max="8192" step="1" value="500" inputmode="numeric">
         </label>
       </div>
+      <details class="workspace-options" id="workspaceOptions">
+      <summary id="workspaceSummary">Fichiers et outils</summary>
       <div class="workspace-controls">
         <label for="workspaceSelect">Espace</label>
         <select id="workspaceSelect" aria-label="Outils et fichiers du workspace Bara">
@@ -259,6 +249,7 @@
         <button type="button" id="createWorkspaceBtn" title="Créer un espace de fichiers" aria-label="Créer un espace de fichiers">＋</button>
         <a class="workspace-open" id="workspaceOpen" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
       </div>
+      </details>
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
   {% if ai_models %}
   <button type="button" class="model-chip auto-model-chip" id="autoModelBtn" data-model-id="auto" aria-label="Choix automatique du modèle">✦ Auto 2AI</button>
@@ -341,7 +332,7 @@
       <select id="localModelSelect" required disabled>
         <option value="">Teste la connexion pour charger les modèles</option>
       </select>
-      <p class="local-model-help">Recherche Ollama, LM Studio, Jan, LocalAI et GPT4All sur cet appareil. Autorise ce site dans les réglages CORS de l’IA locale si le navigateur bloque la connexion. Les échanges locaux restent sur ton appareil.</p>
+      <p class="local-model-help">Recherche Ollama, LM Studio, Jan, LocalAI et GPT4All. Autorise ce site dans les réglages CORS si la connexion est bloquée.</p>
       <p id="localModelStatus" role="status" aria-live="polite"></p>
       <footer>
         <button type="button" id="cancelLocalModelBtn">Annuler</button>
@@ -427,5 +418,5 @@
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
 <script defer src="{% static 'app/js/chat_tools.js' %}?v=documents-1"></script>
 <script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-actions-2"></script>
-<script defer src="{% static 'app/js/script.js' %}?v=temporary-actions-2"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=chat-light-1"></script>
 {% endblock %}

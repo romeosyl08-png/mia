@@ -127,7 +127,7 @@ async function login(p, identifier=credentials.username) {
     await page.waitForFunction(n=>document.querySelector('#personaTopSelect').options.length>n,previous);
     await page.locator('#renamePersonaBtn').click();await page.locator('#personaRenameInput').fill('Persona Playwright — test');
     await page.locator('#personaRenameForm button[type=submit]').click();
-    await page.waitForFunction(()=>document.querySelector('#activePersonaName').textContent.includes('Persona Playwright'));
+    await page.waitForFunction(()=>document.querySelector('#personaTopSelect').selectedOptions[0].textContent.includes('Persona Playwright'));
     await page.reload();await readyChat();assert.ok((await page.locator('#personaTopSelect').innerText()).includes('Persona Playwright'));
   });
   await check('Personas — mémoire et réglages enregistrés',async()=>{
@@ -203,10 +203,13 @@ async function login(p, identifier=credentials.username) {
     await page.locator('#sendBtn').click();await page.waitForFunction(()=>!document.querySelector('#sendBtn').disabled);
     assert.equal(chatRequests.at(-1).temporary,false);
     assert.ok((await page.locator('#messages').innerText()).includes('Réponse de test Playwright'));
-    for(const id of ['openImageGalleryBtn','openVideoGalleryBtn','openAudioGalleryBtn']){
-      await page.locator('#'+id).click();assert.ok(await page.locator('#imageGallery').isVisible());
-      await page.locator('#closeImageGallery').click();
+    await page.locator('#openMediaGalleryBtn').click();
+    assert.ok(await page.locator('#imageGallery').isVisible());
+    for(const kind of ['image','video','audio']){
+      await page.locator(`[data-gallery-kind="${kind}"]`).click();
+      assert.equal(await page.locator(`[data-gallery-kind="${kind}"]`).getAttribute('aria-selected'),'true');
     }
+    await page.locator('#closeImageGallery').click();
     return {generation:'simulated'};
   });
   let workspacePath='',workspaceRoot='';

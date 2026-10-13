@@ -17,6 +17,9 @@
     $('notice').hidden = !message;
     $('notice').textContent = message;
     $('notice').dataset.error = String(error);
+    $('status').textContent = message || 'Projet chargé';
+    window.clearTimeout(notice.timer);
+    if (message && !error) notice.timer = window.setTimeout(() => { $('notice').hidden = true; }, 6000);
   };
   async function api(path, data, isFile = false) {
     const response = await fetch(root.dataset.base + path, {
@@ -56,6 +59,7 @@
     });
     return item;
   }
+  const editor = window.AI2AIStudioEditor.create({root, getScene: () => scene, getAssets: () => state.assets});
   function change() {
     dirty = true;
     $('dirty').textContent = 'Modifications à enregistrer';
@@ -63,6 +67,7 @@
       plan = null;
       $('plan').hidden = true;
     }
+    editor.refresh();
   }
   function preview(item) {
     const tag = item.kind === 'image' ? 'img' : item.kind;
@@ -76,8 +81,16 @@
     const value = {id:`track_${crypto.randomUUID().replaceAll('-','').slice(0,12)}`,asset_id:item.id,label:item.name,locked:false};
     if (item.kind === 'audio') scene.audio.push({...value,role:'music',volume:1,start:0});
     else scene.visuals.push({...value,duration:Math.min(30,Math.max(1,item.metadata.duration || 4))});
-    change(); renderTracks();
+    change(); renderTracks(); editor.selectTrack(value.id);
   }
+  function filterLibrary() {
+    const query = $('library-search').value.trim().toLocaleLowerCase();
+    const cards = [...$('library').querySelectorAll('[data-asset-id]')];
+    cards.forEach(card => { card.hidden = !card.dataset.assetName.toLocaleLowerCase().includes(query); });
+    const count = cards.filter(card => !card.hidden).length;
+    $('asset-count').textContent = `${count} média${count > 1 ? 's' : ''}`;
+  }
+  $('library-search').addEventListener('input', filterLibrary);
   function renderLibrary() {
     const signature = JSON.stringify([state.assets.map(a => a.id),scene.references]);
     if (signature === librarySignature) return;
@@ -87,12 +100,20 @@
     if (!assets.length) $('library').append(node('p','Importe une référence ou crée ton premier média.','studio-hint'));
     for (const item of assets) {
       const card = node('article',undefined,'studio-asset');
-      card.append(preview(item),node('p',item.name));
+      card.dataset.assetId = item.id; card.dataset.assetName = item.name;
+      const view = button('', () => editor.selectAsset(item.id), `Prévisualiser ${item.name}`);
+      view.className = 'studio-asset-preview';
+      const thumbnail = item.kind === 'audio' ? node('span', '♫', 'studio-asset-symbol') : preview(item);
+      if (item.kind === 'video') { thumbnail.controls = false; thumbnail.muted = true; }
+      const information = node('span', undefined, 'studio-asset-copy');
+      const duration = Number(item.metadata.duration);
+      information.append(node('p', item.name), node('span', `${{image:'Image',video:'Vidéo',audio:'Audio'}[item.kind]}${duration ? ` · ${duration.toFixed(1)} s` : ''}`));
+      view.append(thumbnail, information); card.append(view);
       const controls = node('div',undefined,'studio-actions');
-      controls.append(button(item.kind === 'audio' ? 'Ajouter une piste' : 'Ajouter un plan',() => track(item)));
+      controls.append(button(item.kind === 'audio' ? '＋ Piste' : '＋ Plan',() => track(item),item.kind === 'audio' ? 'Ajouter une piste' : 'Ajouter un plan'));
       if (item.kind === 'image') {
-        controls.append(button('Peindre un masque',() => openMask(item)));
-        const label = node('label','Référence','studio-check');
+        controls.append(button('Masque',() => openMask(item),'Peindre un masque'));
+        const label = node('label','Réf.','studio-check'); label.title = 'Utiliser cette image comme référence IA';
         const check = node('input'); check.type = 'checkbox'; check.checked = scene.references.includes(item.id);
         check.addEventListener('change',() => {
           if (check.checked && scene.references.length >= 8) { check.checked = false; notice('Huit références maximum.',true); return; }
@@ -107,6 +128,7 @@
     $('first-frame').replaceChildren(new Option('Sans image imposée',''));
     state.assets.filter(item => item.kind === 'image' && item.role !== 'mask').forEach(item => $('first-frame').add(new Option(item.name,item.id)));
     $('first-frame').value = selection;
+    filterLibrary(); editor.refresh();
   }
   function field(row, key, title, min, max, step, options) {
     const label = node('label',title);
@@ -123,6 +145,7 @@
       if (!scene[key].length) area.append(node('p',key === 'audio' ? 'Ajoute une voix, une musique ou une ambiance depuis la médiathèque.' : 'Ajoute des images ou des vidéos depuis la médiathèque.','studio-hint'));
       scene[key].forEach((row,index) => {
         const line = node('div',undefined,`studio-track ${key === 'audio' ? 'studio-track-audio' : ''}`);
+        line.dataset.trackId = row.id;
         const label = node('label','Nom');
         const name = node('input'); name.type = 'text'; name.value = row.label; name.maxLength = 120; name.disabled = row.locked;
         name.addEventListener('change',() => { row.label = name.value; change(); }); label.append(name); line.append(label);
@@ -142,6 +165,7 @@
         remove.disabled = row.locked; controls.append(remove); line.append(controls); area.append(line);
       });
     }
+    editor.refresh();
   }
   function renderJobs() {
     const signature = JSON.stringify(state.jobs);
@@ -169,7 +193,7 @@
       const item = state.assets.find(item => item.id === id); if (!item) continue;
       const card = node('article',undefined,'studio-asset');
       const download = node('a','Télécharger ↓','studio-button'); download.href = item.url + '?download=1';
-      card.append(preview(item),node('p',item.name),download); $('exports').append(card);
+      card.append(preview(item),node('p',item.name),button('Voir dans le moniteur',() => editor.selectAsset(item.id)),download); $('exports').append(card);
     }
   }
   function renderScene() {
@@ -178,6 +202,7 @@
     $('fps').value = scene.settings.fps; $('duration').value = scene.settings.duration;
     $('dirty').textContent = dirty ? 'Modifications à enregistrer' : 'Version enregistrée';
     renderTracks(); renderLibrary(); renderExports();
+    editor.refresh();
   }
   function absorb(value, force = false) {
     const changed = value.version_id !== version;
@@ -222,7 +247,8 @@
       $('plan-steps').append(node('li',text));
     });
     $('estimate').textContent = `Estimation : ${value.estimated_credits.toLocaleString('fr-FR')} jetons. Le coût final est limité au plafond choisi.`;
-    $('plan').hidden = false; $('plan').scrollIntoView({behavior:'smooth',block:'center'});
+    editor.activateTab('inspector', 'studio-ai-panel');
+    $('plan').hidden = false; $('plan').scrollIntoView({behavior:'smooth',block:'nearest'});
   }
   bind('upload','submit',async () => {
     const form = new FormData($('upload')); form.set('role','source');
@@ -241,6 +267,7 @@
     if (!plan) throw new Error('Prépare un plan avant de le lancer.');
     const value = await api('jobs/',{operations:plan.operations,expected_version:plan.expected_version,credit_limit:Number($('budget').value)});
     plan = null; $('plan').hidden = true; absorb(value.state);
+    editor.activateTab('inspector', 'studio-project-panel');
     notice('Tâche ajoutée. Tu peux continuer à travailler ; son résultat apparaîtra dans l’historique.');
   });
   bind('director','submit',async () => {

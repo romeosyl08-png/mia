@@ -71,16 +71,19 @@ async function launchFree(){const before=await state();await page.locator('#stud
     const card=page.locator('.studio-asset').filter({has:page.getByText('source.png',{exact:true})});await card.waitFor();
     await card.getByRole('button',{name:'Ajouter un plan'}).click();await card.getByRole('button',{name:'Ajouter un plan'}).click();
     await page.locator('#studio-visuals input[type=number]').nth(0).fill('0.5');await page.locator('#studio-visuals input[type=number]').nth(1).fill('0.75');
+    await page.locator('#studio-project-tab').click();
     await page.locator('#studio-brief').fill('Projet synthétique : ambiance bleue.');await page.locator('#studio-save').click();
     await wait(async()=>{const s=await state();return s.scene.visuals.length===2&&s.scene.visuals[1].duration===.75;});
   });
   await check('Piste voix, volume, décalage et durée audio',async()=>{
     await page.locator('#studio-upload input[type=file]').setInputFiles(path.join(output,'voice.wav'));await page.locator('#studio-upload button').click();
     const card=page.locator('.studio-asset').filter({has:page.getByText('voice.wav',{exact:true})});await card.waitFor();await card.getByRole('button',{name:'Ajouter une piste'}).click();
-    await page.locator('#studio-audio select').selectOption('voice');await page.locator('#studio-audio input[type=number]').nth(0).fill('0.4');await page.locator('#studio-audio input[type=number]').nth(1).fill('0.1');await page.locator('#studio-duration').fill('2');
+    await page.locator('#studio-audio select').selectOption('voice');await page.locator('#studio-audio input[type=number]').nth(0).fill('0.4');await page.locator('#studio-audio input[type=number]').nth(1).fill('0.1');
+    await page.locator('#studio-project-tab').click();await page.locator('#studio-duration').fill('2');
     await page.locator('#studio-save').click();await wait(async()=>{const s=await state();return s.scene.audio[0]?.volume===.4&&s.scene.settings.duration===2;});
   });
   await check('Verrouillage et déplacement des plans',async()=>{
+    await page.locator('#studio-clips-tab').click();
     await page.locator('#studio-visuals .studio-track').first().getByRole('button',{name:'Verrouiller',exact:true}).click();assert.ok(await page.locator('#studio-visuals input[type=number]').first().isDisabled());
     await page.locator('#studio-visuals .studio-track').first().getByRole('button',{name:'Déverrouiller'}).click();
     await page.locator('#studio-visuals .studio-track').first().getByRole('button',{name:'Déplacer après'}).click();await page.locator('#studio-save').click();
@@ -98,6 +101,7 @@ async function launchFree(){const before=await state();await page.locator('#stud
     const pixels=await page.evaluate(async({first,second})=>{async function sample(url){const i=new Image();i.src=url;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const x=c.getContext('2d');x.drawImage(i,0,0);return [...x.getImageData(450,200,1,1).data];}return [await sample(first),await sample(second)];},{first:original.url,second:changed.url});assert.deepEqual(pixels[0],pixels[1]);
   });
   await check('Restauration, conservation puis reprise du résultat',async()=>{
+    await page.locator('#studio-project-tab').click();
     await page.locator('#studio-version').selectOption(String(beforeMask));await page.locator('#studio-restore').click();
     await wait(async()=>{const s=await state();return s.version_id!==maskJob.result_version_id&&s.scene.visuals[0].asset_id!==maskJob.output_ids[0];});
     await page.locator('#studio-version').selectOption(String(maskJob.result_version_id));await page.locator('#studio-restore').click();
@@ -105,20 +109,21 @@ async function launchFree(){const before=await state();await page.locator('#stud
   });
   await check('Montage vidéo réel, bande-son, aperçu et téléchargement',async()=>{
     await page.locator('#studio-render-video').click();await page.locator('#studio-plan').waitFor({state:'visible'});const job=await launchFree();await processJob(job.id);
-    const video=page.locator('#studio-exports video');await video.waitFor();await wait(async()=>video.evaluate(v=>Number.isFinite(v.duration)&&v.duration>0));
+    await page.locator('#studio-exports-tab').click();const video=page.locator('#studio-exports video');await video.waitFor();await wait(async()=>video.evaluate(v=>Number.isFinite(v.duration)&&v.duration>0));
     const promise=page.waitForEvent('download');await page.locator('#studio-exports a').last().click();const download=await promise;const file=path.join(output,'montage.mp4');await download.saveAs(file);
     const probe=JSON.parse((await execute('ffprobe',['-v','error','-show_format','-show_streams','-of','json',file])).stdout);
     assert.ok(probe.streams.some(s=>s.codec_type==='audio'));assert.ok(Math.abs(Number(probe.format.duration)-1.25)<.1);
   });
   await check('Mix audio réel et lecture privée',async()=>{
     await page.locator('#studio-render-audio').click();await page.locator('#studio-plan').waitFor({state:'visible'});const job=await launchFree();await processJob(job.id);
-    const audio=page.locator('#studio-exports audio');await audio.waitFor();await wait(async()=>audio.evaluate(a=>Number.isFinite(a.duration)&&a.duration>=1.9));
+    await page.locator('#studio-exports-tab').click();const audio=page.locator('#studio-exports audio');await audio.waitFor();await wait(async()=>audio.evaluate(a=>Number.isFinite(a.duration)&&a.duration>=1.9));
   });
   await check('Directeur simulé, plan contrôlé et application locale',async()=>{
     await page.locator('#studio-request').fill('Règle la durée du premier plan à 0,75 seconde.');await page.locator('#studio-director button').click();await page.locator('#studio-plan').waitFor({state:'visible'});
     assert.match(await page.locator('#studio-plan-message').textContent(),/simulé/);const job=await launchFree();await processJob(job.id);
   });
   await check('Options image et vidéo, estimation sans génération payante',async()=>{
+    await page.locator('#studio-ai-tab').click();
     await page.locator('#studio-kind').selectOption('image');await page.locator('#studio-prompt').fill('Image de test, ne pas générer');await page.locator('#studio-generate button').click();await page.locator('#studio-plan').waitFor({state:'visible'});
     assert.ok(!/Estimation : 0/.test(await page.locator('#studio-estimate').textContent()));
     await page.locator('#studio-kind').selectOption('video');await page.locator('#studio-video-duration').selectOption('4');await page.locator('#studio-video-aspect').selectOption('9:16');await page.locator('#studio-generate button').click();
@@ -132,7 +137,7 @@ async function launchFree(){const before=await state();await page.locator('#stud
   });
   await check('Ordinateur, tablette et mobile sans débordement',async()=>{
     for(const width of [1440,768,390]){await page.setViewportSize({width,height:1000});await page.waitForTimeout(200);const layout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));assert.ok(layout.scroll<=layout.width+1,JSON.stringify(layout));await shot('studio-'+width);}
-    await page.locator('#studio-director-budget').fill('1');assert.equal(await page.locator('#studio-director-budget').inputValue(),'1');
+    await page.locator('#studio-ai-tab').click();await page.locator('#studio-director-budget').fill('1');assert.equal(await page.locator('#studio-director-budget').inputValue(),'1');
   });
   assert.equal(report.javascript.length,0,JSON.stringify(report.javascript));
   assert.equal(report.network.length,0,JSON.stringify(report.network));

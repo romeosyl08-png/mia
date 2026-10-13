@@ -1,17 +1,20 @@
 import argparse
 import fnmatch
+import getpass
 import json
 import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit, urlunsplit
 import webbrowser
 from pathlib import Path
 from .project import load_session, save_session, record_edit, preview, undo_last, git, git_context, make_worktree
+from .terminal import terminal
 
 
-DEFAULT_API_BASE = "https://ai-2ai.onrender.com/v1"
+DEFAULT_API_BASE = "https://mia-vkl1.onrender.com/v1"
 MAX_TOOL_ITERATIONS = 8
 MAX_FILE_CHARS = 60_000
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".next", "dist", "build"}
@@ -73,32 +76,60 @@ def save_config(config):
         pass
 
 
-def api_base_prompt(config):
-    default = os.environ.get("BARRASSONS_API_BASE") or config.get("api_base") or DEFAULT_API_BASE
-    value = input(f"URL API AI2AI [{default}] : ").strip() or default
-    return value.rstrip("/")
+def normalize_api_base(value):
+    message = "Adresse API invalide : saisis une URL HTTP(S), pas une clé API. Lance `barrassons login` pour la corriger."
+    if not isinstance(value, str):
+        raise ValueError(message)
+    try:
+        parsed = urlsplit(value.strip())
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment or any(char.isspace() for char in value)
+                or parsed.path.startswith("/sk-ai2ai-")):
+            raise ValueError(message)
+        parsed.port
+    except ValueError:
+        raise ValueError(message) from None
+    path = parsed.path.rstrip("/") or "/v1"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
-def connect(config):
-    print("\nConnexion à AI2AI")
-    print("1. Ouvrir AI2AI dans le navigateur et récupérer une clé API")
-    print("2. Saisir une clé API existante")
-    choice = input("Choix [1/2] : ").strip() or "1"
-    api_base = api_base_prompt(config)
+def resolve_api_base(config, override=None):
+    explicit = override if override is not None else os.environ.get("BARRASSONS_API_BASE")
+    if explicit is not None:
+        return normalize_api_base(explicit)
+    for candidate in [config.get("api_base"), DEFAULT_API_BASE]:
+        try:
+            return normalize_api_base(candidate)
+        except ValueError:
+            continue
+    raise ValueError("Adresse API invalide. Utilise `barrassons login --api-base URL`.")
+
+
+def connect(config, api_base=None):
+    api_base = resolve_api_base(config, api_base)
+    terminal.line()
+    terminal.panel('✦ Barrassons · Connexion', [f'Serveur : {api_base}', '',
+        '1. Ouvrir la page des clés API', '2. Utiliser une clé existante'])
+    choice = terminal.prompt('Choix [1/2] : ').strip() or "1"
+    if choice not in {"1", "2"}:
+        raise ValueError("Choisis 1 ou 2 pour te connecter.")
     if choice == "1":
         webbrowser.open(api_base.removesuffix("/v1") + "/api-keys/")
-        print("Crée une clé API sur la page ouverte, puis colle-la ici.")
-    api_key = input("Clé API AI2AI : ").strip()
+        terminal.line("Crée une clé sur la page ouverte, puis saisis-la ci-dessous.", 'muted')
+    api_key = getpass.getpass("Clé API AI2AI (saisie masquée) : ").strip()
     if not api_key:
         raise ValueError("Aucune clé API fournie.")
-    config.update({"api_base": api_base, "api_key": api_key})
-    save_config(config)
-    print(f"Clé enregistrée dans {config_path()} avec accès limité à ton compte.")
-    return config
+    connected = {**config, "api_base": api_base, "api_key": api_key}
+    with terminal.busy('Vérification de la connexion…'):
+        api_request(connected, '/models')
+    save_config(connected)
+    terminal.line('✓ Connexion enregistrée. Lance `barrassons` pour commencer.', 'green')
+    return connected
 
 
 def api_request(config, path, payload=None):
-    url = config["api_base"].rstrip("/") + path
+    url = normalize_api_base(config.get("api_base")) + path
     headers = {"Authorization": "Bearer " + config["api_key"], "Accept": "application/json"}
     data = None
     if payload is not None:
@@ -136,7 +167,9 @@ def _files(root):
 
 
 def _confirm(action):
-    return input(f"\n{action}\nAutoriser ? [y/N] ").strip().lower() in {"y", "yes", "o", "oui"}
+    terminal.line()
+    terminal.panel('Autorisation', action.splitlines(), wrap=True)
+    return terminal.prompt('Autoriser ? [o/N] ').strip().lower() in {"y", "yes", "o", "oui"}
 
 
 def execute_tool(name, args, root):
@@ -182,7 +215,7 @@ def execute_tool(name, args, root):
             if len(content) > 200_000:
                 return {"error": "Contenu trop volumineux (limite 200 ko)."}
             before = path.read_text(encoding='utf-8') if path.exists() else None
-            print(preview(path.relative_to(root), before, content)[:20000])
+            terminal.diff(preview(path.relative_to(root), before, content)[:20000])
             if not _confirm(f"Créer/remplacer {path.relative_to(root)} ({len(content)} caractères)"):
                 return {"status": "refused"}
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,7 +233,7 @@ def execute_tool(name, args, root):
             if count != 1:
                 return {"error": f"Le passage apparaît {count} fois; il doit apparaître exactement une fois."}
             after = content.replace(old_text, new_text, 1)
-            print(preview(path.relative_to(root), content, after)[:20000])
+            terminal.diff(preview(path.relative_to(root), content, after)[:20000])
             if not _confirm(f"Modifier {path.relative_to(root)} : remplacer un passage de {len(old_text)} caractères"):
                 return {"status": "refused"}
             path.write_text(after, encoding="utf-8")
@@ -225,25 +258,47 @@ def execute_tool(name, args, root):
         return {"error": str(error)}
 
 
-def _select_model(config):
-    response = api_request(config, "/models")
+def _select_model(config, choose=False, requested=None):
+    with terminal.busy('Chargement des modèles…'):
+        response = api_request(config, "/models")
     models = [model for model in response.get("data", []) if "anthropic" not in model.get("owned_by", "").lower()]
     if not models:
         raise RuntimeError("Aucun modèle compatible avec les outils n'est disponible sur ce compte.")
-    print("Modèles compatibles :")
-    for index, model in enumerate(models, 1):
-        print(f"  {index}. {model['id']} ({model.get('owned_by', 'AI2AI')})")
-    selected = input(f"Modèle [{models[0]['id']}] : ").strip()
-    if not selected:
-        return models[0]["id"]
-    if selected.isdigit() and 1 <= int(selected) <= len(models):
-        return models[int(selected) - 1]["id"]
-    if any(model["id"] == selected for model in models):
-        return selected
-    raise ValueError("Modèle inconnu dans la liste.")
+    available = {row['id'] for row in models}
+    if requested is not None:
+        if requested not in available:
+            raise ValueError('Ce modèle n’est pas disponible sur ce serveur.')
+        return requested
+    if not choose and config.get('model') in available:
+        return config['model']
+    default = config.get('model') if config.get('model') in available else models[0]['id']
+    choices = list(enumerate(models, 1)); page = 0; per_page = 10
+    while True:
+        pages = max(1, (len(choices) + per_page - 1) // per_page)
+        rows = [f'{number:>3}. {model["id"]}' for number, model in choices[page * per_page:(page + 1) * per_page]]
+        terminal.panel('Choisir une IA', rows + ['', f'Page {page + 1}/{pages} · {len(choices)} modèle(s)',
+            'Nom ou numéro · /suivant · /précédent · /tous', f'Entrée : {default}'])
+        selected = terminal.prompt('Modèle ❯ ').strip()
+        if not selected:
+            return default
+        if selected == '/suivant':
+            page = min(pages - 1, page + 1); continue
+        if selected == '/précédent':
+            page = max(0, page - 1); continue
+        if selected == '/tous':
+            choices = list(enumerate(models, 1)); page = 0; continue
+        if selected.isdigit() and 1 <= int(selected) <= len(models):
+            return models[int(selected) - 1]['id']
+        if selected in available:
+            return selected
+        matches = [(number, row) for number, row in enumerate(models, 1) if selected.casefold() in row['id'].casefold()]
+        if matches:
+            choices = matches; page = 0
+        else:
+            terminal.line('Aucun modèle ne correspond. Essaie un nom ou un numéro.', 'red')
 
 
-def run_session(config, root, model, resume=False, test_command=None):
+def run_session(config, root, model, resume=False, test_command=None, balance=None):
     system = (
         "Tu es Barrassons, un agent de développement qui travaille dans le dossier local indiqué. "
         "Inspecte le code avant de proposer des changements. Utilise les outils pour lire, rechercher et modifier les fichiers. "
@@ -266,14 +321,20 @@ def run_session(config, root, model, resume=False, test_command=None):
         state = load_session(root)
         state.update(messages=messages, model=model, root=str(root))
         save_session(root, state)
-    print(f"\nBarrassons · {root} · {model}")
-    print(git_context(root))
-    print("Commandes : /diff, /undo, /verify, /review, /clear, /exit. Sessions sauvegardées automatiquement.\n")
+    try:
+        branch = git(root, 'branch', '--show-current').strip()
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        branch = ''
+    terminal.setup_input()
+    terminal.welcome(root, model, branch, resolve_api_base(config))
+    tokens = credits = 0
+    verbose = False
     while True:
         try:
-            text = input("barrassons> ").strip()
+            terminal.status(model, tokens, credits, balance)
+            text = terminal.request()
         except (EOFError, KeyboardInterrupt):
-            print("\nÀ bientôt.")
+            terminal.line("\nÀ bientôt.", 'muted')
             return
         if not text:
             continue
@@ -282,26 +343,49 @@ def run_session(config, root, model, resume=False, test_command=None):
         if text == "/clear":
             messages = messages[:1]
             persist()
-            print("Contexte effacé.")
+            terminal.line("Contexte effacé.", 'muted')
             continue
         if text == "/help":
-            print("/diff affiche le diff Git; /undo annule la dernière édition; /verify lance --test-command; /review demande une revue; /clear efface le contexte.")
+            terminal.panel('Commandes', ['/model    Choisir une IA', '/status   Voir le serveur et les crédits',
+                '/verbose  Afficher les résultats détaillés des outils', '/diff     Voir les changements Git',
+                '/undo     Annuler la dernière édition', '/verify   Lancer les tests configurés',
+                '/review   Demander une revue du diff', '/clear    Effacer le contexte', '/exit     Quitter', '',
+                'Tab : compléter · ↑/↓ : historique · \\ puis Entrée : nouvelle ligne'])
+            continue
+        if text == '/verbose':
+            verbose = not verbose
+            terminal.line('Affichage détaillé activé.' if verbose else 'Affichage compact activé.', 'muted')
+            continue
+        if text == '/model':
+            model = _select_model({**config, 'model': model}, choose=True)
+            config['model'] = model
+            save_config(config); persist()
+            terminal.line(f'Modèle sélectionné : {model}', 'green')
+            continue
+        if text == '/status':
+            try:
+                with terminal.busy('Actualisation des crédits…'):
+                    balance = api_request(config, '/balance').get('credits')
+                terminal.panel('Session', [f'Modèle : {model}', f'Projet : {root}',
+                    f'Branche : {branch or "sans dépôt"}', f'Serveur : {resolve_api_base(config)}'])
+            except RuntimeError as error:
+                terminal.line(str(error), 'red')
             continue
         if text == '/diff':
             try:
-                print(git(root, 'diff', 'HEAD') or 'Aucun diff suivi par Git. Les nouveaux fichiers sont visibles dans git status.')
+                terminal.diff(git(root, 'diff', 'HEAD') or 'Aucun diff suivi par Git. Les nouveaux fichiers sont visibles dans git status.')
             except ValueError as error:
-                print(error)
+                terminal.line(str(error), 'red')
             continue
         if text == '/undo':
-            print(undo_last(root, _confirm))
+            terminal.result(undo_last(root, _confirm), verbose)
             continue
         if text == '/verify':
             if not test_command:
-                print('Configure --test-command, par exemple "python -m pytest".')
+                terminal.line('Configure --test-command, par exemple "python -m pytest".', 'muted')
             else:
                 result = execute_tool('run_command', {'command':test_command}, root)
-                print(json.dumps(result, ensure_ascii=False))
+                terminal.result(result, verbose)
                 messages.append({'role':'user','content':'Résultat réel de la vérification : ' + json.dumps(result, ensure_ascii=False)})
                 persist()
             continue
@@ -309,7 +393,7 @@ def run_session(config, root, model, resume=False, test_command=None):
             try:
                 text = 'Revois ce diff : cherche les bugs et régressions, puis indique les vérifications nécessaires.\n' + git(root,'diff','HEAD')[:60000]
             except ValueError as error:
-                print(error)
+                terminal.line(str(error), 'red')
                 continue
         messages[0] = {'role':'system','content':system + f'\nDossier: {root}\n' + git_context(root) + ('\nCommande de tests configurée : '+test_command if test_command else '')}
         messages.append({"role": "user", "content": text})
@@ -317,13 +401,19 @@ def run_session(config, root, model, resume=False, test_command=None):
         changed_files = False
         verification_attempts = 0
         for _ in range(MAX_TOOL_ITERATIONS):
-            response = api_request(config, "/chat/completions", {
-                "model": model,
-                "messages": messages,
-                "tools": TOOLS,
-                "max_tokens": 2048,
-                "temperature": 0.2,
-            })
+            with terminal.busy('Réflexion…'):
+                response = api_request(config, "/chat/completions", {
+                    "model": model,
+                    "messages": messages,
+                    "tools": TOOLS,
+                    "max_tokens": 2048,
+                    "temperature": 0.2,
+                })
+            usage = response.get('usage') or {}
+            tokens += int(usage.get('total_tokens') or 0)
+            credits += int(usage.get('credits_charged') or 0)
+            if usage.get('remaining_balance') is not None:
+                balance = usage['remaining_balance']
             choice = response["choices"][0]
             assistant = choice["message"]
             messages.append(assistant)
@@ -333,7 +423,7 @@ def run_session(config, root, model, resume=False, test_command=None):
                 if changed_files and test_command and verification_attempts < 2:
                     verification_attempts += 1
                     verification = execute_tool('run_command',{'command':test_command},root)
-                    print('Vérification : '+json.dumps(verification,ensure_ascii=False))
+                    terminal.result(verification, verbose)
                     messages.append({'role':'user','content':'Résultat réel des tests configurés : '+json.dumps(verification,ensure_ascii=False)+'. Corrige les erreurs si possible ; indique clairement une vérification refusée ou échouée.'})
                     persist()
                     if verification.get('exit_code') == 0:
@@ -341,16 +431,18 @@ def run_session(config, root, model, resume=False, test_command=None):
                     elif verification.get('status') != 'refused':
                         continue
                 answer = assistant.get("content") or "(réponse vide)"
-                print("\n" + answer + "\n")
+                terminal.assistant(answer)
                 if changed_files and test_command:
-                    print('La vérification configurée reste non validée. Consulte les résultats ci-dessus.')
+                    terminal.line('La vérification configurée reste non validée. Consulte les résultats ci-dessus.', 'red')
                 break
             for call in tool_calls:
                 function = call.get("function") or {}
                 name = function.get("name", "")
-                print(f"\n› {name}")
                 try:
                     args = json.loads(function.get("arguments") or "{}")
+                    if not isinstance(args, dict):
+                        raise ValueError('Un objet JSON est attendu.')
+                    terminal.tool(name, args)
                     result = execute_tool(name, args, root)
                     if result.get('status') in {'written','updated'}:
                         changed_files = True
@@ -358,14 +450,14 @@ def run_session(config, root, model, resume=False, test_command=None):
                         changed_files = False
                 except (TypeError, ValueError) as error:
                     result = {"error": f"Arguments invalides: {error}"}
-                print(json.dumps(result, ensure_ascii=False)[:1000])
+                terminal.result(result, verbose)
                 messages.append({
                     "role": "tool", "tool_call_id": call.get("id", ""),
                     "name": name, "content": json.dumps(result, ensure_ascii=False),
                 })
                 persist()
         else:
-            print("Limite d'itérations d'outils atteinte pour cette demande.")
+            terminal.line("Limite d'itérations d'outils atteinte pour cette demande.", 'muted')
         if len(messages) > 41:
             tail = messages[-40:]
             while tail and tail[0].get("role") != "user":
@@ -380,25 +472,41 @@ def main():
     parser.add_argument('--resume', action='store_true', help='Reprendre la session du projet')
     parser.add_argument('--worktree', action='store_true', help='Créer une branche isolée dans un worktree Git')
     parser.add_argument('--test-command', help='Commande de vérification à utiliser avec /verify')
+    parser.add_argument('--api-base', metavar='URL', help='Changer explicitement le serveur AI2AI (Render par défaut)')
+    parser.add_argument('--model', metavar='ID', help='Utiliser un modèle du catalogue sans ouvrir le sélecteur')
+    parser.add_argument('--no-color', action='store_true', help='Désactiver les couleurs du terminal')
     args = parser.parse_args()
     config = load_config()
+    if args.no_color:
+        os.environ['NO_COLOR'] = '1'
     try:
         if args.command == "logout":
             config_path().unlink(missing_ok=True)
-            print("Clé locale supprimée.")
+            terminal.line("Clé locale supprimée.", 'muted')
             return 0
+        config['api_base'] = resolve_api_base(config, args.api_base)
         if args.command == "login" or not config.get("api_key"):
-            config = connect(config)
+            config = connect(config, config['api_base'])
+            if args.command == 'login':
+                return 0
         root = Path.cwd().resolve()
         if args.worktree:
             if not _confirm('Créer une branche et un worktree Git pour cette session ?'):
                 return 0
             root = make_worktree(root)
-        model = _select_model(config)
-        run_session(config, root, model, resume=args.resume, test_command=args.test_command)
+        model = _select_model(config, requested=args.model)
+        config['model'] = model
+        save_config(config)
+        balance = None
+        try:
+            with terminal.busy('Chargement des crédits…'):
+                balance = api_request(config, '/balance').get('credits')
+        except RuntimeError:
+            pass
+        run_session(config, root, model, resume=args.resume, test_command=args.test_command, balance=balance)
         return 0
     except (KeyboardInterrupt, EOFError):
-        print("\nConnexion annulée.")
+        terminal.line("\nOpération interrompue.", 'muted')
         return 1
     except (RuntimeError, ValueError, KeyError) as error:
         print(f"Erreur: {error}", file=sys.stderr)

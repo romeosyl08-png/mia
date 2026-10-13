@@ -235,9 +235,25 @@ barrassons
 On first launch, choose browser login to open the AI2AI API-key page, or paste an
 existing AI2AI API key. Barrassons stores the key in
 `~/.config/barrassons/config.json` with owner-only permissions. To use another
-AI2AI deployment, set `BARRASSONS_API_BASE` to its `/v1` API URL or enter it during
-login. Run `barrassons login` to change credentials and `barrassons logout` to
+AI2AI deployment, use `barrassons login --api-base URL` or set
+`BARRASSONS_API_BASE`. Run `barrassons login` to change credentials and `barrassons logout` to
 remove the locally stored key.
+
+Render (`https://mia-vkl1.onrender.com/v1`) is the default. Login uses the saved
+server or this default without asking for an address. For local development,
+start Django, then run `barrassons login --api-base http://127.0.0.1:8000/v1` with
+a key created on that local instance. The option accepts a site URL and adds
+`/v1` when needed. Key input is hidden and the connection is verified before
+replacing the saved configuration. `barrassons login` returns to the shell
+after successful login; launch `barrassons` to begin working.
+
+The terminal has a compact welcome panel, colored diffs, an activity indicator,
+and a status line showing the model and reported usage. The model picker supports
+search and pagination, then remembers the choice. `/model` changes it during a
+session, `/status` refreshes credits, and `/verbose` expands tool results. Use
+Tab for command completion, arrow keys for prompt history, and a trailing
+backslash followed by Enter for multiline input. `--model ID` selects a model
+directly; `--no-color` or `NO_COLOR=1` disables color. Redirected output stays plain.
 
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed

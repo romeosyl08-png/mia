@@ -1,10 +1,11 @@
 {% extends "base.html" %}{% load static %}
 {% block title %}Studio multimédia · 2AI{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=1">{% endblock %}
+{% block body_class %}studio-page{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=editor-1">{% endblock %}
 {% block body %}
-<main class="studio-shell">
-  <header class="studio-header"><a href="/">‹ Chat</a><a href="{% url 'bara:home' %}">Bara</a><a href="{% url 'recharge-page' %}">Jetons</a></header>
-  <div class="studio-intro"><span class="studio-kicker">2AI · STUDIO</span><h1>De l’idée au montage.</h1><p>Images modifiables, plans vidéo et pistes audio dans un projet qui garde son histoire.</p></div>
+<main class="studio-shell studio-home">
+  <header class="studio-header"><a class="studio-brand" href="{% url 'studio:index' %}"><span aria-hidden="true">◈</span> Studio 2AI</a><a href="/">Chat</a><a href="{% url 'bara:home' %}">Bara</a><a href="{% url 'recharge-page' %}">Jetons</a></header>
+  <div class="studio-intro"><span class="studio-kicker">ESPACE DE MONTAGE</span><h1>Studio multimédia</h1><p>Retrouve tes projets ou commence un montage avec tes images, vidéos et pistes audio.</p></div>
   <div class="studio-home-grid">
     <section class="studio-panel"><h2>Nouveau projet</h2>
       <form method="post" action="{% url 'studio:create' %}" class="studio-form">{% csrf_token %}

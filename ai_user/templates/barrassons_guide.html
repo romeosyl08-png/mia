@@ -43,31 +43,31 @@ pipx install .</code></pre>
     <p>Lance Barrassons depuis le dossier que tu veux lui faire analyser :</p>
     <pre><code>cd /chemin/vers/ai_2ai
 barrassons</code></pre>
-    <p>Au premier lancement, choisis <strong>1</strong> pour ouvrir la page des clés API, ou <strong>2</strong> si tu as déjà une clé. À l’invite d’URL, utilise l’adresse correspondant à ton serveur :</p>
+    <p>Au premier lancement, choisis <strong>1</strong> pour ouvrir la page des clés API, ou <strong>2</strong> si tu as déjà une clé. Le serveur enregistré est réutilisé ; Render est le choix par défaut. Aucune URL n’est demandée dans le terminal.</p>
     <dl class="guide-endpoints">
       <div>
         <dt>Serveur local</dt>
-        <dd><code>http://127.0.0.1:8000/v1</code></dd>
+        <dd><code>barrassons login --api-base http://127.0.0.1:8000/v1</code></dd>
         <dd class="endpoint-note">Démarre Django localement avant Barrassons et garde le serveur lancé.</dd>
       </div>
       <div>
         <dt>Serveur Render</dt>
-        <dd><code>https://mia-vkl1.onrender.com/v1</code></dd>
-        <dd class="endpoint-note">Choisis cette URL si la clé a été créée sur l’instance Render.</dd>
+        <dd><code>barrassons login</code></dd>
+        <dd class="endpoint-note">Utilise une clé créée sur l’instance Render. Pour revenir explicitement à Render : <code>barrassons login --api-base https://mia-vkl1.onrender.com/v1</code>.</dd>
       </div>
     </dl>
-    <p>Saisis ensuite la clé dans le terminal. Elle est enregistrée dans <code>~/.config/barrassons/config.json</code> avec des permissions privées; elle n’est pas nécessaire dans le dépôt.</p>
+    <p>Colle la clé seulement à l’invite <strong>Clé API AI2AI (saisie masquée)</strong>. Aucun caractère ne s’affiche pendant la saisie. La connexion est vérifiée avant d’être enregistrée dans <code>~/.config/barrassons/config.json</code> avec des permissions privées. Lance ensuite <code>barrassons</code> pour travailler.</p>
   </section>
 
   <section class="guide-section">
     <h2>4. Choisir un modèle et travailler</h2>
-    <p>Barrassons demande la liste des modèles disponibles, puis te laisse choisir par numéro ou identifiant. Il filtre les modèles qui ne prennent pas en charge les appels d’outils utilisés par cette version.</p>
+    <p>Au premier lancement, le sélecteur affiche dix modèles par page. Choisis par numéro ou identifiant, ou saisis un nom pour rechercher. <code>/suivant</code> et <code>/précédent</code> changent de page. Ton choix est mémorisé ; <code>/model</code> permet de le changer pendant la session.</p>
     <p>Décris une tâche précise et indique si tu veux seulement une analyse ou une modification. Par exemple :</p>
     <pre><code>Analyse le flux d’envoi des messages. Explique le problème et ne modifie aucun fichier.
 
 Lis les tests de l’application, identifie ceux qui couvrent les personas,
 puis propose un test manquant sans l’ajouter.</code></pre>
-    <p>Pour quitter, écris <code>/exit</code>. <code>/clear</code> efface le contexte de la session, et <code>/help</code> rappelle les commandes disponibles.</p>
+    <p>Écris ta demande après l’invite <strong>❯</strong>. Tab complète les commandes et les flèches parcourent l’historique. Termine une ligne par <code>\</code> puis Entrée pour continuer sur la ligne suivante. <code>/status</code> affiche la connexion et les crédits, <code>/verbose</code> développe les résultats des outils, <code>/exit</code> quitte et <code>/help</code> rappelle les commandes.</p>
   </section>
 
   <section class="guide-section">
@@ -83,7 +83,7 @@ puis propose un test manquant sans l’ajouter.</code></pre>
   <section class="guide-section guide-last-section">
     <h2>6. Sécurité et crédits</h2>
     <p>Les appels modèle débitent les crédits du compte associé à la clé. Une clé doit rester privée : ne la versionne pas et ne la colle pas dans les demandes adressées à l’assistant.</p>
-    <p>Pour changer de compte ou d’URL, lance <code>barrassons login</code>. Pour effacer la configuration locale, lance <code>barrassons logout</code>; cela supprime le fichier local, mais ne révoque pas la clé sur le serveur. Révoque-la aussi depuis la page <a href="{% url 'api-keys-page' %}">Clés API</a> si elle n’est plus utilisée.</p>
+    <p>Pour changer de clé, lance <code>barrassons login</code>. Pour changer de serveur, utilise <code>barrassons login --api-base URL</code>. <code>barrassons logout</code> efface la configuration locale, mais ne révoque pas la clé sur le serveur. Révoque-la aussi depuis la page <a href="{% url 'api-keys-page' %}">Clés API</a> si elle n’est plus utilisée.</p>
   </section>
 </main>
 {% endblock %}

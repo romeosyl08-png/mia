@@ -430,6 +430,7 @@ let state = {
 
   // ---------- Rendering ----------
   const el = id => document.getElementById(id);
+  const emptyStateTemplate = el("messages").querySelector(".empty-state").cloneNode(true);
   const modelRankingsById = JSON.parse(el("openrouterModelRankings").textContent);
 
   const initialTopP = Number(chatConfig.defaultTopP ?? 1);
@@ -577,7 +578,7 @@ let state = {
     list.innerHTML = "";
     const persona = activePersona();
     const title = el("conversationsSectionTitle");
-    if(title) title.firstChild.textContent = state.showArchived ? "Archives" : (persona ? `Conversations · ${persona.name}` : "Conversations");
+    if(title) title.firstChild.textContent = state.showArchived ? "Archives" : "Conversations";
     const savedConversations = state.sidebarConversations;
     const folderSelect = el("folderFilter");
     const selectedFolder = state.selectedFolder;
@@ -876,8 +877,6 @@ let state = {
       select.add(new Option(p.name, String(p.id)));
     });
     if(selectedPersona) select.value = String(selectedPersona.id);
-    const activeName = el("activePersonaName");
-    if(activeName) activeName.textContent = selectedPersona?.name || "Choisir un persona";
     const renameButton = el("renamePersonaBtn");
     if(renameButton){
       renameButton.disabled = !state.isAuthenticated || typeof selectedPersona?.id !== "number";
@@ -995,12 +994,12 @@ function renderHeader(){
 function renderMessages(){
   const wrap = el("messages");
   if(state.initializing){
-    wrap.innerHTML = '<div class="empty-state" role="status"><div class="loading-indicator" aria-hidden="true"></div><div class="display">Ton espace se prépare</div><p class="empty-state-copy">Chargement de tes assistants et conversations…</p></div>';
+    wrap.innerHTML = '<div class="empty-state" role="status"><div class="loading-indicator" aria-hidden="true"></div><p class="empty-state-copy">Chargement…</p></div>';
     return;
   }
   const convo = activeConvo();
   if(!convo || !convo.messages || convo.messages.length === 0){
-    wrap.innerHTML = `<div class="empty-state"><div class="empty-state-mark" aria-hidden="true">✦</div><p class="page-eyebrow">Ton espace de réflexion</p><div class="display">Qu’allons-nous créer aujourd’hui ?</div><p class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</p></div>`;
+    wrap.replaceChildren(emptyStateTemplate.cloneNode(true));
     return;
   }
   wrap.innerHTML = "";
@@ -1293,6 +1292,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       select.add(new Option(workspace.title, String(workspace.id)));
     });
     select.value = workspaceId ? String(workspaceId) : "";
+    const workspace = state.workspaces.find(item => String(item.id) === String(workspaceId));
+    el("workspaceSummary").textContent = workspace && !localOnly
+      ? `Fichiers et outils · ${workspace.title}` : "Fichiers et outils";
     select.disabled = localOnly;
     el("createWorkspaceBtn").disabled = localOnly;
     el("workspaceOpen").hidden = localOnly;
@@ -1893,7 +1895,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       }
     }
 
-    el("memorySuggestBtn").addEventListener("click", proposePersonaMemory);
+    el("memorySuggestBtn").addEventListener("click", () => {
+      closeComposerPlusMenu();
+      proposePersonaMemory();
+    });
     el("regenerateMemorySuggestion").addEventListener("click", proposePersonaMemory);
     el("cancelMemorySuggestion").addEventListener("click", () => {
       memoryDialog.hidden = true;
@@ -1993,9 +1998,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       imageGalleryStatus.textContent = error.message || "Chargement de la galerie impossible.";
     }
   }
-  el("openImageGalleryBtn").addEventListener("click", () => openImageGallery("image"));
-  el("openVideoGalleryBtn").addEventListener("click", () => openImageGallery("video"));
-  el("openAudioGalleryBtn").addEventListener("click", () => openImageGallery("audio"));
+  el("openMediaGalleryBtn").addEventListener("click", () => openImageGallery(imageGalleryKind));
   document.querySelectorAll("[data-gallery-kind]").forEach(button => {
     button.addEventListener("click", () => openImageGallery(button.dataset.galleryKind));
   });
@@ -2505,16 +2508,6 @@ el("plusFilesBtn").addEventListener("click", () => {
   closeComposerPlusMenu();
   fileInput.click();
 });
-el("plusImageBtn").addEventListener("click", () => {
-  if(el("plusImageBtn").disabled) return;
-  document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
-    const selected = button.dataset.mode === "image";
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
-  closeComposerPlusMenu();
-  el("composerInput").focus();
-});
 document.addEventListener("click", event => {
   if(!el("composerPlusWrap").contains(event.target)) closeComposerPlusMenu();
 });
@@ -2536,7 +2529,9 @@ fileInput.addEventListener("change", async () => {
     return;
   }
   if(!convo.workspaceId){
-    showChatNotice("Sélectionne ou crée un espace Bara dans « Fichiers » avant de joindre un document.");
+    el("workspaceOptions").open = true;
+    el("workspaceSelect").focus();
+    showChatNotice("Sélectionne ou crée un espace dans « Fichiers et outils » avant de joindre un document.");
     fileInput.value = "";
     return;
   }
