@@ -1,15 +1,31 @@
 {% extends "base.html" %}
 
-{% block title %}Paiement reçu{% endblock %}
+{% block title %}{% if paydunya_return and payment_status != 'paid' %}Confirmation du paiement{% else %}Paiement reçu{% endif %}{% endblock %}
 
 {% block body %}
 <main class="success-page surface">
-  <div class="success-mark" aria-hidden="true">✓</div>
+  <div class="success-mark" aria-hidden="true">{% if paydunya_return and payment_status != 'paid' %}…{% else %}✓{% endif %}</div>
   <p class="page-eyebrow">Recharge de jetons</p>
-  <h1>Paiement reçu</h1>
-  {% if paydunya_return %}
-  <p>PayDunya confirme ta transaction. Tes jetons apparaîtront dès que sa notification sécurisée aura été traitée.</p>
+  {% if payment_status == 'paid' %}
+  <h1>Recharge ajoutée</h1>
+  <p>{{ credited_credits_display }} jetons ont été ajoutés à ton compte.</p>
+  <p>Ton solde est de <strong>{{ balance_display }} jetons</strong>.</p>
+  {% elif paydunya_return %}
+    {% if payment_status == 'failed' %}
+    <h1>Paiement non finalisé</h1>
+    <p>Le paiement a échoué ou a été annulé. Tu peux recommencer depuis la page de recharge.</p>
+    <a class="button-primary" href="{% url 'recharge-page' %}">Recharger mes jetons</a>
+    {% else %}
+    <h1>Confirmation du paiement</h1>
+      {% if payment_verification_error %}
+      <p>La vérification du paiement est temporairement indisponible. Réessaie dans quelques instants.</p>
+      {% else %}
+      <p>Le paiement est en cours de confirmation. Tes jetons seront ajoutés dès sa validation.</p>
+      {% endif %}
+    <a class="button-primary" href="{{ request.get_full_path }}">Vérifier à nouveau</a>
+    {% endif %}
   {% else %}
+  <h1>Paiement reçu</h1>
   <p>La recharge sera ajoutée dès confirmation sécurisée du prestataire de paiement.</p>
   {% endif %}
   <a class="button-primary" href="{% url 'chat:chat-home' %}">Retour au chat</a>

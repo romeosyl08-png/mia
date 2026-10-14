@@ -58,10 +58,12 @@ class ChatRegressionTests(TestCase):
                     ])):
                         response, result = self.send({'team_mode': True, 'team_model_ids': ['cheap', 'costly'], 'team_strategy': strategy}, streamed=streamed)
                     self.assertEqual(response.status_code, 200)
-                    self.assertEqual(before - self.balance(), 306)
-                    self.assertEqual(result['charged_credits'], 306)
-                    self.assertEqual(result['prompt_tokens'], 300)
-                    self.assertEqual(result['completion_tokens'], 300)
+                    expected_cost = 606 if strategy == 'plan_execute_verify' else 306
+                    expected_tokens = 400 if strategy == 'plan_execute_verify' else 300
+                    self.assertEqual(before - self.balance(), expected_cost)
+                    self.assertEqual(result['charged_credits'], expected_cost)
+                    self.assertEqual(result['prompt_tokens'], expected_tokens)
+                    self.assertEqual(result['completion_tokens'], expected_tokens)
 
     def test_team_keeps_selected_model_order(self):
         with patch('chat.services.call_llm_provider', return_value=('Team reply', 100, 100)) as call:

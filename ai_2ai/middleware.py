@@ -23,7 +23,14 @@ def _policy_string():
         "media-src": ["'self'"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],
-        "form-action": ["'self'"],
+        # Chrome applique aussi form-action aux redirections après un POST.
+        # Les formulaires de recharge redirigent vers ces prestataires validés.
+        "form-action": [
+            "'self'",
+            "https://app.paydunya.com",
+            "https://paydunya.com",
+            "https://checkout.stripe.com",
+        ],
         "frame-ancestors": ["'self'"],
         # Dérogation : l'IA locale est appelée depuis le navigateur vers
         # Ollama / LM Studio / Jan sur la machine de l'utilisateur.

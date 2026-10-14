@@ -1,0 +1,38 @@
+{
+  "prefix": "^(?:(?:bonjour|salut|hello|hi)[, !]+)?(?:(?:s'il te plait|stp|please)[, ]+)?(?:(?:peux[- ]tu|pourrais[- ]tu|tu peux|tu pourrais|can you|could you|je veux que tu|j'aimerais que tu|je voudrais que tu)\\s+(?:me\\s+)?)?",
+  "rules": {
+    "image": "^(?:genere|generer|cree|creer|dessine|dessiner|produis|fais|generate|create|draw|make)(?:[- ]moi)?\\s+(?:(?:une?|des|l[' ]|a|an|the)\\s*)?(?:images?|photos?|illustrations?|dessins?|pictures?)\\b",
+    "video": "^(?:genere|generer|cree|creer|produis|fais|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:videos?|clips?|animations?)\\b",
+    "audio": "^(?:genere|generer|cree|creer|produis|fais|compose|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:audios?|musiques?|chansons?|songs?|music|podcasts?)\\b",
+    "web": "^(?:(?:cherche|recherche|search|look up|browse)\\b[^\\n]{0,180}\\b(?:web|internet|en ligne|online)\\b|(?:fais|effectue|lance)\\s+une\\s+recherche\\s+(?:web|sur internet|sur le web)\\b)",
+    "execute": "^(?:execute|executer|lance|lancer|run|execute)(?:[- ]moi)?\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|this|the|a|my|mon|ma|mes)\\s+)?(?:code|scripts?|programmes?|programs?|tests?|commandes?|commands?)\\b",
+    "file_read": "^(?:lis|lire|ouvre|ouvrir|analyse|analyser|resume|resumer|read|open|analyze|summarize)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|pdf|file)\\b",
+    "file_edit": "^(?:modifie|modifier|edit)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b",
+    "file_rename": "^(?:renomme|renommer|rename)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b",
+    "file_delete": "^(?:supprime|supprimer|delete)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b"
+  },
+  "toolRequirements": {
+    "execute": ["run_python", "run_command"],
+    "file_read": ["read_file"],
+    "file_edit": ["edit_file"],
+    "file_rename": ["rename_file"],
+    "file_delete": ["delete_file"]
+  },
+  "mediaMessages": {
+    "image": "Cette demande nécessite la génération d’images. Choisis le mode « Générer une image » avant d’envoyer.",
+    "video": "Cette demande nécessite la génération de vidéos. Choisis le mode « Générer une vidéo » avant d’envoyer.",
+    "audio": "Cette demande nécessite la génération audio. Choisis le mode « Générer un audio » avant d’envoyer."
+  },
+  "messages": {
+    "local": "L’IA locale peut répondre en texte, mais ce chat local ne dispose pas des outils web, des fichiers Bara ou de la génération de médias. Choisis une IA hébergée pour cette demande.",
+    "web": "La recherche web n’est pas disponible. Choisis un espace où elle est activée ou fournis directement les informations à analyser.",
+    "execute": "L’exécution de code n’est pas disponible pour cette demande. Sélectionne un espace Bara où l’outil d’exécution est activé.",
+    "workspace": "Cette demande nécessite l’accès à un fichier. Sélectionne son espace Bara et joins le document, ou colle son contenu dans le message.",
+    "file_tool": "L’outil nécessaire pour ce fichier est désactivé dans l’espace Bara sélectionné.",
+    "team": "Cette demande nécessite des outils disponibles en mode simple. Désactive « Équipe IA » pour continuer.",
+    "tools": "L’IA sélectionnée ne prend pas en charge les outils nécessaires à cette demande. Choisis un modèle compatible avec les outils ou « Auto 2AI ».",
+    "vision": "L’IA sélectionnée ne peut pas lire les images jointes. Choisis un modèle qui accepte les images, en mode simple.",
+    "no_model": "Aucune IA disponible ne possède les capacités nécessaires à cette demande. Change de mode ou de modèle.",
+    "no_charge": "Aucun appel IA effectué, aucun jeton débité."
+  }
+}

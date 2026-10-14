@@ -360,6 +360,13 @@ body {
   grid-column: 1 / -1;
 }
 
+.customer-field { min-width: 0; }
+.payment-field-error { margin: 6px 0 0; color: var(--danger); font-size: 11px; line-height: 1.45; }
+.payment-field-error[hidden] { display: none; }
+.payment-form-hint { margin: 9px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
+.customer-details input[aria-invalid="true"], .currency-input.is-invalid { border-color: var(--danger); }
+.customer-details input[aria-invalid="true"]:focus { border-color: var(--danger); outline-color: color-mix(in srgb, var(--danger) 17%, transparent); }
+
 .customer-details input {
   min-width: 0;
   min-height: 42px;

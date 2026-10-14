@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse
 from django.utils import timezone
 from django.contrib.auth.models import User
 from django.http import HttpResponseBadRequest, HttpResponseServerError, JsonResponse
@@ -41,6 +41,14 @@ from .currency import (
 	set_selected_currency,
 )
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
+from .paydunya import (
+    PayDunyaError,
+    apply_invoice as _apply_paydunya_invoice,
+    checkout_url as _paydunya_checkout_url,
+    confirm_purchase as _confirm_paydunya_purchase,
+    headers as _paydunya_headers,
+    is_configured as _paydunya_is_configured,
+)
 from .forms import SignupForm
 import requests
 
@@ -62,22 +70,6 @@ def _payment_customer_details(request):
     if not 6 <= len(phone_digits) <= 20:
         return None, "Un numéro de téléphone valide est requis."
     return {"name": name, "email": email, "phone": phone}, None
-
-
-def _paydunya_is_configured():
-    return bool(
-        settings.PAYDUNYA_MASTER_KEY
-        and settings.PAYDUNYA_PRIVATE_KEY
-        and settings.PAYDUNYA_TOKEN
-    )
-
-
-def _paydunya_checkout_url():
-    if settings.PAYDUNYA_CHECKOUT_URL:
-        return settings.PAYDUNYA_CHECKOUT_URL
-    if settings.PAYDUNYA_PRIVATE_KEY.startswith("test_private_"):
-        return "https://app.paydunya.com/sandbox-api/v1/checkout-invoice/create"
-    return "https://app.paydunya.com/api/v1/checkout-invoice/create"
 
 
 def _paydunya_webhook_payload(request):
@@ -485,25 +477,16 @@ def create_paydunya_checkout(request):
             "customer_phone": customer["phone"],
         },
         "actions": {
-            "callback_url": request.build_absolute_uri(reverse("paydunya-webhook")),
-            "return_url": (
-                request.build_absolute_uri(reverse("recharge-success"))
-                + "?paydunya=1"
-            ),
-            "cancel_url": request.build_absolute_uri(reverse("recharge-page")),
+            "callback_url": _public_absolute_uri(request, reverse("paydunya-webhook")),
+            "return_url": _public_absolute_uri(request, reverse("recharge-success")),
+            "cancel_url": _public_absolute_uri(request, reverse("recharge-page")),
         },
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "PAYDUNYA-MASTER-KEY": settings.PAYDUNYA_MASTER_KEY,
-        "PAYDUNYA-PRIVATE-KEY": settings.PAYDUNYA_PRIVATE_KEY,
-        "PAYDUNYA-TOKEN": settings.PAYDUNYA_TOKEN,
     }
     try:
         response = requests.post(
             _paydunya_checkout_url(),
             json=payload,
-            headers=headers,
+            headers=_paydunya_headers(),
             timeout=30,
         )
         data = response.json()
@@ -537,14 +520,41 @@ def create_paydunya_checkout(request):
         amount_cents=amount_xof * 100,
         credits=credits,
     )
+    request.session["paydunya_checkout_token"] = token
     return redirect(payment_url)
 
 
 @login_required(login_url="/auth/?next=/recharge/")
 def recharge_success(request):
-    return render(request, "recharge_success.html", {
-        "paydunya_return": request.GET.get("paydunya") == "1",
-    })
+    token = request.GET.get("token", "")
+    legacy_return = request.GET.get("paydunya", "")
+    # Les anciennes factures contiennent déjà une querystring dans return_url.
+    if not token and legacy_return.startswith("1?token="):
+        token = legacy_return.removeprefix("1?token=")
+    paydunya_return = bool(token) or legacy_return == "1"
+    context = {"paydunya_return": paydunya_return}
+    if paydunya_return:
+        token = token or request.session.get("paydunya_checkout_token", "")
+        if token:
+            purchase = get_object_or_404(
+                RechargePurchase,
+                user=request.user,
+                method=RechargePurchase.Method.PAYDUNYA,
+                paydunya_token=token,
+            )
+            try:
+                purchase = _confirm_paydunya_purchase(purchase)
+            except PayDunyaError as error:
+                logger.warning("Confirmation PayDunya de la recharge %s : %s", purchase.pk, error)
+                # Une notification peut avoir crédité le compte pendant la vérification.
+                purchase.refresh_from_db()
+                context["payment_verification_error"] = True
+            context["payment_status"] = purchase.status
+            if purchase.status == RechargePurchase.Status.PAID:
+                request.user.credit_account.refresh_from_db()
+                context["credited_credits_display"] = f"{purchase.credits:,}".replace(",", " ")
+                context["balance_display"] = f"{request.user.credit_account.balance:,}".replace(",", " ")
+    return render(request, "recharge_success.html", context)
 
 @csrf_exempt
 def stripe_webhook(request):
@@ -601,46 +611,10 @@ def paydunya_webhook(request):
     if not isinstance(data, dict):
         return HttpResponse("Notification invalide.", status=400)
 
-    received_hash = str(data.get("hash", ""))
-    expected_hash = hashlib.sha512(settings.PAYDUNYA_MASTER_KEY.encode()).hexdigest()
-    if not hmac.compare_digest(received_hash, expected_hash):
-        return HttpResponseForbidden("Signature PayDunya invalide.")
-
-    invoice = data.get("invoice")
-    if not isinstance(invoice, dict):
-        return HttpResponse("Facture PayDunya invalide.", status=400)
-    token = invoice.get("token")
-    if not isinstance(token, str) or not token:
-        return HttpResponse("Token PayDunya manquant.", status=400)
-
-    with transaction.atomic():
-        purchase = RechargePurchase.objects.select_for_update().filter(
-            paydunya_token=token,
-            method=RechargePurchase.Method.PAYDUNYA,
-        ).first()
-        if purchase is None:
-            return HttpResponse("Transaction inconnue.", status=404)
-
-        try:
-            paid_amount_cents = int(Decimal(str(invoice["total_amount"])) * 100)
-        except (ArithmeticError, KeyError, TypeError, ValueError):
-            return HttpResponse("Montant PayDunya invalide.", status=400)
-        if paid_amount_cents != purchase.amount_cents:
-            return HttpResponse("Montant PayDunya incoherent.", status=400)
-
-        status = str(data.get("status", "")).lower()
-        if status in {"failed", "cancelled"} and purchase.status == RechargePurchase.Status.PENDING:
-            purchase.status = RechargePurchase.Status.FAILED
-            purchase.save(update_fields=["status"])
-        elif status == "completed" and purchase.status != RechargePurchase.Status.PAID:
-            purchase.status = RechargePurchase.Status.PAID
-            purchase.paid_at = timezone.now()
-            purchase.save(update_fields=["status", "paid_at"])
-            purchase.user.credit_account.credit(
-                purchase.credits,
-                reason="recharge",
-                note=f"PayDunya {token}",
-            )
+    try:
+        _apply_paydunya_invoice(data)
+    except PayDunyaError as error:
+        return HttpResponse(str(error), status=error.status_code)
     return HttpResponse("ok")
 
 

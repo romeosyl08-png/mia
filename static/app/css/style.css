@@ -838,6 +838,60 @@
   padding:1px 3px 1px 1px;
 }
 
+.model-picker-filters{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.model-picker-filters .model-picker-search{min-width:0;flex:1;}
+.model-favorites-filter{
+  flex:none;
+  padding:8px 11px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  background:var(--paper);
+  color:var(--ink);
+  font:inherit;
+  font-size:12px;
+  cursor:pointer;
+}
+.model-favorites-filter[aria-pressed="true"]{
+  color:var(--accent);
+  border-color:var(--accent);
+}
+.model-picker-pricing-note{
+  margin:0;
+  color:var(--ink-soft);
+  font-size:11px;
+  line-height:1.5;
+}
+.model-picker-row,.team-model-row{position:relative;min-width:0;}
+.model-picker-row[hidden]{display:none;}
+.model-picker-row .model-picker-item{padding-right:48px;}
+.team-model-row .team-model-option{padding-right:38px;}
+.model-favorite-btn{
+  position:absolute;
+  right:7px;
+  top:50%;
+  transform:translateY(-50%);
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  padding:6px;
+  border:0;
+  border-radius:7px;
+  background:transparent;
+  color:var(--ink-soft);
+  cursor:pointer;
+}
+.team-model-row .model-favorite-btn{right:3px;}
+.model-favorite-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;}
+.model-favorite-btn:hover,.model-favorite-btn[aria-pressed="true"]{color:var(--accent);}
+.model-favorite-btn[aria-pressed="true"] svg{fill:currentColor;}
+.model-favorite-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+.model-favorite-btn:disabled{opacity:.55;cursor:wait;}
+
 .model-picker-item{
   display:flex;
   align-items:center;
@@ -897,7 +951,10 @@
 .model-picker-price{
   flex:none;
   text-align:right;
+  display:grid;
+  gap:3px;
 }
+.model-picker-price small{font-size:10px;}
 
 .model-picker-empty{
   margin:0;
@@ -924,6 +981,8 @@
   box-shadow:
     0 12px 30px rgba(0,0,0,.12);
 }
+
+.team-exchange-hint{margin:8px 0 12px;color:var(--ink-soft);font-size:11px;line-height:1.5;}
 
 .team-options-head{
   display:flex;

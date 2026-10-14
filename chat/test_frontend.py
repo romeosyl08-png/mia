@@ -56,7 +56,7 @@ class FrontendAssetTests(TestCase):
         self.assertIsNotNone(page.select_one('#chat-config'))
         self.assertIsNotNone(page.select_one('aside.sidebar #pwa-install-controls'))
         self.assertEqual(len(page.select('#pwa-install-controls')), 1)
-        for dependency in ['appearance.js', 'chat_transport.js', 'message_sources.js', 'charts.js', 'chat_tools.js']:
+        for dependency in ['appearance.js', 'chat_transport.js', 'message_sources.js', 'charts.js', 'chat_tools.js', 'model_favorites.js']:
             self.assertLess(scripts.index('/static/app/js/' + dependency), scripts.index('/static/app/js/script.js'))
         self.assertFalse(page.body.has_attr('data-keep-title'))
 

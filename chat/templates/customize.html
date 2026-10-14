@@ -27,6 +27,11 @@
     <main class="customize-content">
 
         {% if is_authenticated %}
+        <section class="settings-section" id="memoryImportSettings">
+            <h2>Mémoire et import</h2>
+            <p class="settings-description">Retrouve tes préférences dans 2AI en important les souvenirs de ChatGPT, Claude, Gemini ou de tout autre assistant.</p>
+            <a class="settings-action" href="{% url 'chat:memory' %}#import-memory">Importer depuis un autre assistant</a>
+        </section>
         <section class="settings-section">
             <h2>Génération par défaut</h2>
             <p class="settings-description">Ces valeurs s’appliquent aux nouvelles demandes. Les contrôles du chat peuvent les remplacer pour une conversation.</p>

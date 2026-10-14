@@ -49,6 +49,8 @@ def call_llm_with_tools(provider, api_key, model_id, messages, system_prompt="",
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+        if provider.slug == 'openrouter':
+            payload['provider'] = {'require_parameters': True}
 
     headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
     if not is_local_provider(provider):
@@ -96,6 +98,8 @@ def call_llm_with_tools_stream(provider, api_key, model_id, messages, system_pro
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+        if provider.slug == 'openrouter':
+            payload['provider'] = {'require_parameters': True}
 
     headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
     if not is_local_provider(provider):

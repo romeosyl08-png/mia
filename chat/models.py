@@ -38,6 +38,7 @@ class ChatPreferences(models.Model):
         related_name="chat_preferences",
     )
     default_model_id = models.CharField(max_length=150, blank=True)
+    favorite_model_ids = models.JSONField(default=list, blank=True)
     top_p = models.FloatField(default=1.0)
     max_tokens = models.PositiveIntegerField(default=500)
     updated_at = models.DateTimeField(auto_now=True)

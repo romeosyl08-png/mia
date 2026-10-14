@@ -25,6 +25,21 @@ class SecurityHeadersTests(SimpleTestCase):
         self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
         self.assertIn("geolocation=()", response.headers["Permissions-Policy"])
 
+    def test_forms_allow_redirects_to_only_the_trusted_payment_providers(self):
+        response = self.client.get("/auth/")
+        policy = response.headers["Content-Security-Policy"]
+        form_action = next(
+            directive.split()[1:]
+            for directive in policy.split(";")
+            if directive.strip().startswith("form-action ")
+        )
+        self.assertEqual(set(form_action), {
+            "'self'",
+            "https://app.paydunya.com",
+            "https://paydunya.com",
+            "https://checkout.stripe.com",
+        })
+
     def test_the_local_ai_stays_reachable_from_the_browser(self):
         """Dérogation assumée : Ollama / LM Studio tournent sur le poste."""
         response = self.client.get("/auth/")

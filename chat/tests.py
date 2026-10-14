@@ -311,9 +311,10 @@ class ChatHomeTests(TestCase):
 			))
 
 		with patch('chat.services.call_llm_provider', side_effect=[
-			('Plan: vérifier le résultat.', 1, 2),
-			('Proposition de réalisation.', 3, 4),
-			('Résultat vérifié.', 5, 6),
+			('{"steps":["Vérifier le résultat"]}', 1, 2),
+			('{"result":["Proposition de réalisation"]}', 3, 4),
+			('{"status":"changes","fixes":["Corriger le résultat"]}', 5, 6),
+			('Résultat vérifié.', 7, 8),
 		]) as provider_call:
 			reply, prompt_tokens, completion_tokens = call_llm_team(
 				team_models,
@@ -322,10 +323,11 @@ class ChatHomeTests(TestCase):
 			)
 
 		self.assertEqual(reply, 'Résultat vérifié.')
-		self.assertEqual((prompt_tokens, completion_tokens), (9, 12))
-		self.assertEqual(provider_call.call_count, 3)
-		self.assertIn('Plan: vérifier le résultat.', provider_call.call_args_list[1].args[4])
-		self.assertIn('Proposition de réalisation.', provider_call.call_args_list[2].args[4])
+		self.assertEqual((prompt_tokens, completion_tokens), (16, 20))
+		self.assertEqual(provider_call.call_count, 4)
+		self.assertIn('Vérifier le résultat', provider_call.call_args_list[1].args[3][-1]['content'])
+		self.assertIn('Proposition de réalisation', provider_call.call_args_list[2].args[3][-1]['content'])
+		self.assertIn('Corriger le résultat', provider_call.call_args_list[3].args[3][-1]['content'])
 
 	def test_streaming_team_plan_execute_verify_streams_only_verified_answer(self):
 		team_models = []
@@ -343,12 +345,13 @@ class ChatHomeTests(TestCase):
 			))
 
 		with patch('chat.services.call_llm_provider', side_effect=[
-			('Plan bref.', 1, 2),
-			('Brouillon.', 3, 4),
+			('{"steps":["Plan bref"]}', 1, 2),
+			('{"result":["Proposition"]}', 3, 4),
+			('{"status":"ok","fixes":[]}', 5, 6),
 		]) as upstream_calls, patch('chat.services.stream_llm_provider', return_value=iter([
 			{'type': 'delta', 'content': 'Final '},
 			{'type': 'delta', 'content': 'vérifié.'},
-			{'type': 'usage', 'input_tokens': 5, 'output_tokens': 6},
+			{'type': 'usage', 'input_tokens': 7, 'output_tokens': 8},
 		])) as verifier_stream:
 			events = list(stream_llm_team(
 				team_models,
@@ -356,10 +359,10 @@ class ChatHomeTests(TestCase):
 				strategy='plan_execute_verify',
 			))
 
-		self.assertEqual(upstream_calls.call_count, 2)
+		self.assertEqual(upstream_calls.call_count, 3)
 		self.assertEqual(verifier_stream.call_count, 1)
 		self.assertEqual(''.join(event['content'] for event in events if event['type'] == 'delta'), 'Final vérifié.')
-		self.assertEqual(events[-1], {'type': 'usage', 'input_tokens': 9, 'output_tokens': 12})
+		self.assertEqual(events[-1], {'type': 'usage', 'input_tokens': 16, 'output_tokens': 20})
 
 	@patch('chat.views.call_llm_team', return_value=('Réponse vérifiée.', 20, 12))
 	def test_chat_passes_selected_team_strategy_to_existing_team_path(self, team_call):
@@ -555,6 +558,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.json(), {
 			'default_model_id': 'settings-model',
+			'favorite_model_ids': [],
 			'top_p': 0.35,
 			'max_tokens': 1200,
 		})
@@ -595,7 +599,7 @@ class ChatHomeTests(TestCase):
 		response = self.client.get('/chat/api/workspaces/')
 
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json(), [{'id': workspace.id, 'title': 'Mon espace'}])
+		self.assertEqual(response.json(), [{'id': workspace.id, 'title': 'Mon espace', 'disabled_tools': []}])
 
 	def test_conversation_list_supports_search_folders_and_archive_filter(self):
 		user = User.objects.create_user(username='conversation-search-user', password='test-password')
@@ -873,6 +877,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(Message.objects.filter(role='user').count(), 1)
 		self.assertEqual(Message.objects.filter(role='assistant').count(), 1)
 
+	@override_settings(SEARCH_API_KEY='dummy-search-key')
 	def test_web_mode_adds_search_results_as_untrusted_context(self):
 		user = User.objects.create_user(username='web-mode-user', password='test-password')
 		user.credit_account.balance = 1000
@@ -900,6 +905,7 @@ class ChatHomeTests(TestCase):
 		assistant_message = Message.objects.filter(role='assistant').get()
 		self.assertEqual(assistant_message.sources, response.json()['sources'])
 
+	@override_settings(SEARCH_API_KEY='dummy-search-key')
 	def test_web_mode_short_search_command_uses_the_previous_user_request(self):
 		user = User.objects.create_user(username='web-followup-user', password='test-password')
 		user.credit_account.balance = 1000
@@ -932,6 +938,7 @@ class ChatHomeTests(TestCase):
 		self.assertIn('ne produis pas de balise ou de commande', provider_call.call_args.args[4])
 		self.assertEqual(response.json()['reply'], 'Voici les résultats trouvés.')
 
+	@override_settings(SEARCH_API_KEY='dummy-search-key')
 	def test_web_mode_rejects_unexecuted_search_markup_and_refunds(self):
 		user = User.objects.create_user(username='web-markup-user', password='test-password')
 		user.credit_account.balance = 1000
@@ -1616,7 +1623,7 @@ class ChatHomeTests(TestCase):
 
 		response = self.client.post(
 			'/chat/api/send/',
-			data=json.dumps({'model_id': 'empty-stream-model', 'content': 'Peux-tu analyser ce PDF ?'}),
+			data=json.dumps({'model_id': 'empty-stream-model', 'content': 'Explique ce concept.'}),
 			content_type='application/json',
 			HTTP_ACCEPT='text/event-stream',
 		)

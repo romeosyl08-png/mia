@@ -460,12 +460,13 @@ let state = {
 
     const rankLabels = models.filter(item => usageFor(item) > 0);
     const ranks = new Map(rankLabels.map((item, index) => [item, index + 1]));
+    models.sort((left, right) => Number(modelFavorites.has(right.dataset.modelId)) - Number(modelFavorites.has(left.dataset.modelId)));
     models.forEach(item => {
       const label = item.querySelector(".model-picker-ranking");
       const rank = ranks.get(item);
       label.hidden = !rank;
       label.textContent = rank ? `Classement d’usage #${rank}` : "";
-      pickerList.append(item);
+      pickerList.append(item.closest('.model-picker-row') || item);
     });
     const localModelButton = el("localModelDialogBtn");
     if(localModelButton) pickerList.append(localModelButton);
@@ -479,7 +480,7 @@ let state = {
     models.forEach(item => {
       const teamModel = teamModels.get(item.dataset.modelId);
       const modelOption = modelOptions.get(item.dataset.modelId);
-      if(teamModel) el("teamModelGrid").append(teamModel);
+      if(teamModel) el("teamModelGrid").append(teamModel.closest('.team-model-row') || teamModel);
       if(modelOption) modelSelect.append(modelOption);
     });
 
@@ -491,6 +492,9 @@ let state = {
         ? "Tri hebdomadaire par volume de tokens texte. L’usage indique la popularité, pas la qualité."
         : "Tri hebdomadaire estimé à partir d’un échantillon de requêtes de cette tâche; ce n’est pas un benchmark."
       : "Classement non synchronisé pour cette tâche; les modèles sont alors triés par prix de sortie.";
+    if(models.some(item => modelFavorites.has(item.dataset.modelId))){
+      el('modelRankingStatus').textContent = 'Tes favoris apparaissent en tête. ' + el('modelRankingStatus').textContent;
+    }
     el("modelRankingAttribution").textContent = asOf
       ? `Source: OpenRouter (openrouter.ai/rankings), as of ${asOf}.`
       : "";
@@ -569,6 +573,14 @@ let state = {
     button.title = state.sending ? "Envoi en cours…" : `Envoyer avec ${details}`;
     button.setAttribute("aria-label", button.title);
   }
+  const modelFavorites = window.AI2AIModelFavorites.create({
+    initialIds: chatConfig.favoriteModelIds || [],
+    onChange: () => {
+      sortModelsForTask(el('modelTaskCategory').value);
+      filterModelPicker(el('modelPickerSearch').value);
+    },
+    onError: showChatNotice
+  });
   sortModelsForTask(el("modelTaskCategory").value);
   renderModelPickerState();
   renderSendButton();
@@ -1391,7 +1403,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       const data = await res.json().catch(() => ({}));
       const remainingBalance = Number(data.remaining_balance);
       if(Number.isFinite(remainingBalance)) state.credits = remainingBalance;
-      throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+      const error = new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+      error.preflight = ['capability_unavailable', 'unsupported_tools', 'vision_unavailable'].includes(data.error?.type);
+      throw error;
     }
     if(res.headers.get("Content-Type")?.includes("application/json")){
       const data = await res.json();
@@ -1501,9 +1515,27 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return { reply, prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens };
   }
 
+  function messageCapabilityIssue(text, convo = activeConvo(), imageIds = null, history = null){
+    const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
+    const workspace = workspaceId ? state.workspaces.find(row => String(row.id) === String(workspaceId)) || {id: workspaceId} : null;
+    const team = el('teamModeBtn').classList.contains('active');
+    return window.AI2AICapabilities.check(text, {
+      mode: document.querySelector('.tool-btn[data-mode].active')?.dataset.mode || 'chat',
+      local: isLocalModelSelected() || Boolean(convo?.localOnly),
+      team, workspace,
+      hasImages: Boolean((imageIds || convo?.pendingImageIds || []).length || (history || convo?.messages || []).some(row => row.imageFileIds?.length)),
+      modelIds: team ? Array.from(el('teamModelSelect').selectedOptions).map(row => row.value) : [state.modelId]
+    }, chatConfig);
+  }
+
   async function sendMessage(text, reuseLastUser = false, editTarget = null){
     const localModelSelected = isLocalModelSelected();
     if(state.initializing || state.sending || state.savingTemporary || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
+    const current = activeConvo();
+    const targetMessage = editTarget ? current?.messages[editTarget.messageIndex] : reuseLastUser ? current?.messages.at(-1) : null;
+    const problem = messageCapabilityIssue(text, current, targetMessage?.imageFileIds,
+      editTarget ? current?.messages.slice(0, editTarget.messageIndex) : null);
+    if(problem){ showChatNotice(problem.message); return; }
     state.sending = true;
     renderCredits();
     let convo = activeConvo();
@@ -1523,6 +1555,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       return;
     }
 
+    const messagesBeforeSend = convo.messages.slice();
     let previousMessages = null;
     let userMessage;
     if(editTarget){
@@ -1624,6 +1657,13 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       renderAll();
       if(data.billing_warning) showChatNotice(data.billing_warning);
     }catch(err){
+      if(err.preflight){
+        convo.messages = messagesBeforeSend;
+        if(!reuseLastUser && !editTarget && !el('composerInput').value) el('composerInput').value = text;
+        showChatNotice(err.message);
+        renderAll();
+        return;
+      }
       let recovered = err.recovery;
       if(!recovered && streamingMessage.recoveryToken && !convo.temporary && !editTarget){
         for(let attempt=0;attempt<3 && !recovered;attempt++){
@@ -1668,6 +1708,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const convo = activeConvo();
     const previousMessage = convo && convo.messages[messageIndex - 1];
     if(!convo || !previousMessage || previousMessage.role !== "user" || state.sending) return;
+    const problem = messageCapabilityIssue(previousMessage.content, convo, previousMessage.imageFileIds, convo.messages.slice(0, messageIndex));
+    if(problem){ showChatNotice(problem.message); return; }
     convo.messages.splice(messageIndex, 1);
     renderAll();
     await sendMessage(previousMessage.content, true);
@@ -2354,14 +2396,27 @@ el("modelPickerList").addEventListener("click", event => {
 
 function filterModelPicker(value){
   const query = value.trim().toLocaleLowerCase();
+  const favoritesOnly = el('modelFavoritesOnlyBtn').getAttribute('aria-pressed') === 'true';
   let visible = 0;
   document.querySelectorAll(".model-picker-item").forEach(item => {
-    item.hidden = !item.textContent.toLocaleLowerCase().includes(query);
+    item.hidden = !item.textContent.toLocaleLowerCase().includes(query) || (favoritesOnly && !modelFavorites.has(item.dataset.modelId));
+    const row = item.closest('.model-picker-row');
+    if(row) row.hidden = item.hidden;
     if(!item.hidden) visible++;
   });
   const empty = el("modelPickerNoResults");
-  if(empty) empty.hidden = visible > 0;
+  if(empty){
+    empty.hidden = visible > 0;
+    empty.textContent = favoritesOnly ? 'Aucun favori ne correspond. Clique sur une étoile pour ajouter une IA.' : 'Aucune IA ne correspond à cette recherche.';
+  }
 }
+el('modelFavoritesOnlyBtn').addEventListener('click', event => {
+  const button = event.currentTarget;
+  const enabled = button.getAttribute('aria-pressed') !== 'true';
+  button.setAttribute('aria-pressed', String(enabled));
+  button.textContent = enabled ? '★ Favoris' : '☆ Favoris';
+  filterModelPicker(el('modelPickerSearch').value);
+});
 el("modelPickerSearch").addEventListener("input", event => {
   filterModelPicker(event.target.value);
 });
@@ -2709,6 +2764,8 @@ fileInput.addEventListener("change", async () => {
       window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
       return;
     }
+    const problem = messageCapabilityIssue(text);
+    if(problem){ showChatNotice(problem.message); return; }
     input.value = "";
     input.style.height = "auto";
     sendMessage(text);
