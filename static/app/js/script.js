@@ -1333,26 +1333,46 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
   }
 
   function createStreamingRenderer(convo, message){
-    let scheduled = false;
-    return () => {
-      if(scheduled) return;
-      scheduled = true;
-      window.requestAnimationFrame(() => {
-        scheduled = false;
+    let messageElement = null;
+    let contentElement = null;
+    let lastRenderedElement = null;
+    let lastRenderedContent = null;
+    let lastRenderedSources = null;
+    let lastRenderedStatus = null;
+
+    return AI2AIMarkdown.createStreamingScheduler({
+      getLength: () => message.content.length,
+      render: () => {
         if(activeConvo() !== convo) return;
         const wrap = el("messages");
-        const messageElement = Array.from(wrap.querySelectorAll(".msg.bot"))
-          .find(element => element.dataset.messageKey === message.clientId);
-        const content = messageElement?.querySelector(".msg-content");
-        if(!content) return;
-        content.innerHTML = DOMPurify.sanitize(AI2AIMarkdown.parse(message.content));
-        globalThis.AI2AIIdeaPreviews?.enhance(content, message.clientId);
-        AI2AISources.attach(content, message.sources || [], {fallback:false});
-        const status = messageElement.querySelector('.chat-tool-status');
-        if(status){ status.textContent = message.toolStatus || ''; status.hidden = !message.toolStatus; }
-        wrap.scrollTop = wrap.scrollHeight;
-      });
-    };
+        if(!messageElement?.isConnected || !contentElement?.isConnected){
+          messageElement = Array.from(wrap.querySelectorAll(".msg.bot"))
+            .find(element => element.dataset.messageKey === message.clientId) || null;
+          contentElement = messageElement?.querySelector(".msg-content") || null;
+        }
+        if(!messageElement || !contentElement) return;
+
+        const elementChanged = contentElement !== lastRenderedElement;
+        const sourcesChanged = message.sources !== lastRenderedSources;
+        const contentChanged = elementChanged || message.content !== lastRenderedContent || sourcesChanged;
+        const statusText = message.toolStatus || "";
+        const statusChanged = elementChanged || statusText !== lastRenderedStatus;
+        if(contentChanged){
+          contentElement.innerHTML = DOMPurify.sanitize(AI2AIMarkdown.parse(message.content));
+          globalThis.AI2AIIdeaPreviews?.enhance(contentElement, message.clientId);
+          AI2AISources.attach(contentElement, message.sources || [], {fallback:false});
+        }
+        if(statusChanged){
+          const status = messageElement.querySelector('.chat-tool-status');
+          if(status){ status.textContent = statusText; status.hidden = !statusText; }
+        }
+        if(contentChanged || statusChanged) wrap.scrollTop = wrap.scrollHeight;
+        lastRenderedElement = contentElement;
+        lastRenderedContent = message.content;
+        lastRenderedSources = message.sources;
+        lastRenderedStatus = statusText;
+      }
+    });
   }
 
   function editField(id){
@@ -1615,18 +1635,25 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           throw new Error("L’IA locale est disponible en chat simple, sans recherche web, équipe IA ni fichiers Bara.");
         }
         data = await callLocalModel(persona, convo, chunk => {
+          if(!chunk) return;
           streamingMessage.content += chunk;
           renderStreamingMessage();
         });
       }else if(state.hasActiveModels || ["image", "video", "audio"].includes(selectedMode)){
         data = await callBackend(persona, text, convo, chunk => {
+          if(!chunk) return;
           streamingMessage.content += chunk;
           renderStreamingMessage();
         }, editTarget?.messageId, event => {
-          if(event.type === 'turn_started') streamingMessage.recoveryToken = event.recovery_token;
-          if(event.type === 'sources') streamingMessage.sources = event.sources || [];
-          if(event.type === 'tool_status') streamingMessage.toolStatus = AI2AIChatTools.statusLabel(event);
-          renderStreamingMessage();
+          if(event.type === 'turn_started'){
+            streamingMessage.recoveryToken = event.recovery_token;
+          }else if(event.type === 'sources'){
+            streamingMessage.sources = event.sources || [];
+            renderStreamingMessage();
+          }else if(event.type === 'tool_status'){
+            streamingMessage.toolStatus = AI2AIChatTools.statusLabel(event);
+            renderStreamingMessage();
+          }
         });
         if(convo.id === null && data.conversation_id){
           convo.id = data.conversation_id;
@@ -1718,6 +1745,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       if(convo.localOnly && !convo.temporary) persistLocalConversations();
       renderAll();
     } finally {
+      renderStreamingMessage.cancel?.();
       state.sending = false;
       renderCredits();
       renderHeader();
