@@ -1,7 +1,7 @@
 # ai_2ai
 # mia
 
-Le système Side-by-Side est décrit dans [EVALUATIONS.md](EVALUATIONS.md) : architecture, migrations, tests, paramètres et activation progressive. Ses quatre fonctionnalités sont désactivées par défaut.
+L’Arène IA propose des duels de modèles à l’aveugle et un classement communautaire agrégé, inspirés des plateformes de comparaison de modèles. Architecture, confidentialité, tests et activation progressive sont décrits dans [EVALUATIONS.md](EVALUATIONS.md) ; ses quatre fonctionnalités restent désactivées par défaut.
 
 Le chat propose aussi des [aperçus interactifs et un lecteur de liens ChatGPT](IDEAS_AND_SHARED_LINKS.md), accessibles dans le menu **+**. Des exemples gratuits se trouvent à `/chat/ideas/`.
 

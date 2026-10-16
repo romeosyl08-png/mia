@@ -1,5 +1,7 @@
 import json
+import math
 import re
+from datetime import timedelta
 from functools import wraps
 
 from django.conf import settings
@@ -7,13 +9,14 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ai_user.models import InsufficientCreditsError
 from chat.billing import credits_per_million_tokens
 
 from . import jobs, services
-from .models import CATEGORIES, ComparisonSession
+from .models import CATEGORIES, ComparisonSession, ModelPerformance
 from .selection import available_models, quote
 
 
@@ -105,6 +108,90 @@ def index(request):
         'rewards': request.user.evaluation_rewards.order_by('-created_at')[:30],
     })
     response['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def leaderboard_rows(category):
+    """Return only fresh, consented Surprise aggregates with adequate support.
+
+    ModelPerformance.routing is built from blinded, non-suspicious votes without
+    reward records. Keep a hard privacy floor even if routing thresholds are
+    configured lower, and do not order disconnected model groups together.
+    """
+    min_votes = max(30, settings.EVALUATION_ROUTING_MIN_SAMPLES)
+    min_users = max(10, settings.EVALUATION_ROUTING_MIN_USERS)
+    cutoff = timezone.now() - timedelta(hours=48)
+    candidates = []
+    for performance in ModelPerformance.objects.filter(
+        category=category, updated_at__gte=cutoff
+    ).select_related('model__provider').order_by('model_id'):
+        stats = performance.statistics.get('routing') if isinstance(performance.statistics, dict) else None
+        if not isinstance(stats, dict):
+            continue
+        votes, users = stats.get('total_comparisons'), stats.get('unique_users')
+        score = stats.get('estimated_quality')
+        connected = stats.get('connected_models')
+        if (type(votes) is not int or votes < min_votes
+                or type(users) is not int or users < min_users
+                or not isinstance(connected, list)
+                or isinstance(score, bool) or not isinstance(score, (int, float))):
+            continue
+        try:
+            score = float(score)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(score) or not 0 <= score <= 1:
+            continue
+        stats = {**stats, 'estimated_quality': score}
+        component = tuple(sorted({model_id for model_id in connected if type(model_id) is int and model_id > 0}))
+        if len(component) < 2 or performance.model_id not in component:
+            continue
+        candidates.append((performance, stats, component))
+
+    components = {}
+    for performance, stats, component in candidates:
+        components.setdefault(component, []).append((performance, stats))
+    supported = [(component, rows) for component, rows in components.items() if len(rows) >= 2]
+    if not supported:
+        return [], min_votes, min_users, None
+    component, rows = max(supported, key=lambda item: (
+        len(item[0]), len(item[1]), sum(row[1]['total_comparisons'] for row in item[1])
+    ))
+    rows.sort(key=lambda item: (
+        -item[1]['estimated_quality'], -item[1]['total_comparisons'],
+        -item[1]['unique_users'], item[0].model.name.casefold()
+    ))
+    ranking = [{
+        'name': performance.model.name,
+        'provider': performance.model.provider.name,
+        'score': stats['estimated_quality'] * 100,
+        'votes': stats['total_comparisons'],
+        'users': stats['unique_users'],
+        'updated_at': performance.updated_at,
+    } for performance, stats in rows]
+    latest = max(row['updated_at'] for row in ranking)
+    return ranking, min_votes, min_users, latest
+
+
+@login_required
+@require_GET
+def leaderboard(request):
+    if not settings.COMPARISON_ENABLED:
+        raise Http404
+    category = request.GET.get('category', 'general')
+    if category not in dict(CATEGORIES):
+        category = 'general'
+    rows, min_votes, min_users, updated_at = leaderboard_rows(category)
+    response = render(request, 'evaluations/leaderboard.html', {
+        'categories': CATEGORIES,
+        'selected_category': category,
+        'leaderboard': rows,
+        'minimum_votes': min_votes,
+        'minimum_users': min_users,
+        'updated_at': updated_at,
+    })
+    response['Cache-Control'] = 'private, no-store'
+    response['Vary'] = 'Cookie'
     return response
 
 

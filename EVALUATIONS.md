@@ -45,6 +45,10 @@ Avant le vote, les réponses JSON ne contiennent ni identifiant/nom de modèle, 
 
 Un modèle peut toutefois s’identifier indirectement par une marque, un alias non enregistré ou son style. Un aveuglement sémantique absolu de texte libre n’est pas garanti. Les entrées et sorties des autres utilisateurs restent protégées par une vérification de propriété sur chaque route.
 
+### Classement communautaire façon Arena
+
+La page authentifiée `/comparisons/leaderboard/` affiche un classement par catégorie à partir des seuls agrégats `routing` : votes du mode Surprise avec consentement, sans signal de suspicion ni dossier de récompense. Elle ne lit et ne publie jamais les questions, les réponses ou les identifiants des votants. Pour limiter les inférences et les classements fragiles, chaque modèle doit avoir au moins 30 votes et 10 évaluateurs distincts, appartenir à la plus grande composante de comparaisons suffisamment soutenue, et disposer d’un calcul actualisé depuis moins de 48 heures. L’indice Bradley–Terry est comparatif et régularisé ; ce n’est ni un pourcentage de réussite ni une garantie. Sans assez de données fraîches, la page explique le seuil au lieu de montrer un classement. Aucun appel fournisseur ou migration n’est ajouté par cette page ; elle reste derrière `COMPARISON_ENABLED`, désactivé par défaut.
+
 Le navigateur affiche les réponses avec `textContent`, sans HTML généré exécutable. Les POST/DELETE utilisent la protection CSRF Django. Les pages et JSON privés sont servis avec `no-store`. Les clés API restent côté serveur. Un brouillon de reprise est conservé dans `sessionStorage`, par compte et par onglet, pendant au plus 24 heures ; aucune génération ne démarre sur un GET ou une actualisation.
 
 ## Sélection automatique et observation du routeur

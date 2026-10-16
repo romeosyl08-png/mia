@@ -261,6 +261,7 @@ class ComparisonTests(TestCase):
         anon = Client()
         self.assertEqual(anon.get(reverse('evaluations:sessions')).status_code, 401)
         self.assertEqual(anon.get(reverse('evaluations:index')).status_code, 302)
+        self.assertEqual(anon.get(reverse('evaluations:leaderboard')).status_code, 302)
         self.client.force_login(self.other)
         for method, name in [('get', 'evaluations:detail'), ('delete', 'evaluations:detail'), ('post', 'evaluations:vote')]:
             response = getattr(self.client, method)(reverse(name, args=[session.pk]), **({} if method == 'get' else {'data': '{}', 'content_type': 'application/json'}))
@@ -298,6 +299,7 @@ class ComparisonTests(TestCase):
     @override_settings(COMPARISON_ENABLED=False)
     def test_feature_disabled_blocks_page_create_and_claim(self):
         self.assertEqual(self.client.get(reverse('evaluations:index')).status_code, 404)
+        self.assertEqual(self.client.get(reverse('evaluations:leaderboard')).status_code, 404)
         self.assertEqual(self.client.post(reverse('evaluations:sessions'), data=json.dumps(self.payload()), content_type='application/json').status_code, 404)
         self.assertIsNone(jobs.claim())
 
@@ -308,11 +310,51 @@ class ComparisonTests(TestCase):
 
     def test_ui_and_navigation_follow_feature_flags(self):
         page = self.client.get(reverse('evaluations:index'))
-        self.assertContains(page, 'Comparaison IA')
+        self.assertContains(page, 'Arène IA')
+        self.assertContains(page, 'classement communautaire')
         self.assertContains(page, 'analysis_consent')
-        self.assertContains(self.client.get('/'), 'Comparaison IA')
+        self.assertContains(self.client.get('/'), 'Arène IA')
         with override_settings(COMPARISON_ENABLED=False):
-            self.assertNotContains(self.client.get('/'), 'Comparaison IA')
+            self.assertNotContains(self.client.get('/'), 'Arène IA')
+
+    @override_settings(EVALUATION_ROUTING_MIN_SAMPLES=30, EVALUATION_ROUTING_MIN_USERS=10)
+    def test_public_leaderboard_shows_only_fresh_supported_routing_aggregates(self):
+        ids = [model.pk for model in self.models]
+        for index, model in enumerate(self.models):
+            ModelPerformance.objects.create(model=model, category='general', statistics={'routing': {
+                'total_comparisons': 50 if index < 2 else 80,
+                'unique_users': 20 if index < 2 else 9,
+                'estimated_quality': .78 - index * .1,
+                'connected_models': ids,
+            }})
+        response = self.client.get(reverse('evaluations:leaderboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Cache-Control'], 'private, no-store')
+        self.assertContains(response, 'Modèle secret 0')
+        self.assertContains(response, 'Modèle secret 1')
+        self.assertNotContains(response, 'Modèle secret 2')
+        self.assertContains(response, 'votes du mode Surprise')
+        self.assertNotContains(response, 'Explique les nombres premiers.')
+        self.assertNotContains(response, 'Une réponse utile.')
+        self.assertEqual(response.context['leaderboard'][0]['name'], 'Modèle secret 0')
+        self.assertEqual(response.context['minimum_votes'], 30)
+        self.assertEqual(response.context['minimum_users'], 10)
+
+    def test_public_leaderboard_requires_fresh_calculations_and_a_connected_pair(self):
+        ids = [model.pk for model in self.models[:2]]
+        for model in self.models[:2]:
+            performance = ModelPerformance.objects.create(model=model, category='general', statistics={'routing': {
+                'total_comparisons': 50, 'unique_users': 20, 'estimated_quality': .7,
+                'connected_models': ids,
+            }})
+            ModelPerformance.objects.filter(pk=performance.pk).update(updated_at=timezone.now() - timedelta(days=3))
+        self.assertContains(self.client.get(reverse('evaluations:leaderboard')), 'Pas encore assez d’évaluations')
+        self.assertEqual(self.client.get(reverse('evaluations:leaderboard') + '?category=unknown').status_code, 200)
+        self.assertEqual(self.client.get(reverse('evaluations:leaderboard') + '?category=coding').context['leaderboard'], [])
+
+    @override_settings(COMPARISON_ENABLED=False)
+    def test_public_leaderboard_obeys_comparison_kill_switch(self):
+        self.assertEqual(self.client.get(reverse('evaluations:leaderboard')).status_code, 404)
 
     def test_private_deletion_withdraws_consent_and_preserves_idempotency(self):
         payload = self.payload(analysis_consent=True)

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Classement des modèles — Arène IA{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/comparisons.css' %}">{% endblock %}
+{% block body %}
+<main class="work-page comparison-page leaderboard-page">
+  <a href="{% url 'evaluations:index' %}" class="page-back">← Retour à l’Arène IA</a>
+  <p class="page-eyebrow">Résultats communautaires · mise à jour glissante</p>
+  <h1>Classement des modèles</h1>
+  <p>Un indice comparatif calculé à partir des duels anonymes. Ce score régularisé n’est ni un pourcentage de réussite ni une garantie de qualité.</p>
+
+  <form class="leaderboard-filter" method="get" action="{% url 'evaluations:leaderboard' %}">
+    <label for="leaderboardCategory">Catégorie</label>
+    <select id="leaderboardCategory" name="category">
+      {% for value,label in categories %}<option value="{{ value }}"{% if selected_category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit">Afficher</button>
+  </form>
+
+  {% if leaderboard %}
+    <p class="comparison-help leaderboard-updated">Calcul actualisé le {{ updated_at|date:"d/m/Y à H:i" }}. Uniquement les modèles reliés par des comparaisons communes sont classés ensemble.</p>
+    <div class="leaderboard-table-wrap" role="region" aria-label="Classement des modèles" tabindex="0">
+      <table class="leaderboard-table">
+        <caption class="sr-only">Classement agrégé des modèles pour la catégorie choisie</caption>
+        <thead><tr><th scope="col">Rang</th><th scope="col">Modèle</th><th scope="col">Indice /100</th><th scope="col">Duels</th><th scope="col">Évaluateurs</th></tr></thead>
+        <tbody>
+          {% for row in leaderboard %}
+          <tr>
+            <td class="leaderboard-rank">{{ forloop.counter }}</td>
+            <th scope="row"><span>{{ row.name }}</span><small>{{ row.provider }}</small></th>
+            <td class="leaderboard-score">{{ row.score|floatformat:1 }}</td>
+            <td>{{ row.votes }}</td>
+            <td>{{ row.users }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <section class="leaderboard-empty" role="status">
+      <h2>Pas encore assez d’évaluations</h2>
+      <p>Un modèle n’apparaît qu’après au moins {{ minimum_votes }} duels et {{ minimum_users }} évaluateurs distincts, et seulement s’il est relié à d’autres modèles dans la même catégorie.</p>
+      <p>Le classement utilise les votes du mode Surprise avec consentement explicite. Les questions, réponses et identités des votants ne sont jamais affichées ici.</p>
+    </section>
+  {% endif %}
+
+  <p class="comparison-help leaderboard-privacy">Ce classement expérimental n’est pas représentatif de tous les usages. Il n’utilise que les votes du mode Surprise donnés avec consentement explicite ; les votes suspects ou associés à des récompenses sont exclus. Aucune question, réponse ou identité de votant n’est affichée ; les statistiques sont agrégées et doivent être recalculées régulièrement.</p>
+  <a class="leaderboard-action" href="{% url 'evaluations:index' %}">Lancer un duel à l’aveugle →</a>
+</main>
+{% endblock %}

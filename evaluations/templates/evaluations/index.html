@@ -1,13 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}Comparaison IA — 2AI{% endblock %}
+{% block title %}Arène IA — 2AI{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/comparisons.css' %}">{% endblock %}
 {% block body %}
 <main class="work-page comparison-page" id="comparisonApp" data-user-id="{{ request.user.pk }}" data-sessions-url="{% url 'evaluations:sessions' %}" data-models-url="{% url 'evaluations:models' %}">
   <a href="{% url 'chat:chat-home' %}" class="page-back">← Retour au chat</a>
-  <p class="page-eyebrow">Deux regards, une question</p>
-  <h1>Comparaison IA</h1>
-  <p>Comparez deux réponses, puis donnez votre avis. En mode Surprise, les identités restent masquées jusqu’au vote.</p>
+  <p class="page-eyebrow">Arène communautaire · réponses à l’aveugle</p>
+  <h1>Arène IA</h1>
+  <p>Posez la même question à deux modèles, choisissez la meilleure réponse, puis découvrez leurs identités en mode Surprise.</p>
+  <p class="comparison-leaderboard-link"><a href="{% url 'evaluations:leaderboard' %}">Voir le classement communautaire des modèles →</a></p>
   <form id="comparisonForm">
     {% csrf_token %}
     <fieldset id="comparisonInputs">

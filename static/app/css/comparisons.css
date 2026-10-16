@@ -18,4 +18,26 @@
 .comparison-page li button { margin: 0 8px 6px 0; }
 .comparison-page #voteForm { padding: 20px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
 .comparison-page #comparisonNotice { min-height: 24px; }
-@media (max-width: 700px) { .comparison-columns { grid-template-columns: minmax(0, 1fr); } .comparison-answer { max-height: 55dvh; } }
+.comparison-leaderboard-link { margin: 20px 0 28px; }
+.comparison-leaderboard-link a, .leaderboard-action { color: var(--accent-ink); font-weight: 700; text-decoration: none; }
+.comparison-leaderboard-link a:hover, .leaderboard-action:hover { text-decoration: underline; }
+.leaderboard-filter { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 24px 0; }
+.leaderboard-filter label { flex-basis: 100%; font-weight: 600; }
+.leaderboard-filter select { flex: 1 1 220px; max-width: 360px; }
+.leaderboard-filter button { flex: 0 0 auto; }
+.leaderboard-updated { margin: 12px 0 16px; }
+.leaderboard-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.leaderboard-table { width: 100%; min-width: 560px; border-collapse: collapse; text-align: left; }
+.leaderboard-table th, .leaderboard-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.leaderboard-table thead th { color: var(--ink-soft); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.leaderboard-table tbody tr:last-child th, .leaderboard-table tbody tr:last-child td { border-bottom: 0; }
+.leaderboard-table tbody th { font-weight: 700; }
+.leaderboard-table tbody th small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 12px; font-weight: 400; }
+.leaderboard-rank { width: 70px; color: var(--ink-soft); }
+.leaderboard-score { color: var(--accent-ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.leaderboard-empty { margin: 24px 0; padding: 22px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--paper); }
+.leaderboard-empty h2 { margin-top: 0; font-size: 20px; }
+.leaderboard-empty p { margin-bottom: 0; color: var(--ink-soft); }
+.leaderboard-privacy { margin: 20px 0; }
+.leaderboard-action { display: inline-flex; margin: 8px 0 24px; }
+@media (max-width: 700px) { .comparison-columns { grid-template-columns: minmax(0, 1fr); } .comparison-answer { max-height: 55dvh; } .leaderboard-filter button { flex: 1 1 100%; } .leaderboard-table th, .leaderboard-table td { padding: 11px 12px; } }
