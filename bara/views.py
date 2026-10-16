@@ -456,8 +456,9 @@ BASE_PROMPT = (
 )
 
 
-def _build_system_prompt(workspace, query="", actor=None):
+def _build_system_prompt(workspace, query="", actor=None, conversation=None):
     from chat.memory import memory_context
+    from chat.continuity import related_conversation_context
     prompt = BASE_PROMPT
     prompt += '\n\n' + memory_context(actor or workspace.user, workspace)
     if workspace.instructions.strip():
@@ -469,21 +470,26 @@ def _build_system_prompt(workspace, query="", actor=None):
     context = get_workspace_context(workspace, query)
     if context:
         prompt += "\n\n" + context
+    continuity = related_conversation_context(
+        actor or workspace.user, query, workspace=workspace, work_conversation=conversation,
+    )
+    if continuity:
+        prompt += '\n\n' + continuity
     return prompt
 
 
 @login_required
 def workspace_detail(request, workspace_id, conversation_id=None):
     workspace = get_workspace(request, workspace_id)
-    if conversation_id is None:
+    if conversation_id is None and request.GET.get('view') != 'conversations':
         conversation = workspace.conversations.first() or WorkConversation.objects.create(workspace=workspace)
         return redirect("bara:conversation", workspace_id=workspace.id, conversation_id=conversation.id)
-    conversation = get_object_or_404(WorkConversation, id=conversation_id, workspace=workspace)
+    conversation = get_object_or_404(WorkConversation, id=conversation_id, workspace=workspace) if conversation_id is not None else None
     return render(request, "bara/workspace.html", {
         "workspace": workspace,
         "conversation": conversation,
         "conversations": workspace.conversations.all(),
-        "messages": conversation.messages.all(),
+        "messages": conversation.messages.all() if conversation else [],
         "tree": build_tree(list(workspace.files.all())),
         "builtin_tools": [tool for tool in get_tools() if tool["name"] not in PLUGIN_TOOL_NAMES],
         "disabled_tools": workspace.disabled_tools or [],
@@ -672,9 +678,9 @@ def send_message(request, workspace_id, conversation_id):
             status=400,
         )
 
-    past_messages = conversation_history(conversation.messages)
+    past_messages = conversation_history(conversation.messages, content)
     messages_payload = list(past_messages) + [{"role": "user", "content": content}]
-    system_prompt = _build_system_prompt(workspace, content, actor=request.user)
+    system_prompt = _build_system_prompt(workspace, content, actor=request.user, conversation=conversation)
     tool_schemas, mcp_tool_map = _tools_schema(workspace)
     active_tool_names = [tool["function"]["name"] for tool in tool_schemas]
     system_prompt += "\n\nOutils réellement activés pour cette demande : " + ", ".join(active_tool_names)

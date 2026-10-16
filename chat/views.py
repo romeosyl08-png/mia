@@ -32,6 +32,7 @@ from bara.services import get_workspace_context, actual_cost_credits
 from bara.tools import definitions as bara_tool_definitions  # noqa: F401
 from chat.services import check_user_rate_limit
 from .context import conversation_history
+from .continuity import related_conversation_context
 from .file_tools import MAX_FILE_TOOL_ITERATIONS, run_file_tools as _run_file_tools, stream_chat_tools
 from .sources import CITATION_INSTRUCTIONS, SourceCollector
 from .team import estimate_team_cost
@@ -403,7 +404,7 @@ class SendMessageView(View):
 			conversation_messages = conversation.messages.filter(role__in={'user', 'assistant'})
 			if edit_message:
 				conversation_messages = conversation_messages.filter(id__lt=edit_message.id)
-			messages = conversation_history(conversation_messages)
+			messages = conversation_history(conversation_messages, content)
 		messages.append({'role': 'user', 'content': content})
 		search_query = _web_search_query(content, messages) if mode == 'web' else None
 
@@ -429,6 +430,11 @@ class SendMessageView(View):
 			)
 		if not temporary:
 			full_system_prompt += shared_persona_context(request.user, persona, preferences=preferences)
+			continuity = related_conversation_context(
+				request.user, content, persona=persona, workspace=workspace, conversation=conversation,
+			)
+			if continuity:
+				full_system_prompt += '\n\n' + continuity
 		if workspace:
 			full_system_prompt += (
 				"\n\nTu peux utiliser les outils du workspace sélectionné avec les outils disponibles. "

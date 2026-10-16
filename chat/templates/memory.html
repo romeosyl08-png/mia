@@ -7,6 +7,7 @@
   <a href="{% if workspace %}{% url 'bara:detail' workspace.id %}{% else %}{% url 'chat:chat-home' %}{% endif %}">← Retour</a>
   <h1>{% if workspace %}Mémoire de {{ workspace.title }}{% else %}Ma mémoire{% endif %}</h1>
   <p>Retrouve tes préférences avec les modèles que tu utilises dans 2AI.{% if workspace %} Cette mémoire s’applique uniquement à ce projet.{% endif %}</p>
+  <p class="memory-hint">Les longues conversations utilisent aussi des extraits des anciens échanges pour garder le fil.{% if workspace %} Lorsque la mémoire du projet est activée, l’assistant peut retrouver des passages des autres conversations accessibles de cet espace.{% else %} L’assistant peut retrouver des passages des autres conversations enregistrées du même persona.{% endif %} Les extraits peuvent être incomplets ; les échanges originaux restent dans l’historique.</p>
 
   {% for message in messages %}<p class="notice-success" role="status">{{ message }}</p>{% endfor %}
   {% if error %}<p class="memory-error" role="alert">{{ error }}</p>{% endif %}

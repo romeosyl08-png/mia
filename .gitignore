@@ -1,4 +1,7 @@
 .env
+.env.before-local-postgres-*
+.env.local-postgres-*
+.local/postgresql/
 fiches.txt
 db.sqlite3
 staticfiles/

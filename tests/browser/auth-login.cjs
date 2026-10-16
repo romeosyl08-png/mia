@@ -35,11 +35,13 @@ let browser;
   await page.locator('[data-password-target="id_login_password"]').click();
   assert.equal(await loginPassword.getAttribute('type'), 'password');
 
+  await page.locator('#panelLogin .auth-other-options summary').click();
   await page.locator('#waToggle').click();
   assert.ok(await page.locator('#waPanel').isVisible());
   assert.match(await page.locator('#waPanel').innerText(), /indisponible pour le moment/i);
 
   await page.locator('#tabSignup').click();
+  await page.locator('#panelSignup .auth-other-options summary').click();
   for (const id of ['id_signup_password1', 'id_signup_password2']) {
     await page.locator(`#${id}`).fill('inscription-test');
     await page.locator(`[data-password-target="${id}"]`).click();

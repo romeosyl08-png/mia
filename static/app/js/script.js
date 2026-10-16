@@ -1455,10 +1455,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const localModel = convo.localModel || state.localAI;
     if(!localModel?.modelId || !localModel.baseUrl) throw new Error("Configure d’abord ton modèle local.");
     const baseUrl = normalizeLocalBaseUrl(localModel.baseUrl);
-    const messages = convo.messages
+    const messages = window.AI2AIConversationContext.build(convo.messages
       .filter(message => !message.streaming && ["user", "bot"].includes(message.role))
-      .slice(-40)
-      .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content }));
+      .map(message => ({ role: message.role === "bot" ? "assistant" : "user", content: message.content })));
     const personaPrompt = await window.AI2AIPersonaContext.load(persona, convo);
     if(personaPrompt) messages.unshift({ role: "system", content: personaPrompt });
 

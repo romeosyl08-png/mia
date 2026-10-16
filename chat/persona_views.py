@@ -5,6 +5,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
 from .memory import memory_context
+from .continuity import related_conversation_context
 from .models import Persona
 from .persona_context import ensure_big_persona, persona_settings, persona_snapshot, shared_persona_context
 from .temporary import persona_memory_context, selected_memory_persona
@@ -38,4 +39,6 @@ def persona_context(request, pk):
     if persona.memory.strip():
         parts.append('Préférences mémorisées pour ce persona :\n' + persona.memory[:8000])
     parts.append(shared_persona_context(request.user, persona))
+    # A local-only conversation never uploads its messages for server-side recall.
+    parts.append(related_conversation_context(request.user, persona=persona))
     return JsonResponse({'system_prompt': '\n\n'.join(part for part in parts if part.strip())})

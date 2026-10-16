@@ -141,6 +141,19 @@ La commande ne crédite que les factures confirmées, signées et dont le montan
 
 ## PostgreSQL local
 
+Avec PostgreSQL installé sous Linux, une instance dédiée au projet peut être créée sans modifier les autres installations :
+
+```sh
+python scripts/local_postgres.py setup
+python manage.py migrate
+```
+
+Le script démarre PostgreSQL sur `127.0.0.1:55432`, crée la base `ai_2ai` et son utilisateur, puis configure `DATABASE_URL` dans `.env` avec un mot de passe aléatoire. Il sauvegarde le `.env` précédent et règle `LOG_LEVEL=INFO`. Les données, journaux et sauvegardes de configuration sont exclus de Git ; les données restent dans `.local/postgresql/data/`. Il s'agit d'une base neuve. L'utilisateur local peut créer les bases de test Django.
+
+Après un redémarrage de l'ordinateur, lance `python scripts/local_postgres.py start` avant `python manage.py runserver`. Les commandes `status` et `stop` permettent de vérifier ou d'arrêter cette instance. `setup` sert à l'installation et renouvelle les identifiants ; `start` conserve la configuration et les données existantes.
+
+Pour utiliser une autre instance PostgreSQL déjà configurée, renseigne sa connexion directement :
+
 Le fichier `.env` à la racine du projet (`ai_2ai/.env`) peut sélectionner une base PostgreSQL locale :
 
 ```dotenv
@@ -183,7 +196,11 @@ L’API compatible OpenAI accepte aussi `model="auto"` et expose cette option da
 
 Chaque appel d'une équipe est facturé selon les tarifs du modèle qui l'a exécuté, y compris la synthèse ou la vérification finale. Les réservations sont ajustées avec une règle commune au chat, à Bara et à l'API ; les échecs réseau avant réponse sont remboursés. Un éventuel complément impossible à débiter est signalé dans le chat et Bara.
 
-L'historique transmis aux modèles est limité aux échanges récents avec `CHAT_HISTORY_MAX_MESSAGES=48` et `CHAT_HISTORY_MAX_CHARS=48000`. Cette limite concerne le contexte fournisseur, pas l'historique sauvegardé. Les conversations reprennent leur place dans les échanges récents après chaque nouvelle réponse.
+L'historique transmis aux modèles est limité par `CHAT_HISTORY_MAX_MESSAGES=48` et `CHAT_HISTORY_MAX_CHARS=48000`. Il combine les échanges récents, une mémoire extraite des anciens messages et des passages anciens retrouvés selon la demande actuelle. Une part du budget est réservée aux anciens échanges, même lorsque quelques messages très longs remplissent la fenêtre. La mémoire privilégie les décisions, contraintes et valeurs chiffrées, conserve l'auteur de chaque extrait et traite tout le retard initial ; elle se met ensuite à jour progressivement. Le rappel recherche dans les messages originaux, y compris les détails absents du résumé. La compression est locale et extractive : aucun appel de modèle ni d'embeddings supplémentaire. Elle reste incomplète et la recherche utilise des mots communs à la demande et aux messages ; elle ne garantit pas de retrouver toute information ou une paraphrase sans mot commun. L'historique sauvegardé reste complet. Une branche modifiée ne reçoit pas les messages futurs de l'ancienne branche.
+
+Les nouvelles demandes peuvent aussi retrouver des extraits des autres conversations enregistrées du même persona ou de l'espace Bara sélectionné. Les conversations d'autres personas ne deviennent pas des sources par la liaison Big Persona. Dans un espace partagé, les conversations Bara sont accessibles aux membres autorisés ; les conversations privées du chat restent limitées à leur auteur. Les sources sont relues à chaque demande et supprimer une conversation la retire du rappel. Désactiver la mémoire du projet désactive aussi le rappel entre conversations de cet espace. Les conversations temporaires ne reçoivent pas ce rappel. Les modèles locaux compressent leur historique dans le navigateur sans transmettre les messages locaux au serveur ; ils peuvent recevoir les extraits récents des conversations déjà enregistrées du persona, sans recherche serveur fondée sur leur message local.
+
+`CHAT_CONTEXT_SUMMARY_MAX_CHARS=5000` et `CHAT_CONTEXT_RECALL_MAX_CHARS=6000` plafonnent les parties anciennes, incluses dans le budget d'historique. `CHAT_CONTEXT_RELATED_MAX_CHARS=6000` plafonne séparément les extraits des autres conversations ; `0` désactive ce rappel. Les instructions, mémoires explicites et documents s'ajoutent à ces budgets. Le mécanisme couvre le chat hébergé, Bara et ses tâches ; les champs de résumé existants sont réutilisés sans migration. Les préférences écrites par l'utilisateur ne sont pas modifiées automatiquement.
 
 Les résultats d’outils envoyés aux modèles utilisent du JSON compact sans modifier leurs données. Les instructions et sources de citation ne sont plus répétées dans un même prompt, et les passages documentaires qui se chevauchent sont fusionnés quand leur contenu correspond exactement dans le même fichier et la même page. L’historique sauvegardé, les préférences, les sources affichées et les limites de sortie sont conservés. Les mesures sur des exemples fictifs et les pistes supplémentaires de réduction du contexte sont détaillées dans `fiches.txt`, sections 19 et 20 ; les gains réels en tokens dépendent du modèle et des demandes.
 
@@ -192,6 +209,10 @@ Chaque compte dispose aussi de **Big Persona**, créé par la migration `chat.00
 Big Persona reçoit les sources autorisées, le profil du compte (nom, e-mail, date d’inscription et solde) et les réglages fonctionnels du site : génération, fonctionnalités, limites, tarification et modèles de médias. Ces informations sont sélectionnées explicitement côté serveur ; les mots de passe, clés API, secrets OAuth et paramètres de connexion à la base ne sont pas transmis. Le panneau **Big Persona** permet de consulter le profil et les réglages accessibles et d’ouvrir sa conversation. Le contexte est relu à chaque demande, pour les modèles hébergés comme locaux, sans recopier les mémoires sources dans celle de Big Persona. Une révocation s’applique aux prochaines demandes ; les messages déjà échangés ne sont pas effacés. Le contexte partagé utilise du JSON compact, mais sa taille augmente avec les sources autorisées.
 
 Applique la migration avec `python manage.py migrate` avant de démarrer cette version. Les nouveaux endpoints authentifiés `/chat/api/big-persona/` et `/chat/api/personas/<id>/context/` renvoient uniquement le contexte du compte connecté avec `Cache-Control: no-store`. Big Persona est un persona intégré, unique par compte ; son type ne peut pas être forgé via l’API et il ne peut pas servir de source partagée ni être supprimé par cette API.
+
+### Conversations dans Bara
+
+Dans un espace Bara, le bouton **+** crée une conversation dans un nouvel onglet. La **croix** ferme uniquement l'onglet : la conversation et ses messages restent accessibles dans la liste verticale **Conversations** à gauche. Un clic dans cette liste rouvre l'onglet. Fermer le dernier onglet affiche l'accueil de l'espace sans créer de conversation supplémentaire. Les onglets ouverts sont mémorisés dans le navigateur, séparément pour chaque compte et chaque espace ; ce réglage n'est pas synchronisé entre appareils.
 
 ### Sécurité des outils Bara
 

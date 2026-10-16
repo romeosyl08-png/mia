@@ -11,11 +11,11 @@
 {% if workspace %}<link rel="stylesheet" href="{% static 'app/vendor/highlight.github-dark.min.css' %}?v=11.9.0"
       integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
       crossorigin="anonymous">{% endif %}
-<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=conversation-tabs-1">
+<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=conversation-tabs-2">
 {% endblock %}
 
 {% block body %}
-<div class="bara-wrap{% if workspace %} bara-workbench{% else %} bara-home{% endif %}"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
+<div class="bara-wrap{% if workspace %} bara-workbench{% else %} bara-home{% endif %}"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-user-id="{{ request.user.id }}" data-conversation-id="{{ conversation.id|default:'' }}" data-conversations-url="{% url 'bara:detail' workspace.id %}?view=conversations" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
 
 {% if not workspace %}
 
@@ -44,7 +44,7 @@
 
   <div class="ws-list">
     {% for item in workspaces %}
-      <a class="ws-card" href="{% url 'bara:detail' item.id %}">
+      <a class="ws-card" href="{% url 'bara:detail' item.id %}?view=conversations">
         <strong>{{ item.title }}</strong>
         <span>{% if item.auto_route %}Auto 2AI{% else %}{{ item.active_model.name|default:default_model_name|default:"Aucun modèle disponible" }}{% endif %} · {{ item.updated_at|date:"d/m/Y" }}</span>
       </a>
@@ -106,6 +106,9 @@
       <button type="button" class="activity-button active" data-workbench-target="workspace-files-panel" title="Explorateur de fichiers" aria-label="Afficher les fichiers">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/></svg>
       </button>
+      <button type="button" class="activity-button" data-workbench-target="workspace-conversations-panel" title="Conversations" aria-label="Afficher les conversations rangées">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4Z"/><path d="M8 8h8M8 12h5"/></svg>
+      </button>
       <button type="button" class="activity-button" data-workbench-target="workspace-tools-panel" title="Outils" aria-label="Afficher les outils">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14.7 6.3 3-3a5 5 0 0 1-6.4 6.4l-7 7a2.1 2.1 0 0 0 3 3l7-7a5 5 0 0 0 6.4-6.4l-3 3-3-3Z"/></svg>
       </button>
@@ -119,6 +122,18 @@
     </nav>
     <aside class="bara-sidebar" aria-label="Explorateur Bara">
       <div class="explorer-title"><span>EXPLORATEUR</span><strong>{{ workspace.title }}</strong></div>
+
+      <details class="side-details side-block" id="workspace-conversations-panel" open>
+        <summary>Conversations <span id="closed-conversation-count"></span></summary>
+        <nav class="sidebar-conversations" aria-label="Conversations rangées">
+          {% for c in conversations %}
+            <a class="sidebar-conversation" data-conversation-id="{{ c.id }}" href="{% url 'bara:conversation' workspace.id c.id %}" title="{{ c.title }}">
+              <span aria-hidden="true">◇</span><span class="sidebar-conversation-title">{{ c.title }}</span>
+            </a>
+          {% endfor %}
+        </nav>
+        <p class="conversation-list-hint" id="closed-conversations-empty">Les onglets fermés apparaîtront ici.</p>
+      </details>
 
       <details class="side-details side-block" id="workspace-instructions-panel" {% if workspace.instructions %}open{% endif %}>
         <summary>Instructions pour l'agent</summary>
@@ -316,18 +331,13 @@
       <div class="editor-tabs">
         <nav class="conversation-tabs" aria-label="Conversations de l’espace">
           {% for c in conversations %}
-            <div class="editor-tab{% if c.id == conversation.id %} active{% endif %}">
+            <div class="editor-tab{% if c.id == conversation.id %} active{% endif %}" data-conversation-id="{{ c.id }}">
               <a class="editor-tab-link" href="{% url 'bara:conversation' workspace.id c.id %}" title="{{ c.title }}"{% if c.id == conversation.id %} aria-current="page"{% endif %}>
                 <span class="tab-icon" aria-hidden="true">◇</span>
                 <span class="tab-title">{{ c.title }}</span>
                 {% if c.id == conversation.id %}<span class="tab-dirty" title="Conversation active" aria-hidden="true">●</span>{% endif %}
               </a>
-              {% if workspace.can_write %}
-              <form class="tab-close-form" method="post" action="{% url 'bara:delete-conversation' workspace.id c.id %}" onsubmit="return confirm('Supprimer cette conversation ?');">
-                {% csrf_token %}
-                <button class="tab-close" type="submit" title="Supprimer la conversation" aria-label="Supprimer la conversation {{ c.title }}">✕</button>
-              </form>
-              {% endif %}
+              <button class="tab-close" type="button" title="Fermer l’onglet et ranger la conversation" aria-label="Fermer l’onglet {{ c.title }}">✕</button>
             </div>
           {% endfor %}
         </nav>
@@ -339,8 +349,9 @@
         {% endif %}
       </div>
       <div class="editor-breadcrumb" aria-label="Emplacement actuel">
-        <span>Bara</span><span aria-hidden="true">›</span><span>{{ workspace.title }}</span><span aria-hidden="true">›</span><strong>{{ conversation.title }}</strong>
+        <span>Bara</span><span aria-hidden="true">›</span><span>{{ workspace.title }}</span><span aria-hidden="true">›</span><strong>{{ conversation.title|default:'Conversations' }}</strong>
       </div>
+      <div id="conversation-tab-status" class="sr-only" role="status" aria-live="polite"></div>
       <div class="editor-content">
       <div id="preview-panel">
         <div class="bar">
@@ -372,14 +383,14 @@
             <div class="bara-msg-content">{{ message.content }}</div>
           </div>
         {% empty %}
-          <div class="bara-empty-state">Envoie un message ou dépose un fichier pour démarrer.</div>
+          <div class="bara-empty-state">{% if conversation %}Envoie un message ou dépose un fichier pour démarrer.{% else %}Ouvre une conversation à gauche ou utilise le bouton + pour en créer une.{% endif %}</div>
         {% endfor %}
       </div>
 
-      <form id="agent-form" action="{% url 'bara:message' workspace.id conversation.id %}" class="bara-composer">
+      <form id="agent-form"{% if conversation %} action="{% url 'bara:message' workspace.id conversation.id %}"{% else %} hidden{% endif %} class="bara-composer">
         {% csrf_token %}
-        <textarea id="message-content" name="content" placeholder="{% if workspace.can_write %}Que veux-tu faire ?{% else %}Accès en lecture seule{% endif %}" rows="1" required {% if not workspace.can_write %}disabled{% endif %}></textarea>
-        <button type="submit" id="submit-btn" title="Envoyer">➜</button>
+        <textarea id="message-content" name="content" placeholder="{% if workspace.can_write %}Que veux-tu faire ?{% else %}Accès en lecture seule{% endif %}" rows="1" required {% if not workspace.can_write or not conversation %}disabled{% endif %}></textarea>
+        <button type="submit" id="submit-btn" title="Envoyer"{% if not workspace.can_write or not conversation %} disabled{% endif %}>➜</button>
         <button type="button" id="stop-btn" title="Arrêter" style="display:none;">■</button>
       </form>
       </div>
@@ -408,6 +419,7 @@
 <script defer src="{% static 'app/vendor/highlight.min.js' %}?v=11.9.0"
         integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp"
         crossorigin="anonymous"></script>
-<script defer src="{% static 'app/js/workspace.js' %}?v=conversation-tabs-1"></script>
+<script defer src="{% static 'app/js/workspace.js' %}?v=conversation-tabs-2"></script>
+<script defer src="{% static 'app/js/workspace_conversations.js' %}?v=conversation-tabs-2"></script>
 {% endif %}
 {% endblock %}

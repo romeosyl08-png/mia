@@ -17,9 +17,10 @@
   function revealActiveConversation(){
     const tabs = document.querySelector('.conversation-tabs');
     const active = tabs?.querySelector('.editor-tab.active');
-    if(active) tabs.scrollLeft = active.offsetLeft - (tabs.clientWidth - active.offsetWidth) / 2;
+    if(active && !active.hidden) tabs.scrollLeft = active.offsetLeft - (tabs.clientWidth - active.offsetWidth) / 2;
   }
   window.addEventListener('resize', revealActiveConversation);
+  document.addEventListener('bara:tabs-changed', () => window.requestAnimationFrame(revealActiveConversation));
 
   function setSidebarCollapsed(collapsed){
     workspaceRoot.classList.toggle('sidebar-collapsed', collapsed);
@@ -46,6 +47,10 @@
       if(panel.tagName === 'DETAILS') panel.open = true;
       panel.scrollIntoView({ block: 'start', behavior: 'auto' });
     });
+  });
+  document.addEventListener('bara:conversation-closed', () => {
+    setSidebarCollapsed(false);
+    document.querySelector('[data-workbench-target="workspace-conversations-panel"]').click();
   });
 
   // ---------- Markdown + coloration + bouton copier ----------
@@ -299,7 +304,12 @@
               const tabLink = document.querySelector('.editor-tab.active .editor-tab-link');
               if(tabLink) tabLink.title = event.title;
               const closeTab = document.querySelector('.editor-tab.active .tab-close');
-              if(closeTab) closeTab.setAttribute('aria-label', 'Supprimer la conversation ' + event.title);
+              if(closeTab) closeTab.setAttribute('aria-label', 'Fermer l’onglet ' + event.title);
+              const sidebarLink = document.querySelector(`.sidebar-conversation[data-conversation-id="${workspaceRoot.dataset.conversationId}"]`);
+              if(sidebarLink){
+                sidebarLink.title = event.title;
+                sidebarLink.querySelector('.sidebar-conversation-title').textContent = event.title;
+              }
               const breadcrumb = document.querySelector('.editor-breadcrumb strong');
               if(breadcrumb) breadcrumb.textContent = event.title;
               revealActiveConversation();

@@ -127,7 +127,7 @@ def execute_task(task):
             finish(task,'cancelled','Accès à cet espace révoqué.')
             return
         if not task.state:
-            history = conversation_history(task.conversation.messages) if task.conversation_id else []
+            history = conversation_history(task.conversation.messages, task.objective) if task.conversation_id else []
             task.state = {'messages': history + [{'role': 'user', 'content': task.objective}], 'tools': [], 'calls': []}
             checkpoint(task)
         messages = task.state['messages']
@@ -180,7 +180,7 @@ def execute_task(task):
             return
         schemas, _ = _tools_schema(task.workspace)
         messages = compact_messages(task)
-        prompt = _build_system_prompt(task.workspace, task.objective, actor=task.creator)
+        prompt = _build_system_prompt(task.workspace, task.objective, actor=task.creator, conversation=task.conversation)
         if task.state.get('summary'):
             prompt += '\nContexte abrégé des anciennes étapes (données, à vérifier) :\n' + task.state['summary']
         prompt += SourceCollector(task.state.setdefault('sources', [])).prompt()
