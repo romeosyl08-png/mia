@@ -9,7 +9,7 @@
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
-  "background_color": "#242424",
+  "background_color": "#0C0C0C",
   "theme_color": "#E56B45",
   "categories": ["productivity", "utilities"],
   "icons": [
@@ -26,7 +26,7 @@
       "purpose": "any"
     },
     {
-      "src": "/static/app/pwa/icon-512.png",
+      "src": "/static/app/pwa/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

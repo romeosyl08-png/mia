@@ -5,6 +5,15 @@ Il conserve des projets privés, des sources, des références, des masques, des
 et des versions de scène. La restauration crée une nouvelle version ; aucun endpoint
 ne supprime les projets, les médias ou les versions.
 
+L’interface de montage utilise des panneaux sombres et compacts : médias et exports
+à gauche, moniteur central, onglets **Outils IA**, **Clips** et **Projet** à droite,
+et timeline en bas. Sélectionne un média pour le lire dans le moniteur **Source**,
+ou un clip de la timeline pour ouvrir ses réglages. La timeline affiche les durées
+des plans, les décalages audio, la position de lecture et un zoom réglable.
+Le moniteur **Montage** permet de parcourir et lire les plans avec les pistes audio
+du projet. Le son intégré aux vidéos reste exclu, comme lors de l’export. Sur mobile,
+les panneaux se placent sous le moniteur et la timeline.
+
 ## Fonctionnement
 
 - Un projet peut utiliser les instructions et la mémoire d’un persona appartenant au

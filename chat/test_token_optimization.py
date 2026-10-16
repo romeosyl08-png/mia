@@ -88,6 +88,7 @@ class ChatPromptOptimizationTests(TestCase):
         self.assertEqual(provider.call_args.args[3][-1], {'role': 'user', 'content': 'Bonjour'})
         self.assertEqual(provider.call_args.args[6], 500)
 
+    @override_settings(SEARCH_API_KEY='test-search-key')
     def test_web_chat_preserves_search_snippets_citations_and_client_source_records(self):
         sources = [{'title': 'Source', 'link': 'https://example.test/fact', 'snippet': 'Fait vérifié unique'}]
         with patch('chat.views.bara_tool_definitions.web_search', return_value={'results': sources}), \

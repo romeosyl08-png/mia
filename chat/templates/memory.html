@@ -1,11 +1,84 @@
-{% extends 'base.html' %}{% block body %}
-<main class="work-page">
-<a href="{% if workspace %}{% url 'bara:detail' workspace.id %}{% else %}/{% endif %}">← Retour</a>
-<h1>{% if workspace %}Mémoire de {{ workspace.title }}{% else %}Ma mémoire{% endif %}</h1>
-<p>Ces préférences sont fournies à l’assistant lorsque la mémoire est activée. Modifie-les ou efface le texte pour les supprimer.</p>
-<form method="post">{% csrf_token %}
-<label><input type="checkbox" name="enabled" {% if enabled %}checked{% endif %}> Utiliser cette mémoire</label>
-<textarea name="content" maxlength="8000" rows="12" style="display:block;width:100%">{{ content }}</textarea>
-{% if workspace %}<label><input type="checkbox" name="semantic_search" {% if workspace.semantic_search %}checked{% endif %}> Recherche par le sens (envoie les passages au fournisseur d’embeddings configuré)</label>{% endif %}
-<button>Enregistrer</button>
-</form></main>{% endblock %}
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if workspace %}Mémoire de {{ workspace.title }}{% else %}Ma mémoire{% endif %} — 2AI{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/memory.css' %}?v=import-1">{% endblock %}
+{% block body %}
+<main class="work-page memory-page">
+  <a href="{% if workspace %}{% url 'bara:detail' workspace.id %}{% else %}{% url 'chat:chat-home' %}{% endif %}">← Retour</a>
+  <h1>{% if workspace %}Mémoire de {{ workspace.title }}{% else %}Ma mémoire{% endif %}</h1>
+  <p>Retrouve tes préférences avec les modèles que tu utilises dans 2AI.{% if workspace %} Cette mémoire s’applique uniquement à ce projet.{% endif %}</p>
+
+  {% for message in messages %}<p class="notice-success" role="status">{{ message }}</p>{% endfor %}
+  {% if error %}<p class="memory-error" role="alert">{{ error }}</p>{% endif %}
+
+  <section class="surface memory-import" id="import-memory" aria-labelledby="import-title">
+    <p class="page-eyebrow">Venir avec ses préférences</p>
+    <h2 id="import-title">Importer depuis un autre assistant</h2>
+    <p class="memory-hint">ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, Grok, Perplexity ou un autre LLM : utilise la même consigne pour exporter les souvenirs auxquels il a accès.</p>
+    <ol class="memory-steps">
+      <li>Copie la consigne et envoie-la à ton assistant actuel.</li>
+      <li>Colle sa réponse ici ou charge un fichier de mémoire.</li>
+      <li>Relis le texte avant de l’ajouter à 2AI.</li>
+    </ol>
+    <details class="memory-export" {% if not import_preview %}open{% endif %}>
+      <summary>Consigne d’export universelle</summary>
+      <label for="memoryExportPrompt" class="sr-only">Consigne à envoyer à ton assistant actuel</label>
+      <textarea id="memoryExportPrompt" readonly rows="9">{{ export_prompt }}</textarea>
+      <div class="memory-actions">
+        <button type="button" id="copyMemoryPrompt" hidden>Copier la consigne</button>
+        <span id="memoryCopyStatus" class="memory-hint" role="status" aria-live="polite"></span>
+      </div>
+    </details>
+    <p class="memory-hint">Cet import transfère des souvenirs et des préférences. Pour reprendre le contexte d’anciennes conversations, demande à ton assistant d’en extraire les informations à retenir.</p>
+
+    {% if import_preview %}
+    <form method="post" class="memory-form memory-preview" id="memoryImportPreview">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="apply_import">
+      <input type="hidden" name="revision" value="{{ revision }}">
+      <h3>Aperçu de la mémoire à importer</h3>
+      <p class="memory-hint">Modifie ce texte si nécessaire. La mémoire finale peut contenir jusqu’à 8 000 caractères.</p>
+      <label for="importContent">Souvenirs à conserver</label>
+      <textarea id="importContent" name="import_content" rows="10" maxlength="{{ import_limit }}" required aria-describedby="memoryImportCount">{{ import_preview }}</textarea>
+      <p class="memory-hint" id="memoryImportCount" role="status" aria-live="polite">{{ preview_chars }} caractères à importer · maximum 8 000 dans la mémoire finale</p>
+      <label for="importMode">Comment intégrer ces souvenirs ?</label>
+      <select id="importMode" name="import_mode">
+        <option value="append" {% if import_mode == 'append' %}selected{% endif %}>Ajouter à la mémoire existante</option>
+        <option value="replace" {% if import_mode == 'replace' %}selected{% endif %}>Remplacer la mémoire existante</option>
+      </select>
+      <div class="memory-actions">
+        <button type="submit" class="memory-primary">Importer{% if workspace %} dans ce projet{% endif %}</button>
+        <a href="{{ request.path }}#import-memory">Annuler</a>
+      </div>
+    </form>
+    {% else %}
+    <form method="post" enctype="multipart/form-data" class="memory-form" id="memoryImportForm">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="preview_import">
+      <label for="importText">Mémoire exportée par ton assistant</label>
+      <textarea id="importText" name="import_text" rows="6" maxlength="{{ import_limit }}" placeholder="Colle ici ses souvenirs, préférences et consignes…">{{ import_text }}</textarea>
+      <label for="importFile">Ou choisir un fichier de mémoire</label>
+      <input type="file" id="importFile" name="import_file" accept=".txt,.md,.markdown,.json,text/plain,text/markdown,application/json" aria-describedby="memoryFileHint">
+      <p class="memory-hint" id="memoryFileHint">TXT, Markdown ou JSON en UTF-8 · 256 Ko maximum. Le JSON peut contenir une liste de souvenirs ou un objet « memories ».</p>
+      <button type="submit" class="memory-primary">Préparer l’import</button>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="surface memory-editor" id="saved-memory" aria-labelledby="saved-memory-title">
+    <h2 id="saved-memory-title">Mémoire actuelle</h2>
+    <p class="memory-hint">Ces préférences sont fournies à l’assistant lorsque la mémoire est activée. Modifie-les ou efface le texte pour les supprimer.</p>
+    <form method="post" class="memory-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save">
+      <label class="memory-toggle"><input type="checkbox" name="enabled" {% if enabled %}checked{% endif %}> Utiliser cette mémoire</label>
+      <label for="memoryContent">Préférences enregistrées</label>
+      <textarea id="memoryContent" name="content" maxlength="{{ memory_limit }}" rows="12">{{ content }}</textarea>
+      <p class="memory-hint">Maximum 8 000 caractères.{% if not enabled %} La mémoire est désactivée ; tu peux l’activer ci-dessus.{% endif %}</p>
+      {% if workspace %}<label class="memory-toggle"><input type="checkbox" name="semantic_search" {% if workspace.semantic_search %}checked{% endif %}> Recherche par le sens (envoie les passages au fournisseur d’embeddings configuré)</label>{% endif %}
+      <button type="submit" class="memory-primary">Enregistrer</button>
+    </form>
+  </section>
+</main>
+{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/memory.js' %}?v=import-1"></script>{% endblock %}

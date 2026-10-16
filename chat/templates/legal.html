@@ -8,7 +8,7 @@
 {% block body %}
 <div class="legal-page">
   <header class="legal-topbar">
-    <a class="legal-brand" href="/">2AI</a>
+    <a class="legal-brand" href="/" aria-label="2AI, accueil">{% include "includes/app_logo.html" %}</a>
     <nav class="legal-nav" aria-label="Navigation">
       <a href="/">Le chat</a>
       <a href="{% if is_authenticated %}/recharge/{% else %}/auth/?next=/recharge/{% endif %}">Acheter des jetons</a>

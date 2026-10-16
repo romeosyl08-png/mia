@@ -32,6 +32,8 @@ urlpatterns = [
     path('', include('chat.urls')),
     path('bara/', include('bara.urls')),
     path('studio/', include('studio.urls')),
+    path('creation/', include('creation.urls')),
+    path('comparisons/', include('evaluations.urls')),
 ]
 # MEDIA_ROOT ne doit jamais être servi directement en production : il a
 # longtemps exposé les pièces jointes Bara de tous les espaces de travail.

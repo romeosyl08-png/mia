@@ -56,8 +56,9 @@ class FrontendAssetTests(TestCase):
         self.assertIsNotNone(page.select_one('#chat-config'))
         self.assertIsNotNone(page.select_one('aside.sidebar #pwa-install-controls'))
         self.assertEqual(len(page.select('#pwa-install-controls')), 1)
-        for dependency in ['appearance.js', 'chat_transport.js', 'message_sources.js', 'charts.js', 'chat_tools.js']:
+        for dependency in ['appearance.js', 'markdown.js', 'chat_transport.js', 'message_sources.js', 'charts.js', 'chat_tools.js', 'model_favorites.js']:
             self.assertLess(scripts.index('/static/app/js/' + dependency), scripts.index('/static/app/js/script.js'))
+        self.assertEqual(page.select_one('script[data-wasm-url]')['data-wasm-url'], '/static/app/wasm/markdown_core.wasm')
         self.assertFalse(page.body.has_attr('data-keep-title'))
 
     def test_temporary_chat_starts_without_memory_and_exposes_separate_actions(self):
@@ -82,6 +83,7 @@ class FrontendAssetTests(TestCase):
         self.assertEqual(sum('marked.min.js' in src for src in scripts), 1)
         self.assertIn('/static/app/js/charts.js', scripts)
         self.assertIn('/static/app/js/workspace.js', scripts)
+        self.assertLess(scripts.index('/static/app/js/markdown.js'), scripts.index('/static/app/js/workspace.js'))
         self.assertNotIn('/static/app/js/script.js', scripts)
         self.assertEqual(len(detail.select('#pwa-install-controls')), 1)
         conversation = self.workspace.conversations.get()

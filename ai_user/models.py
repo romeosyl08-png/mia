@@ -63,6 +63,9 @@ class CreditAccount(models.Model):
         account.balance += amount
         account.save(update_fields=["balance", "updated_at"])
         self.balance = account.balance
+        if reason == 'adjustment':
+            from evaluations.rewards import track_bonus
+            track_bonus(account.pk, amount, refund=True)
         return account.transactions.create(amount=amount, reason=reason, note=note)
 
     @transaction.atomic
@@ -78,6 +81,8 @@ class CreditAccount(models.Model):
         account.balance -= amount
         account.save(update_fields=["balance", "updated_at"])
         self.balance = account.balance
+        from evaluations.rewards import track_bonus
+        track_bonus(account.pk, amount)
         return account.transactions.create(amount=-amount, reason=reason, note=note)
 
 

@@ -48,6 +48,8 @@ body {
 }
 
 .recharge-brand {
+  display: inline-flex;
+  align-items: center;
   color: var(--ink-soft);
   font-size: 10px;
   font-weight: 700;
@@ -357,6 +359,13 @@ body {
 .customer-details .customer-phone-field {
   grid-column: 1 / -1;
 }
+
+.customer-field { min-width: 0; }
+.payment-field-error { margin: 6px 0 0; color: var(--danger); font-size: 11px; line-height: 1.45; }
+.payment-field-error[hidden] { display: none; }
+.payment-form-hint { margin: 9px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
+.customer-details input[aria-invalid="true"], .currency-input.is-invalid { border-color: var(--danger); }
+.customer-details input[aria-invalid="true"]:focus { border-color: var(--danger); outline-color: color-mix(in srgb, var(--danger) 17%, transparent); }
 
 .customer-details input {
   min-width: 0;

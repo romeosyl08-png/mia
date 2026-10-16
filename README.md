@@ -1,6 +1,18 @@
 # ai_2ai
 # mia
 
+Le système Side-by-Side est décrit dans [EVALUATIONS.md](EVALUATIONS.md) : architecture, migrations, tests, paramètres et activation progressive. Ses quatre fonctionnalités sont désactivées par défaut.
+
+Le chat propose aussi des [aperçus interactifs et un lecteur de liens ChatGPT](IDEAS_AND_SHARED_LINKS.md), accessibles dans le menu **+**. Des exemples gratuits se trouvent à `/chat/ideas/`.
+
+L’espace **Création** (`/creation/`) regroupe la génération d’images, de vidéos et de sons, avec les fournisseurs et jetons du compte. Il fonctionne sans projet ni conversation. La **Médiathèque** (`/creation/library/`) rassemble les créations, les anciens médias du chat et les médias des projets Studio, avec recherche, filtres et pagination. Le montage reste dans le Studio (`/studio/`).
+
+Le chat conserve les pièces jointes et leur analyse. **Créer à partir de ce message** préremplit une demande dans Création ; aucune génération n’est lancée automatiquement. Depuis la médiathèque, **Utiliser dans une conversation** copie le fichier dans un nouvel espace privé et ouvre le chat : une image est jointe au prochain message, les vidéos et sons sont disponibles comme fichiers de l’espace. **Utiliser dans le Studio** ajoute le média à un montage nouveau ou existant. Ces transferts ne déclenchent aucun appel IA.
+
+Applique `python manage.py migrate` pour la migration `chat.0026_generatedmedia_independent_conversation` ; le démarrage Render l’applique automatiquement au prochain déploiement. Les médias existants restent disponibles aux mêmes adresses et sont conservés après suppression de leur conversation. Les liens d’origine deviennent facultatifs. La médiathèque, les fichiers et les transferts vérifient le propriétaire du compte.
+
+Vérifications de Création sans appels fournisseur payants : `python manage.py test creation chat.tests chat.test_frontend studio --noinput --settings=evaluations.test_settings`, `node --test tests/js/*.test.cjs` et, avec Chrome et Playwright, `python tests/browser/creation.py`.
+
 ## Démarrage
 
 Le projet exige **Python 3.12 ou plus** (Django 6.1) et Node 22 pour les tests
@@ -34,6 +46,11 @@ python manage.py test --noinput
 node --test tests/js/*.cjs
 ```
 
+Le chat et Bara utilisent désormais un [moteur Markdown Rust/WebAssembly](rust/markdown/README.md)
+pour les réponses longues, avec chargement à la demande et repli JavaScript.
+Le module compilé est fourni dans les fichiers statiques : Rust n'est requis que
+pour le reconstruire avec `python scripts/build_markdown_wasm.py`.
+
 ## Modèles texte : OpenRouter et IA locale
 
 Le chat cloud utilise OpenRouter. Ajoute la clé au fichier `.env` du projet, puis initialise le fournisseur, sa clé chiffrée et le catalogue des modèles :
@@ -50,6 +67,10 @@ python manage.py sync_openrouter_models
 
 La synchronisation récupère les modèles texte tarifés et leurs prix. Les modèles dont OpenRouter n’expose pas le tarif sont ignorés, car leur coût ne peut pas être estimé de manière fiable. Les anciens modèles texte Groq, Together, Anthropic, OpenAI et Ollama sont désactivés par `seed_providers` sans supprimer leurs données. Les générations d’images et de vidéos utilisent également OpenRouter; l’audio conserve sa configuration dédiée.
 
+Avant l’envoi, le chat vérifie sans appel IA les incompatibilités connues : images jointes, outils, recherche web, exécution de code et demandes directes de génération de médias ou d’accès aux fichiers. Le message indique le mode, le modèle ou l’espace à choisir ; la saisie et les pièces jointes sont conservées, sans débit de jetons. Le serveur répète la vérification avant la facturation, y compris dans Bara. `Auto 2AI` écarte les modèles incompatibles avec les outils ou les images requis et bloque si aucun candidat ne convient. Cette vérification utilise les capacités techniques connues et des règles prudentes pour les demandes directes ; elle ne prédit pas la qualité d’une réponse ni toutes les formulations possibles.
+
+Après mise à jour, lance `python manage.py migrate`, puis `python manage.py sync_openrouter_models` pour renseigner `supported_parameters` depuis le [catalogue OpenRouter](https://openrouter.ai/docs/guides/overview/models). Une valeur absente reste inconnue et n’est pas traitée comme une incompatibilité. Les appels OpenRouter avec outils demandent aussi un [fournisseur acceptant les paramètres envoyés](https://openrouter.ai/docs/guides/routing/provider-selection#requiring-providers-to-support-all-parameters), pour éviter une réponse facturée qui ignore les outils.
+
 Dans le chat, **Choisir une IA** et **Équipe IA** peuvent classer les modèles OpenRouter par usage texte général ou par tâche (programmation, jeu de rôle, marketing, sciences, traduction, etc.). `sync_openrouter_models` synchronise ces classements hebdomadaires avec la clé OpenRouter active. Les catégories de tâches sont des estimations basées sur un échantillon et indiquent la popularité, pas la qualité ni un benchmark. Les modèles sans rang restent triés par prix de sortie décroissant. La fenêtre cite OpenRouter et la date de référence de chaque classement; les données sont réutilisées sous CC BY 4.0. Sans clé ou si l’API des classements échoue, le catalogue tarifé reste disponible et l’ordre de secours est le prix. L’IA locale apparaît séparément dans le sélecteur et ne peut pas rejoindre l’équipe cloud.
 
 L’option **IA locale** se connecte directement, depuis le navigateur, à Ollama ou à une API locale compatible OpenAI (`/v1/models` et `/v1/chat/completions`). **Analyser mon appareil** recherche les modèles sur les adresses habituelles d’Ollama, LM Studio, Jan, LocalAI/llama.cpp et GPT4All ; une adresse personnalisée peut aussi être saisie. La recherche est lancée par l’utilisateur, ne passe pas par le serveur 2AI, et ne détecte que les serveurs locaux démarrés et accessibles au navigateur. Avec Ollama, autorise l’origine du site dans `OLLAMA_ORIGINS`; le navigateur peut aussi bloquer une connexion locale selon sa configuration CORS ou HTTPS.
@@ -59,6 +80,8 @@ Les conversations créées avec une IA locale sont enregistrées dans le stockag
 Le bouton ninja ouvre une **conversation temporaire**, sans mémoire enregistrée par défaut. Le sélecteur **Mémoire de persona** permet d’utiliser la mémoire du persona choisi pour les prochains messages, avec un modèle cloud ou local. La sélection ne modifie pas cette mémoire. Pour conserver les échanges, choisis un persona dans **Enregistrer dans un persona**, puis clique sur **Enregistrer** : la conversation, ses sources, ses résultats d’outils et ses images générées rejoignent l’historique de ce persona. Elle devient alors une conversation enregistrée. Sans cette action, elle reste uniquement en mémoire dans l’onglet.
 
 ## Recharges et paiements
+
+Les étoiles dans **Choisir une IA** et **Équipe IA** enregistrent les modèles favoris du compte, sans changer le modèle actif ni lancer de génération. Les favoris passent en tête des deux listes ; le filtre **Favoris** du sélecteur peut les afficher seuls. Les numéros de classement d’usage gardent leur signification. La migration `chat.0025_chatpreferences_favorite_model_ids` ajoute leur stockage ; les préférences et les étoiles restent distinctes entre les comptes. Les prix fournisseur utilisent une virgule décimale et conservent les petites fractions utiles : `2,50 $` signifie deux dollars cinquante par million de tokens. Les prix d’entrée et de sortie sont affichés séparément dans le sélecteur et la facturation 2AI conserve sa marge existante.
 
 La monnaie est détectée au premier accès à partir du pays transmis par le proxy ou, à défaut, de l’adresse IP. La zone UEMOA utilise XOF avec PayDunya, la zone euro utilise EUR avec Stripe et les autres pays utilisent USD avec Stripe. L’utilisateur peut remplacer ce choix sur `/recharge/`; la préférence reste dans sa session et s’applique aussi aux pages `/tarifs/` et `/nous/`. Stripe nécessite `STRIPE_SECRET_KEY`.
 
@@ -84,7 +107,29 @@ PAYDUNYA_XOF_PER_USD=600
 PAYDUNYA_MINIMUM_XOF=200
 ```
 
+Sur Render, renseigne `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY` et
+`PAYDUNYA_TOKEN` dans **Environment** du service web, puis choisis **Save and
+deploy**. Le fichier `.env` de ton ordinateur ne configure pas le service en
+ligne. Les déclarations `sync: false` dans `render.yaml` demandent ces valeurs
+à la création d'un Blueprint ; leur ajout à un Blueprint existant nécessite
+de les renseigner directement dans le tableau de bord Render. Les trois
+valeurs sont obligatoires pour activer le formulaire de paiement. Utilise
+les identifiants de test pour le sandbox, ou les identifiants de production
+de la même application PayDunya pour encaisser de vrais paiements.
+
 La création de facture utilise automatiquement l'endpoint sandbox lorsque `PAYDUNYA_PRIVATE_KEY` commence par `test_private_`, et l'endpoint live pour les clés live. `PAYDUNYA_CHECKOUT_URL` permet de remplacer explicitement ce choix. L'IPN doit pouvoir joindre publiquement `/recharge/paydunya-webhook/`; il est enregistré automatiquement dans chaque facture. Cette notification est validée avec le hash SHA-512 de `PAYDUNYA_MASTER_KEY`, puis son token et son montant sont comparés à la recharge créée avant de créditer le compte.
+
+Le retour après paiement vérifie aussi la facture avec l'API `checkout-invoice/confirm` de PayDunya, puis affiche les jetons ajoutés et le solde. Cette vérification fonctionne en sandbox et en production même si l'IPN n'a pas encore été reçu. La notification et le retour utilisent le même verrou en base pour créditer chaque facture une seule fois. Les URL de paiement utilisent `PUBLIC_BASE_URL` lorsqu'il est renseigné (ou `RENDER_EXTERNAL_URL` sur Render). Voir la [documentation HTTP/JSON PayDunya](https://developers.paydunya.com/doc/EN/http_json).
+
+Pour régulariser les recharges existantes restées en attente, avec les clés PayDunya correspondant à ces factures :
+
+```bash
+python manage.py reconcile_paydunya
+# Vérifier uniquement une recharge :
+python manage.py reconcile_paydunya --purchase-id 123
+```
+
+La commande ne crédite que les factures confirmées, signées et dont le montant correspond à la recharge enregistrée. Elle peut être relancée sans doubler les jetons.
 
 ## PostgreSQL local
 
@@ -120,7 +165,11 @@ Les observations enregistrent la surface, la catégorie, le modèle réellement 
 
 Dans le chat, les votes J’aime/Je n’aime pas sont désormais persistés par réponse; un vote négatif est marqué comme correction nécessaire. Après au moins cinq feedbacks dans la portée considérée, le score ajoute un signal de qualité lissé. Ce signal vient uniquement de ces votes explicites; une réussite fournisseur seule n’est pas considérée comme une réponse de qualité.
 
-L’équipe garde « Comparer et synthétiser » comme stratégie par défaut. Une option distincte « Planifier, réaliser, vérifier » orchestre trois étapes avec deux ou trois modèles sélectionnés; le plan et le brouillon restent internes et seule la réponse vérifiée est affichée. Le mode est également transmis lors du streaming.
+L’équipe garde « Comparer et synthétiser » comme stratégie par défaut. Le premier modèle disponible propose des résultats en notes JSON compactes ; les autres les vérifient indépendamment et transmettent uniquement leurs corrections, informations manquantes, incertitudes et références. Le coordinateur rédige une seule réponse finale à partir de la demande d’origine, des préférences et des notes. Si un membre échoue, les membres disponibles continuent ; si un seul modèle est configuré, il répond directement en un appel.
+
+L’option « Planifier, réaliser, vérifier » utilise deux ou trois modèles sélectionnés : un plan compact, une proposition structurée, une vérification par corrections ciblées, puis une rédaction finale par le modèle chargé de la réalisation. Cela représente quatre appels, dont trois échanges internes, au lieu de trois réponses longues. Avec deux modèles, le planificateur effectue également la vérification ; avec trois, le troisième modèle vérifie. Seule la réponse finale est diffusée ou enregistrée, y compris en streaming.
+
+Les budgets de sortie internes dépendent de la limite finale : plan jusqu’à 128 tokens, proposition jusqu’à 384 et corrections jusqu’à 160, toujours limités par le plafond demandé. Pour une réponse finale de 500 tokens, les budgets sont de 125/250/160 tokens. La limite finale choisie par l’utilisateur est conservée. Les notes sont validées et limitées côté serveur ; un JSON invalide devient une note bornée et signalée comme non structurée, sans appel de réparation supplémentaire. La réserve inclut tous les rôles, les notes relayées et les replis possibles ; le débit reste ajusté à l’usage réel de chaque modèle. Les échanges restent du texte tokenisé : les économies réelles de coût et la qualité doivent être mesurées sur des tâches représentatives, notamment parce que la vérification distincte ajoute un appel et que le contexte est relu à chaque étape.
 
 L’API compatible OpenAI accepte aussi `model="auto"` et expose cette option dans `/v1/models` lorsqu'un fournisseur éligible est configuré. Les appels standards de l'API enregistrent toujours une recommandation shadow sans remplacer le modèle explicitement sélectionné. Le streaming avec outils n'est pas pris en charge par l'API.
 
@@ -235,14 +284,34 @@ barrassons
 On first launch, choose browser login to open the AI2AI API-key page, or paste an
 existing AI2AI API key. Barrassons stores the key in
 `~/.config/barrassons/config.json` with owner-only permissions. To use another
-AI2AI deployment, set `BARRASSONS_API_BASE` to its `/v1` API URL or enter it during
-login. Run `barrassons login` to change credentials and `barrassons logout` to
+AI2AI deployment, use `barrassons login --api-base URL` or set
+`BARRASSONS_API_BASE`. Run `barrassons login` to change credentials and `barrassons logout` to
 remove the locally stored key.
+
+Render (`https://mia-vkl1.onrender.com/v1`) is the default. Login uses the saved
+server or this default without asking for an address. For local development,
+start Django, then run `barrassons login --api-base http://127.0.0.1:8000/v1` with
+a key created on that local instance. The option accepts a site URL and adds
+`/v1` when needed. Key input is hidden and the connection is verified before
+replacing the saved configuration. `barrassons login` returns to the shell
+after successful login; launch `barrassons` to begin working.
+
+The terminal has a compact welcome panel, colored diffs, an activity indicator,
+and a status line showing the model and reported usage. The model picker supports
+search and pagination, then remembers the choice. `/model` changes it during a
+session, `/status` refreshes credits, and `/verbose` expands tool results. Use
+Tab for command completion, arrow keys for prompt history, and a trailing
+backslash followed by Enter for multiline input. `--model ID` selects a model
+directly; `--no-color` or `NO_COLOR=1` disables color. Redirected output stays plain.
 
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed
 tool calls are not currently supported by this CLI.
 
 ## Tâches, mémoire, documents et collaboration
+
+Dans **Paramètres → Mémoire et import** (ou **Mémoire** dans le chat), importe les souvenirs de n’importe quel assistant avec la **consigne d’export universelle**. Colle sa réponse ou charge un fichier TXT, Markdown ou JSON en UTF-8 (256 Ko et 64 000 caractères maximum). Le JSON accepte une liste de textes, des entrées `content`/`text`, un objet `memories`/`memory` ou des préférences structurées. Relis et modifie l’aperçu, puis ajoute-le à la mémoire actuelle ou choisis explicitement de la remplacer. La limite finale est de 8 000 caractères ; les textes trop longs restent modifiables et ne sont pas tronqués à l’enregistrement. Une modification effectuée dans un autre onglet bloque la validation jusqu’à une nouvelle relecture.
+
+Le même import est disponible dans la **mémoire d’un projet** (`/memory/project/<id>/`). Il conserve les réglages d’activation et de recherche du projet, reste limité au compte connecté et traite les fichiers localement sur le serveur, sans appel de modèle ni débit de crédits. Les exports d’historiques complets ne sont pas importés comme des conversations : utilise la consigne pour en extraire les souvenirs. Aucune migration supplémentaire n’est nécessaire.
 
 Les six chantiers et leurs réglages sont décrits dans [FEATURES.md](FEATURES.md). Les nouvelles migrations doivent être appliquées avant de lancer cette version. Render démarre désormais le serveur Web et le worker sur le même volume avec `python manage.py run_services`.

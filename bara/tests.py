@@ -402,7 +402,7 @@ class WorkspaceToolTests(TestCase):
         ) as provider_call, patch("bara.agent_tools.execute_tool") as execute_tool:
             response = self.client.post(
                 reverse("bara:message", args=[self.workspace.id, conversation.id]),
-                {"content": "Lance une commande"},
+                {"content": "Inspecte cet espace"},
                 HTTP_ACCEPT="text/event-stream",
             )
             body = b"".join(response.streaming_content)

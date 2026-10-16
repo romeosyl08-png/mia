@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Aperçus interactifs — 2AI{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/idea_previews.css' %}?v=ideas-1">{% endblock %}
+{% block body %}
+<main class="work-page">
+  <a href="{% url 'chat:chat-home' %}">← Retour au chat</a>
+  <p class="page-eyebrow">Essayer une idée</p><h1>Aperçus interactifs</h1>
+  <p>Voici ce que 2AI peut intégrer dans ses réponses : une comparaison, une maquette navigable ou un calculateur. Ces exemples fonctionnent sans appel IA et sans jetons.</p>
+  <p>Dans le chat, ouvre le bouton + puis choisis « Aperçu interactif d’une idée », ou demande simplement « Crée un aperçu interactif de cette idée ».</p>
+  <div id="ideaPreviewExamples"></div>
+  {{ preview_examples|json_script:"idea-preview-examples" }}
+</main>
+{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/idea_previews.js' %}?v=ideas-1"></script><script defer src="{% static 'app/js/idea_preview_examples.js' %}?v=ideas-1"></script>{% endblock %}

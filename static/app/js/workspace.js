@@ -14,10 +14,18 @@
   const sidebarToggle = document.getElementById('toggle-workbench-sidebar');
   const activityButtons = Array.from(document.querySelectorAll('[data-workbench-target]'));
 
+  function revealActiveConversation(){
+    const tabs = document.querySelector('.conversation-tabs');
+    const active = tabs?.querySelector('.editor-tab.active');
+    if(active) tabs.scrollLeft = active.offsetLeft - (tabs.clientWidth - active.offsetWidth) / 2;
+  }
+  window.addEventListener('resize', revealActiveConversation);
+
   function setSidebarCollapsed(collapsed){
     workspaceRoot.classList.toggle('sidebar-collapsed', collapsed);
     sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
     sidebarToggle.title = collapsed ? "Afficher l'explorateur" : "Masquer l'explorateur";
+    window.requestAnimationFrame(revealActiveConversation);
     try{ localStorage.setItem('bara.sidebar.collapsed', collapsed ? '1' : '0'); }catch(error){}
   }
 
@@ -65,8 +73,8 @@
   }
 
   function renderMarkdown(el, text){
-    if(window.marked && window.DOMPurify){
-      el.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    if(window.AI2AIMarkdown && window.DOMPurify){
+      el.innerHTML = DOMPurify.sanitize(AI2AIMarkdown.parse(text));
       enhance(el);
     } else {
       el.textContent = text;
@@ -286,10 +294,15 @@
                 Math.max(0, Math.round(event.remaining_balance)).toLocaleString('fr-FR') + ' jetons';
             }
             if(event.title){
-              const titleEl = document.querySelector('.conv-item.active .conv-title');
-              if(titleEl) titleEl.textContent = event.title;
               const tabTitle = document.querySelector('.editor-tab.active .tab-title');
               if(tabTitle) tabTitle.textContent = event.title;
+              const tabLink = document.querySelector('.editor-tab.active .editor-tab-link');
+              if(tabLink) tabLink.title = event.title;
+              const closeTab = document.querySelector('.editor-tab.active .tab-close');
+              if(closeTab) closeTab.setAttribute('aria-label', 'Supprimer la conversation ' + event.title);
+              const breadcrumb = document.querySelector('.editor-breadcrumb strong');
+              if(breadcrumb) breadcrumb.textContent = event.title;
+              revealActiveConversation();
             }
             if(event.billing_warning) appendMessage('error', event.billing_warning);
           }

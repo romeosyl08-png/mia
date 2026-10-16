@@ -57,7 +57,8 @@ def site_settings(preferences):
                     'eur_per_usd': str(settings.EUR_PER_USD)},
         'media': {'image_model': settings.OPENROUTER_IMAGE_MODEL, 'video_model': settings.OPENROUTER_VIDEO_MODEL,
                   'credits': settings.MEDIA_GENERATION_CREDITS, 'models': settings.MEDIA_GENERATION_MODELS},
-        'routes': {'chat': '/', 'settings': '/customize/', 'memory': '/memory/', 'workspaces': '/bara/',
+        'routes': {'chat': '/', 'creation': '/creation/', 'media_library': '/creation/library/', 'studio': '/studio/',
+                   'settings': '/customize/', 'memory': '/memory/', 'workspaces': '/bara/',
                    'api': '/api/', 'api_keys': '/api-keys/', 'tariffs': '/tarifs/', 'recharge': '/recharge/'},
     }
 

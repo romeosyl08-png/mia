@@ -38,6 +38,7 @@ class ChatPreferences(models.Model):
         related_name="chat_preferences",
     )
     default_model_id = models.CharField(max_length=150, blank=True)
+    favorite_model_ids = models.JSONField(default=list, blank=True)
     top_p = models.FloatField(default=1.0)
     max_tokens = models.PositiveIntegerField(default=500)
     updated_at = models.DateTimeField(auto_now=True)
@@ -192,7 +193,9 @@ class GeneratedMedia(models.Model):
     )
     conversation = models.ForeignKey(
         Conversation,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="generated_media",
     )
     message = models.OneToOneField(

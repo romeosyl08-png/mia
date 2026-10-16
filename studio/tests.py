@@ -77,6 +77,11 @@ class StudioTests(TestCase):
         response = self.client.post('/studio/create/',{'title':'A new test project','persona':self.user.personas.first().pk})
         self.assertEqual(response.status_code,302)
         self.assertContains(self.client.get(response.url),'Directeur IA')
+        editor = self.client.get(response.url)
+        self.assertContains(editor, 'id="studio-monitor-stage"')
+        self.assertContains(editor, 'id="studio-timeline-content"')
+        self.assertContains(editor, 'id="studio-clips-panel"')
+        self.assertContains(editor, 'studio_editor.js')
         self.assertContains(self.client.get('/studio/'),'A new test project')
         self.assertEqual(self.client.post('/studio/create/',{'persona':'bad'}).status_code,400)
 

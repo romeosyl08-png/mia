@@ -27,6 +27,7 @@
   --theme-paper: var(--paper);
   --theme-panel: var(--panel);
   --theme-line: var(--line);
+  --logo-ink: #202332;
 }
 
 [data-theme="dark"] {
@@ -42,6 +43,7 @@
   --user-bubble: #292f43;
   --composer-border: #3c435b;
   --shadow: #00000026;
+  --logo-ink: #f4ece3;
 }
 
 * { box-sizing: border-box; }
@@ -65,6 +67,11 @@ button:disabled { cursor: not-allowed; }
 a { color: var(--accent-hover); text-underline-offset: 4px; }
 code, pre { font-family: var(--font-mono); }
 img, video { max-width: 100%; }
+.logo-filters { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+.logo-ink { flood-color: var(--logo-ink); }
+.app-logo { display: block; flex: none; width: 80px; height: 40px; object-fit: cover; object-position: center; filter: url(#appLogoThemeFilter); }
+.app-logo--large { width: 128px; height: 64px; }
+.app-logo--compact { width: 64px; height: 32px; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 3px; }
 ::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }

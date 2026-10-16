@@ -89,6 +89,9 @@ class Command(BaseCommand):
                 skipped_unpriced += 1
                 continue
 
+            parameters = row.get("supported_parameters")
+            parameters = parameters if isinstance(parameters, list) and all(isinstance(p, str) for p in parameters) else None
+
             AIModel.objects.update_or_create(
                 provider=provider,
                 model_id=model_id,
@@ -96,6 +99,7 @@ class Command(BaseCommand):
                     "name": str(row.get("name") or model_id)[:100],
                     "is_active": True,
                     "input_modalities": inputs,
+                    "supported_parameters": parameters,
                     "input_price_per_million": input_price,
                     "output_price_per_million": output_price,
                 },

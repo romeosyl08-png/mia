@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static l10n model_prices %}
 
 {% block body_class %}chat-page{% endblock %}
 {% block body_attributes %}{% endblock %}
 {% block install_controls %}{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=temporary-actions-2">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=creation-1">
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
+<link rel="stylesheet" href="{% static 'app/css/idea_previews.css' %}?v=ideas-1">
 {% endblock %}
 
 {% block title %}2AI{% endblock %}
@@ -20,17 +21,16 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <button type="button" class="mobile-sidebar-close" id="closeMobileSidebar" title="Fermer le menu" aria-label="Fermer le menu">×</button>
+    <a class="sidebar-brand" href="{% url 'chat:chat-home' %}" aria-label="2AI, accueil">{% include "includes/app_logo.html" %}</a>
     <div class="persona-switcher">
       <div class="persona-switcher-top">
         <div class="mark" id="brandMark" data-bot-avatar aria-hidden="true">🐘</div>
         <div class="persona-switcher-copy">
-          <span class="persona-switcher-label">Persona actif</span>
-          <strong id="activePersonaName">Assistant général</strong>
+          <label class="persona-switcher-label" for="personaTopSelect">Persona</label>
         </div>
         <button type="button" class="persona-action" id="renamePersonaBtn" title="Renommer le persona sélectionné" aria-label="Renommer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"></path></svg></button>
       </div>
       <div class="persona-switcher-controls">
-        <label class="sr-only" for="personaTopSelect">Choisir un persona</label>
         <select id="personaTopSelect" aria-label="Changer de persona"></select>
         <button type="button" class="persona-action" id="newPersonaBtn" title="Créer un persona" aria-label="Créer un persona"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
         <button type="button" class="persona-action danger-action" id="deletePersonaBtn" title="Supprimer le persona sélectionné" aria-label="Supprimer le persona sélectionné"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"></path></svg></button>
@@ -58,18 +58,18 @@
     <div class="list" id="convoList"></div>
 
     <nav class="quick-nav" aria-label="Navigation principale">
-      <a href="{% url 'studio:index' %}">◈ &nbsp;Studio multimédia</a>
-      <button type="button" id="openImageGalleryBtn">▧ &nbsp;Images</button>
-      <button type="button" id="openVideoGalleryBtn">▷ &nbsp;Vidéos</button>
-      <button type="button" id="openAudioGalleryBtn">♫ &nbsp;Audio</button>
-      <button type="button" onclick="window.location.href='/dap/'">🚀 &nbsp;dev and prod</button>
+      {% if comparison_enabled %}<a href="{% url 'evaluations:index' %}">⇄ &nbsp;Comparaison IA</a>{% endif %}
+      <a href="{% url 'creation:index' %}" id="openCreationLink">✦ &nbsp;Création</a>
       <button id="customizeBtn" type="button" data-url="{% url 'chat:customize' %}">⚙ &nbsp;Paramètres</button>
       <a href="{% url 'chat:memory' %}">Mémoire</a>
-      <button type="button" onclick="window.location.href='/api/'">🔌 &nbsp;API</button>
-      <a href="{% url 'chat:about' %}">ⓘ &nbsp;À propos de 2AI</a>
-      <a href="{% url 'chat:legal' %}">§ &nbsp;Informations juridiques</a>
+      <details class="secondary-nav">
+        <summary>Plus</summary>
+        <a href="{% url 'bara:home' %}">Espaces de travail</a>
+        <a href="{% url 'api-home' %}">API</a>
+        <a href="{% url 'chat:about' %}">À propos</a>
+        <a href="{% url 'chat:legal' %}">Informations juridiques</a>
+      </details>
     </nav>
-    <div class="sidebar-footer">Tes conversations, tes assistants et tes outils dans un même espace.</div>
     {% include "includes/pwa_controls.html" with pwa_inline=True %}
   </aside>
 
@@ -82,9 +82,6 @@
         <div>
           <h2 id="chatTitle">Nouvelle conversation</h2>
           <div class="persona-name" id="chatPersonaName">Assistant général</div>
-          {% if is_authenticated %}
-          <button type="button" class="memory-suggest-button" id="memorySuggestBtn" title="Analyser cette conversation pour proposer des préférences au persona">✦ Proposer des préférences</button>
-          {% endif %}
           <span class="temporary-badge" id="temporaryBadge" hidden>Session temporaire</span>
         </div>
       </div>
@@ -92,7 +89,6 @@
     <button type="button" class="panel-toggle" id="toggleLeftPanel" title="Masquer le panneau gauche" aria-label="Masquer le panneau gauche">‹</button>
     <button type="button" class="temporary-toggle" id="temporaryChatBtn" aria-pressed="false" title="Conversation temporaire" aria-label="Conversation temporaire" aria-controls="temporaryChatControls">{% include "includes/temporary_ninja.html" %}</button>
     
-    <!-- Remplacement par une balise <button> -->
     <button type="button" class="credit-pill recharge-btn" id="creditPill" title="Voir les jetons" {% if not is_authenticated %}disabled{% endif %}>
         <span id="creditPillText">— jetons</span>
         <div class="bar">
@@ -131,10 +127,8 @@
 
     <div class="messages" id="messages">
       <div class="empty-state">
-        <div class="empty-state-mark" aria-hidden="true">✦</div>
-        <p class="page-eyebrow">Ton espace de réflexion</p>
-        <div class="display">Qu’allons-nous créer aujourd’hui ?</div>
-        <div class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</div>
+        <div class="display">De quoi veux-tu parler aujourd’hui ?</div>
+        <p class="empty-state-copy">Écris une question ou partage une idée.</p>
       </div>
     </div>
 
@@ -146,14 +140,15 @@
         <div class="composer-plus-wrap" id="composerPlusWrap">
           <button type="button" class="composer-icon composer-plus" id="attachBtn" title="Ajouter au message" aria-label="Ajouter au message" aria-controls="composerPlusMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
           <div class="composer-plus-menu" id="composerPlusMenu" hidden>
+            <button type="button" class="plus-menu-item" id="ideaPreviewBtn">◈ &nbsp; Aperçu interactif d’une idée</button>
+            <a class="plus-menu-item" href="{% url 'chat:idea-preview-examples' %}">Essayer les aperçus sans jetons</a>
+            <button type="button" class="plus-menu-item" id="sharedLinkBtn">↗ &nbsp; Lire un lien ChatGPT</button>
             <button type="button" class="plus-menu-item" id="plusFilesBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"></path></svg><span>Joindre un fichier</span></button>
-            {% if chat_config.imageGenerationAvailable %}
-            <button type="button" class="plus-menu-item" id="plusImageBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Générer une image</span></button>
-            {% else %}
-            <button type="button" class="plus-menu-item" id="plusImageBtn" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg><span>Génération d’image indisponible</span></button>
-            {% endif %}
             <button type="button" class="plus-menu-item" id="voiceBtn" title="Dicter un message"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"></path></svg><span>Dicter un message</span></button>
             <button type="button" class="plus-menu-item" id="conversationVoiceBtn" aria-pressed="false">Conversation vocale</button>
+            {% if is_authenticated %}
+            <button type="button" class="plus-menu-item" id="memorySuggestBtn" title="Proposer des préférences au persona"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg><span>Proposer des préférences</span></button>
+            {% endif %}
           </div>
         </div>
         <textarea id="composerInput" placeholder="Écris ton message…" aria-label="Ton message" rows="1"></textarea>
@@ -161,81 +156,9 @@
       </div>
       <div class="composer-tools" aria-label="Outils du message">
         <button type="button" class="tool-btn active" id="chatModeBtn" data-mode="chat" aria-pressed="true" title="Mode conversation" aria-label="Mode conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8 8 0 0 1-8.5 8A8.5 8.5 0 0 1 4 17l-2 1 1-3a8 8 0 0 1-.5-3.5A8.5 8.5 0 0 1 11 3a8 8 0 0 1 10 8.5Z"></path></svg></button>
-        {% if chat_config.imageGenerationAvailable %}
-        <button type="button" class="tool-btn" id="imageModeBtn" data-mode="image" title="Générer une image" aria-label="Générer une image" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
-        {% else %}
-        <button type="button" class="tool-btn unavailable-tool" id="imageModeBtn" title="Génération d’images non configurée" aria-label="Génération d’images non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="m21 15-5-5L5 21"></path></svg></button>
-        {% endif %}
-        {% if chat_config.videoGenerationAvailable %}
-        <button type="button" class="tool-btn" id="videoModeBtn" data-mode="video" aria-pressed="false" title="Générer une vidéo" aria-label="Générer une vidéo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
-        {% else %}
-        <button type="button" class="tool-btn unavailable-tool" id="videoModeBtn" title="Génération vidéo non configurée" aria-label="Génération vidéo non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></button>
-        {% endif %}
-        {% if chat_config.audioProviderAvailable %}
-        <button type="button" class="tool-btn" id="audioModeBtn" data-mode="audio" aria-pressed="false" title="Générer un audio" aria-label="Générer un audio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></button>
-        {% else %}
-        <button type="button" class="tool-btn unavailable-tool" id="audioModeBtn" title="Génération audio non configurée" aria-label="Génération audio non configurée" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg></button>
-        {% endif %}
         <button type="button" class="tool-btn" id="webModeBtn" data-mode="web" aria-pressed="false" title="Rechercher sur le Web et citer les sources" aria-label="Recherche web"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button>
         <button type="button" class="tool-btn" id="deepModeBtn" data-mode="deep" aria-pressed="false" title="Réponse approfondie" aria-label="Réponse approfondie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg></button>
         <button type="button" class="tool-btn" id="generationControlsBtn" title="Contrôles de génération" aria-label="Contrôles de génération" aria-controls="generationControlsPanel" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path><circle cx="8" cy="6" r="2"></circle><circle cx="15" cy="12" r="2"></circle><circle cx="10" cy="18" r="2"></circle></svg></button>
-        <span class="tool-spacer"></span>
-        <span class="composer-hint">Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne</span>
-      </div>
-      <div class="media-options" id="mediaOptionsPanel" hidden>
-        <label class="media-option" id="imageOptions" hidden>
-          <span>Dimensions de l’image</span>
-          <select id="imageSizeSelect">
-            <option value="1024x1024">Carré · 1024 × 1024 px</option>
-            <option value="1024x1536">Portrait · 1024 × 1536 px</option>
-            <option value="1536x1024">Paysage · 1536 × 1024 px</option>
-          </select>
-        </label>
-        <div class="media-option-group" id="videoOptions" hidden>
-          <label class="media-option">
-            <span>Format</span>
-            <select id="videoAspectRatio">
-              <option value="16:9">Paysage · 16:9</option>
-              <option value="9:16">Portrait · 9:16</option>
-              <option value="1:1">Carré · 1:1</option>
-            </select>
-          </label>
-          <label class="media-option">
-            <span>Résolution</span>
-            <select id="videoResolution">
-              <option value="480p">480p</option>
-              <option value="720p" selected>720p</option>
-            </select>
-          </label>
-          <label class="media-option">
-            <span>Durée</span>
-            <select id="videoDuration">
-              <option value="4">4 secondes</option>
-              <option value="6">6 secondes</option>
-              <option value="8" selected>8 secondes</option>
-              <option value="10">10 secondes</option>
-              <option value="15">15 secondes</option>
-              <option value="30">30 secondes</option>
-            </select>
-          </label>
-          <label class="media-option-check"><input id="videoGenerateAudio" type="checkbox" checked><span>Générer aussi le son</span></label>
-        </div>
-        <div class="media-option-group" id="audioOptions" hidden>
-          <label class="media-option">
-            <span>Style musical</span>
-            <select id="audioStyle">
-              <option value="">Décrit dans le prompt</option>
-              <option value="ambient">Ambient</option>
-              <option value="cinematic">Cinématique</option>
-              <option value="electronic">Électronique</option>
-              <option value="jazz">Jazz</option>
-              <option value="pop">Pop</option>
-              <option value="orchestral">Orchestral</option>
-            </select>
-          </label>
-          <label class="media-option-check"><input id="audioInstrumental" type="checkbox"><span>Instrumental, sans voix</span></label>
-        </div>
-        <span class="media-options-note">Les formats proposés dépendent du mode de génération.</span>
       </div>
       <div class="generation-controls" id="generationControlsPanel" hidden>
         <label class="generation-control">
@@ -251,6 +174,8 @@
           <input id="maxTokensControl" type="number" min="1" max="8192" step="1" value="500" inputmode="numeric">
         </label>
       </div>
+      <details class="workspace-options" id="workspaceOptions">
+      <summary id="workspaceSummary">Fichiers et outils</summary>
       <div class="workspace-controls">
         <label for="workspaceSelect">Espace</label>
         <select id="workspaceSelect" aria-label="Outils et fichiers du workspace Bara">
@@ -259,6 +184,7 @@
         <button type="button" id="createWorkspaceBtn" title="Créer un espace de fichiers" aria-label="Créer un espace de fichiers">＋</button>
         <a class="workspace-open" id="workspaceOpen" href="{% url 'bara:home' %}" title="Ouvrir Bara" aria-label="Ouvrir Bara">↗</a>
       </div>
+      </details>
 <div class="model-chips" id="modelChips" aria-label="Modèles disponibles">
   {% if ai_models %}
   <button type="button" class="model-chip auto-model-chip" id="autoModelBtn" data-model-id="auto" aria-label="Choix automatique du modèle">✦ Auto 2AI</button>
@@ -286,15 +212,21 @@
           <option value="consensus">Comparer et synthétiser</option>
           <option value="plan_execute_verify">Planifier, réaliser, vérifier</option>
         </select>
+        <p class="team-exchange-hint">Les IA échangent des notes courtes et des corrections. Une seule réponse finale est rédigée.</p>
         <div class="team-model-grid" id="teamModelGrid">
   {% for ai_model in ai_models %}
+        <div class="team-model-row">
         <button type="button" class="team-model-option" data-model-id="{{ ai_model.model_id|escape }}">
           <span class="team-model-check">✓</span>
           <span class="team-model-copy">
             <strong>{{ ai_model.name }}</strong>
-            <span>{{ ai_model.output_price_per_million|floatformat:4 }} $ / 1M tokens de sortie</span>
+            <span>{{ ai_model.output_price_per_million|usd_price }} / 1M tokens de sortie</span>
           </span>
         </button>
+        <button type="button" class="model-favorite-btn" data-model-favorite="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" aria-pressed="false" aria-label="Ajouter {{ ai_model.name }} aux favoris" title="Ajouter aux favoris">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.4l-5.6 2.9 1.1-6.3-4.6-4.4 6.3-.9Z"></path></svg>
+        </button>
+        </div>
   {% endfor %}
 </div>
 <select id="teamModelSelect" multiple hidden aria-hidden="true">
@@ -311,25 +243,6 @@
     </form>
   </main>
 
-  <div class="image-gallery-overlay" id="imageGallery" hidden>
-    <section class="image-gallery-dialog" role="dialog" aria-modal="true" aria-labelledby="imageGalleryTitle">
-      <header class="image-gallery-header">
-        <div>
-          <h2 id="imageGalleryTitle">Images générées</h2>
-          <p id="imageGalleryDescription">Les images enregistrées dans tes conversations</p>
-        </div>
-        <button type="button" class="image-gallery-close" id="closeImageGallery" aria-label="Fermer la galerie">×</button>
-      </header>
-      <div class="image-gallery-tabs" role="tablist" aria-label="Type de média">
-        <button type="button" class="active" id="imageGalleryImagesTab" data-gallery-kind="image" role="tab" aria-selected="true">Images</button>
-        <button type="button" id="imageGalleryVideosTab" data-gallery-kind="video" role="tab" aria-selected="false">Vidéos</button>
-        <button type="button" id="imageGalleryAudioTab" data-gallery-kind="audio" role="tab" aria-selected="false">Audio</button>
-      </div>
-      <p class="image-gallery-status" id="imageGalleryStatus" role="status" aria-live="polite"></p>
-      <div class="image-gallery-grid" id="imageGalleryGrid"></div>
-    </section>
-  </div>
-
   <dialog class="local-model-dialog" id="localModelDialog" aria-labelledby="localModelTitle">
     <form method="dialog" id="localModelForm">
       <h2 id="localModelTitle">Connecter une IA locale</h2>
@@ -341,7 +254,7 @@
       <select id="localModelSelect" required disabled>
         <option value="">Teste la connexion pour charger les modèles</option>
       </select>
-      <p class="local-model-help">Recherche Ollama, LM Studio, Jan, LocalAI et GPT4All sur cet appareil. Autorise ce site dans les réglages CORS de l’IA locale si le navigateur bloque la connexion. Les échanges locaux restent sur ton appareil.</p>
+      <p class="local-model-help">Recherche Ollama, LM Studio, Jan, LocalAI et GPT4All. Autorise ce site dans les réglages CORS si la connexion est bloquée.</p>
       <p id="localModelStatus" role="status" aria-live="polite"></p>
       <footer>
         <button type="button" id="cancelLocalModelBtn">Annuler</button>
@@ -367,16 +280,25 @@
     <p class="model-picker-ranking-status" id="modelRankingStatus" role="status" aria-live="polite"></p>
     <p class="model-picker-attribution" id="modelRankingAttribution"></p>
     <label class="sr-only" for="modelPickerSearch">Rechercher une IA</label>
-    <input class="model-picker-search" id="modelPickerSearch" type="search" placeholder="Rechercher un modèle">
+    <div class="model-picker-filters">
+      <input class="model-picker-search" id="modelPickerSearch" type="search" placeholder="Rechercher un modèle">
+      <button type="button" class="model-favorites-filter" id="modelFavoritesOnlyBtn" aria-pressed="false">☆ Favoris</button>
+    </div>
+    <p class="model-picker-pricing-note">Prix fournisseur par million de tokens : entrée = messages et contexte, sortie = réponse. La facturation 2AI ajoute la marge du service.</p>
     <div class="model-picker-list" id="modelPickerList">
       {% for ai_model in ai_models %}
-      <button type="button" class="model-picker-item" data-model-id="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" data-output-price="{{ ai_model.output_price_per_million }}">
+      <div class="model-picker-row">
+      <button type="button" class="model-picker-item" data-model-id="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" data-output-price="{{ ai_model.output_price_per_million|unlocalize }}">
         <span class="model-picker-copy">
           <strong>{{ ai_model.name }}</strong>
           <span class="model-picker-ranking" hidden></span>
         </span>
-        <span class="model-picker-price">{{ ai_model.output_price_per_million|floatformat:4 }} $ / 1M tokens de sortie</span>
+        <span class="model-picker-price"><span>Entrée : {{ ai_model.input_price_per_million|usd_price }}</span><span>Sortie : {{ ai_model.output_price_per_million|usd_price }}</span><small>/ 1M tokens</small></span>
       </button>
+      <button type="button" class="model-favorite-btn" data-model-favorite="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" aria-pressed="false" aria-label="Ajouter {{ ai_model.name }} aux favoris" title="Ajouter aux favoris">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.4l-5.6 2.9 1.1-6.3-4.6-4.4 6.3-.9Z"></path></svg>
+      </button>
+      </div>
       {% empty %}
       <p class="model-picker-empty">Aucun modèle cloud disponible pour le moment.</p>
       {% endfor %}
@@ -417,6 +339,17 @@
 
 </div>
 
+<dialog id="sharedLinkDialog" class="shared-link-dialog" data-url="{% url 'chat:shared-link-preview' %}" aria-labelledby="sharedLinkTitle">
+  <header><h2 id="sharedLinkTitle">Lire un lien ChatGPT</h2><button type="button" id="closeSharedLink" aria-label="Fermer">×</button></header>
+  <p>Lis une conversation partagée publique, sans connexion à ton compte ChatGPT. Cette lecture ne consomme aucun jeton IA.</p>
+  <label>Lien partagé<input type="url" id="sharedLinkUrl" maxlength="2048" placeholder="https://chatgpt.com/share/…"></label>
+  <button type="button" id="readSharedLink">Lire le lien</button>
+  <p id="sharedLinkNotice" role="status" aria-live="polite"></p>
+  <label>Texte à transmettre à 2AI<textarea id="sharedLinkContent" rows="10" maxlength="28000" placeholder="Si le lien est inaccessible, ouvre-le dans ton navigateur puis colle le texte ici. Tu peux modifier ou raccourcir l’extrait avant de l’ajouter."></textarea></label>
+  <p>Seul le texte ajouté sera transmis à l’IA quand tu enverras ton message. L’extrait n’est pas ajouté à ta mémoire.</p>
+  <button type="button" id="insertSharedLink" class="button-primary" disabled>Ajouter au message</button>
+</dialog>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -426,6 +359,10 @@
 <script defer src="{% static 'app/js/message_sources.js' %}?v=citations-1"></script>
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
 <script defer src="{% static 'app/js/chat_tools.js' %}?v=documents-1"></script>
+<script defer src="{% static 'app/js/idea_previews.js' %}?v=ideas-1"></script>
+<script defer src="{% static 'app/js/shared_links.js' %}?v=ideas-1"></script>
 <script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-actions-2"></script>
-<script defer src="{% static 'app/js/script.js' %}?v=temporary-actions-2"></script>
+<script defer src="{% static 'app/js/capabilities.js' %}?v=preflight-1"></script>
+<script defer src="{% static 'app/js/model_favorites.js' %}?v=favorites-1"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=creation-1"></script>
 {% endblock %}

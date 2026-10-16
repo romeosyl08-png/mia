@@ -237,6 +237,9 @@ let state = {
       const res = await fetch("/chat/api/conversations/");
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const list = await res.json();
+      if(chatConfig.initialConversation && !list.some(row => row.id === chatConfig.initialConversationId)){
+        list.unshift(chatConfig.initialConversation);
+      }
       // The request starts immediately; assigning personas depends on their response.
       await personasReady;
       state.conversations = list.map(c => ({
@@ -250,9 +253,11 @@ let state = {
       })).concat(localConversations);
       let messagesReady = Promise.resolve();
       if(state.conversations.length > 0){
-        state.activeConvoId = conversationKey(state.conversations[0]);
-        state.activePersonaId = state.conversations[0].personaId;
-        state.selectedWorkspaceId = state.conversations[0].workspaceId;
+        const initial = state.conversations.find(item => item.id === chatConfig.initialConversationId) || state.conversations[0];
+        state.activeConvoId = conversationKey(initial);
+        state.activePersonaId = initial.personaId;
+        state.selectedWorkspaceId = initial.workspaceId;
+        state.showArchived = initial.isArchived;
         messagesReady = loadConversationMessages(state.activeConvoId);
       }
       await Promise.all([messagesReady, loadConversationFolders(), loadConversationHistory()]);
@@ -430,6 +435,7 @@ let state = {
 
   // ---------- Rendering ----------
   const el = id => document.getElementById(id);
+  const emptyStateTemplate = el("messages").querySelector(".empty-state").cloneNode(true);
   const modelRankingsById = JSON.parse(el("openrouterModelRankings").textContent);
 
   const initialTopP = Number(chatConfig.defaultTopP ?? 1);
@@ -459,12 +465,13 @@ let state = {
 
     const rankLabels = models.filter(item => usageFor(item) > 0);
     const ranks = new Map(rankLabels.map((item, index) => [item, index + 1]));
+    models.sort((left, right) => Number(modelFavorites.has(right.dataset.modelId)) - Number(modelFavorites.has(left.dataset.modelId)));
     models.forEach(item => {
       const label = item.querySelector(".model-picker-ranking");
       const rank = ranks.get(item);
       label.hidden = !rank;
       label.textContent = rank ? `Classement d’usage #${rank}` : "";
-      pickerList.append(item);
+      pickerList.append(item.closest('.model-picker-row') || item);
     });
     const localModelButton = el("localModelDialogBtn");
     if(localModelButton) pickerList.append(localModelButton);
@@ -478,7 +485,7 @@ let state = {
     models.forEach(item => {
       const teamModel = teamModels.get(item.dataset.modelId);
       const modelOption = modelOptions.get(item.dataset.modelId);
-      if(teamModel) el("teamModelGrid").append(teamModel);
+      if(teamModel) el("teamModelGrid").append(teamModel.closest('.team-model-row') || teamModel);
       if(modelOption) modelSelect.append(modelOption);
     });
 
@@ -490,6 +497,9 @@ let state = {
         ? "Tri hebdomadaire par volume de tokens texte. L’usage indique la popularité, pas la qualité."
         : "Tri hebdomadaire estimé à partir d’un échantillon de requêtes de cette tâche; ce n’est pas un benchmark."
       : "Classement non synchronisé pour cette tâche; les modèles sont alors triés par prix de sortie.";
+    if(models.some(item => modelFavorites.has(item.dataset.modelId))){
+      el('modelRankingStatus').textContent = 'Tes favoris apparaissent en tête. ' + el('modelRankingStatus').textContent;
+    }
     el("modelRankingAttribution").textContent = asOf
       ? `Source: OpenRouter (openrouter.ai/rankings), as of ${asOf}.`
       : "";
@@ -548,26 +558,20 @@ let state = {
     }else if(mode === "deep"){
       label = "Réponse détaillée";
       details = label;
-    }else if(mode === "image"){
-      const size = el("imageSizeSelect").value.replace("x", "×");
-      label = `Image ${size}`;
-      details = `Générer une image · ${size}`;
-    }else if(mode === "video"){
-      const resolution = el("videoResolution").value;
-      const duration = el("videoDuration").value;
-      label = `Vidéo ${resolution} · ${duration}s`;
-      details = `Générer une vidéo · ${el("videoAspectRatio").value} · ${resolution} · ${duration} secondes`;
-    }else if(mode === "audio"){
-      const style = el("audioStyle").selectedOptions[0]?.textContent.trim();
-      const instrumental = el("audioInstrumental").checked;
-      label = `Audio${style ? ` · ${style}` : ""}${instrumental ? " · instrumental" : ""}`;
-      details = `Générer un audio${style ? ` · ${style}` : ""}${instrumental ? " · instrumental" : ""}`;
     }
     if(state.sending) label = "Envoi…";
     labelElement.textContent = label;
     button.title = state.sending ? "Envoi en cours…" : `Envoyer avec ${details}`;
     button.setAttribute("aria-label", button.title);
   }
+  const modelFavorites = window.AI2AIModelFavorites.create({
+    initialIds: chatConfig.favoriteModelIds || [],
+    onChange: () => {
+      sortModelsForTask(el('modelTaskCategory').value);
+      filterModelPicker(el('modelPickerSearch').value);
+    },
+    onError: showChatNotice
+  });
   sortModelsForTask(el("modelTaskCategory").value);
   renderModelPickerState();
   renderSendButton();
@@ -577,7 +581,7 @@ let state = {
     list.innerHTML = "";
     const persona = activePersona();
     const title = el("conversationsSectionTitle");
-    if(title) title.firstChild.textContent = state.showArchived ? "Archives" : (persona ? `Conversations · ${persona.name}` : "Conversations");
+    if(title) title.firstChild.textContent = state.showArchived ? "Archives" : "Conversations";
     const savedConversations = state.sidebarConversations;
     const folderSelect = el("folderFilter");
     const selectedFolder = state.selectedFolder;
@@ -876,8 +880,6 @@ let state = {
       select.add(new Option(p.name, String(p.id)));
     });
     if(selectedPersona) select.value = String(selectedPersona.id);
-    const activeName = el("activePersonaName");
-    if(activeName) activeName.textContent = selectedPersona?.name || "Choisir un persona";
     const renameButton = el("renamePersonaBtn");
     if(renameButton){
       renameButton.disabled = !state.isAuthenticated || typeof selectedPersona?.id !== "number";
@@ -984,26 +986,20 @@ function renderHeader(){
         ? "Session temporaire ouverte. Les personas sont indisponibles pour le moment." : "");
   }
 
-  function updateBrowserIdentity(){
-    const favicon = el("botFavicon");
-    if(!favicon) return;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><text x="32" y="50" text-anchor="middle" font-size="48">${state.botAvatar}</text></svg>`;
-    favicon.href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-    document.title = state.botName || "Chatbot";
-  }
-
 function renderMessages(){
   const wrap = el("messages");
   if(state.initializing){
-    wrap.innerHTML = '<div class="empty-state" role="status"><div class="loading-indicator" aria-hidden="true"></div><div class="display">Ton espace se prépare</div><p class="empty-state-copy">Chargement de tes assistants et conversations…</p></div>';
+    wrap.innerHTML = '<div class="empty-state" role="status"><div class="loading-indicator" aria-hidden="true"></div><p class="empty-state-copy">Chargement…</p></div>';
     return;
   }
   const convo = activeConvo();
   if(!convo || !convo.messages || convo.messages.length === 0){
-    wrap.innerHTML = `<div class="empty-state"><div class="empty-state-mark" aria-hidden="true">✦</div><p class="page-eyebrow">Ton espace de réflexion</p><div class="display">Qu’allons-nous créer aujourd’hui ?</div><p class="empty-state-copy">Une idée à explorer, un texte à écrire ou un problème à résoudre.<br>Choisis ton assistant et commence la conversation.</p></div>`;
+    wrap.dataset.conversationKey = convo ? conversationKey(convo) : '';
+    wrap.replaceChildren(emptyStateTemplate.cloneNode(true));
     return;
   }
   wrap.innerHTML = "";
+  wrap.dataset.conversationKey = conversationKey(convo);
   convo.messages.forEach((m, messageIndex) => {
     const div = document.createElement("div");
     div.className = "msg " + m.role;
@@ -1017,7 +1013,8 @@ function renderMessages(){
     const contentDiv = document.createElement("div");
     contentDiv.className = "msg-content";
     if(m.role === "bot"){
-      contentDiv.innerHTML = DOMPurify.sanitize(marked.parse(m.content));
+      contentDiv.innerHTML = DOMPurify.sanitize(AI2AIMarkdown.parse(m.content));
+      globalThis.AI2AIIdeaPreviews?.enhance(contentDiv, div.dataset.messageKey);
     } else {
       contentDiv.textContent = m.content;
     }
@@ -1148,6 +1145,35 @@ function renderMessages(){
       time.textContent = relativeTime(m.createdAt);
       actions.appendChild(time);
       div.appendChild(actions);
+    }
+
+    if(!m.streaming && m.content?.trim()){
+      let actions = div.querySelector('.response-actions');
+      if(!actions){
+        actions = document.createElement('div');
+        actions.className = 'response-actions';
+        div.append(actions);
+      }
+      div.classList.add('has-actions');
+      const create = document.createElement('button');
+      create.type = 'button'; create.className = 'response-action';
+      create.title = 'Créer à partir de ce message';
+      create.setAttribute('aria-label', create.title);
+      create.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2Z"></path></svg>';
+      create.addEventListener('click', () => {
+        const url = chatConfig.creationUrl || '/creation/';
+        const required = window.AI2AICapabilities.requirements(m.content, chatConfig.capabilityRules);
+        const kind = ['image', 'video', 'audio'].find(value => required.has(value)) || 'image';
+        if(m.id && convo.id && !convo.localOnly && !convo.temporary){
+          window.location.assign(`${url}?message=${Number(m.id)}&kind=${kind}`);
+        }else{
+          try{
+            sessionStorage.setItem(`ai2ai-creation-draft:${chatConfig.userId}`, JSON.stringify({prompt:m.content,kind}));
+            window.location.assign(url + '?draft=1');
+          }catch{ showChatNotice('Le navigateur ne permet pas de transférer cette description.'); }
+        }
+      });
+      actions.append(create);
     }
 
     const tokenCount = Number(m.tokens);
@@ -1293,6 +1319,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       select.add(new Option(workspace.title, String(workspace.id)));
     });
     select.value = workspaceId ? String(workspaceId) : "";
+    const workspace = state.workspaces.find(item => String(item.id) === String(workspaceId));
+    el("workspaceSummary").textContent = workspace && !localOnly
+      ? `Fichiers et outils · ${workspace.title}` : "Fichiers et outils";
     select.disabled = localOnly;
     el("createWorkspaceBtn").disabled = localOnly;
     el("workspaceOpen").hidden = localOnly;
@@ -1316,7 +1345,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           .find(element => element.dataset.messageKey === message.clientId);
         const content = messageElement?.querySelector(".msg-content");
         if(!content) return;
-        content.innerHTML = DOMPurify.sanitize(marked.parse(message.content));
+        content.innerHTML = DOMPurify.sanitize(AI2AIMarkdown.parse(message.content));
+        globalThis.AI2AIIdeaPreviews?.enhance(content, message.clientId);
         AI2AISources.attach(content, message.sources || [], {fallback:false});
         const status = messageElement.querySelector('.chat-tool-status');
         if(status){ status.textContent = message.toolStatus || ''; status.hidden = !message.toolStatus; }
@@ -1358,9 +1388,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
 
   async function callBackend(persona, userText, convo, onDelta, editMessageId, onEvent){
     const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
-    const isMediaMode = ["image", "video", "audio"].includes(mode);
-    const endpoint = isMediaMode ? "/chat/api/media/generate/" : "/chat/api/send/";
-    const res = await fetch(endpoint, {
+    const res = await fetch("/chat/api/send/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1379,15 +1407,13 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           .slice(0, -1)
           .map(message => ({ role: message.role === "bot" ? "assistant" : message.role, content: message.content })) : [],
         content: userText,
-        kind: isMediaMode ? mode : null,
-        generation_options: isMediaMode ? collectMediaOptions(mode) : null,
         model_id: state.modelId,
         persona_id: typeof convo.personaId === "number" ? convo.personaId : null,
         system_prompt: persona.prompt,
         temperature: state.temperatureOverride ?? Number(el("temperatureControl").value),
         top_p: Number(el("topPControl").value),
         max_tokens: Number(el("maxTokensControl").value),
-        mode: document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat",
+        mode,
         team_mode: el("teamModeBtn").classList.contains("active"),
         team_strategy: el("teamStrategySelect").value,
         team_model_ids: Array.from(el("teamModelSelect").selectedOptions).map(option => option.value)
@@ -1397,7 +1423,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       const data = await res.json().catch(() => ({}));
       const remainingBalance = Number(data.remaining_balance);
       if(Number.isFinite(remainingBalance)) state.credits = remainingBalance;
-      throw new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+      const error = new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+      error.preflight = ['capability_unavailable', 'unsupported_tools', 'vision_unavailable'].includes(data.error?.type);
+      throw error;
     }
     if(res.headers.get("Content-Type")?.includes("application/json")){
       const data = await res.json();
@@ -1507,9 +1535,27 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return { reply, prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens };
   }
 
+  function messageCapabilityIssue(text, convo = activeConvo(), imageIds = null, history = null){
+    const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
+    const workspace = workspaceId ? state.workspaces.find(row => String(row.id) === String(workspaceId)) || {id: workspaceId} : null;
+    const team = el('teamModeBtn').classList.contains('active');
+    return window.AI2AICapabilities.check(text, {
+      mode: document.querySelector('.tool-btn[data-mode].active')?.dataset.mode || 'chat',
+      local: isLocalModelSelected() || Boolean(convo?.localOnly),
+      team, workspace,
+      hasImages: Boolean((imageIds || convo?.pendingImageIds || []).length || (history || convo?.messages || []).some(row => row.imageFileIds?.length)),
+      modelIds: team ? Array.from(el('teamModelSelect').selectedOptions).map(row => row.value) : [state.modelId]
+    }, chatConfig);
+  }
+
   async function sendMessage(text, reuseLastUser = false, editTarget = null){
     const localModelSelected = isLocalModelSelected();
     if(state.initializing || state.sending || state.savingTemporary || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
+    const current = activeConvo();
+    const targetMessage = editTarget ? current?.messages[editTarget.messageIndex] : reuseLastUser ? current?.messages.at(-1) : null;
+    const problem = messageCapabilityIssue(text, current, targetMessage?.imageFileIds,
+      editTarget ? current?.messages.slice(0, editTarget.messageIndex) : null);
+    if(problem){ showChatNotice(problem.message); return; }
     state.sending = true;
     renderCredits();
     let convo = activeConvo();
@@ -1529,6 +1575,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       return;
     }
 
+    const messagesBeforeSend = convo.messages.slice();
     let previousMessages = null;
     let userMessage;
     if(editTarget){
@@ -1630,6 +1677,13 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       renderAll();
       if(data.billing_warning) showChatNotice(data.billing_warning);
     }catch(err){
+      if(err.preflight){
+        convo.messages = messagesBeforeSend;
+        if(!reuseLastUser && !editTarget && !el('composerInput').value) el('composerInput').value = text;
+        showChatNotice(err.message);
+        renderAll();
+        return;
+      }
       let recovered = err.recovery;
       if(!recovered && streamingMessage.recoveryToken && !convo.temporary && !editTarget){
         for(let attempt=0;attempt<3 && !recovered;attempt++){
@@ -1674,6 +1728,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const convo = activeConvo();
     const previousMessage = convo && convo.messages[messageIndex - 1];
     if(!convo || !previousMessage || previousMessage.role !== "user" || state.sending) return;
+    const problem = messageCapabilityIssue(previousMessage.content, convo, previousMessage.imageFileIds, convo.messages.slice(0, messageIndex));
+    if(problem){ showChatNotice(problem.message); return; }
     convo.messages.splice(messageIndex, 1);
     renderAll();
     await sendMessage(previousMessage.content, true);
@@ -1893,7 +1949,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       }
     }
 
-    el("memorySuggestBtn").addEventListener("click", proposePersonaMemory);
+    el("memorySuggestBtn").addEventListener("click", () => {
+      closeComposerPlusMenu();
+      proposePersonaMemory();
+    });
     el("regenerateMemorySuggestion").addEventListener("click", proposePersonaMemory);
     el("cancelMemorySuggestion").addEventListener("click", () => {
       memoryDialog.hidden = true;
@@ -1932,82 +1991,6 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       }
     });
   }
-  const imageGallery = el("imageGallery");
-  const imageGalleryStatus = el("imageGalleryStatus");
-  const imageGalleryGrid = el("imageGalleryGrid");
-  let imageGalleryKind = "image";
-  async function openImageGallery(kind = "image"){
-    imageGalleryKind = kind;
-    const isVideo = kind === "video";
-    const isAudio = kind === "audio";
-    el("imageGalleryTitle").textContent = isVideo ? "Vidéos" : isAudio ? "Audio généré" : "Images générées";
-    el("imageGalleryDescription").textContent = isVideo
-      ? "Les vidéos enregistrées dans tes conversations"
-      : isAudio ? "Les fichiers audio enregistrés dans tes conversations" : "Les images enregistrées dans tes conversations";
-    document.querySelectorAll("[data-gallery-kind]").forEach(button => {
-      const selected = button.dataset.galleryKind === kind;
-      button.classList.toggle("active", selected);
-      button.setAttribute("aria-selected", String(selected));
-    });
-    imageGallery.hidden = false;
-    imageGalleryStatus.textContent = "Chargement…";
-    imageGalleryGrid.replaceChildren();
-    try{
-      const response = await fetch(`/chat/api/media/gallery/?kind=${encodeURIComponent(kind)}`);
-      if(!response.ok || !response.headers.get("Content-Type")?.includes("application/json")){
-        throw new Error("Connecte-toi pour voir tes images générées.");
-      }
-      const images = await response.json();
-      if(!images.length){
-        imageGalleryStatus.textContent = isVideo
-          ? "Aucune vidéo générée pour l’instant."
-          : isAudio ? "Aucun audio généré pour l’instant." : "Aucune image générée pour l’instant.";
-        return;
-      }
-      imageGalleryStatus.textContent = "";
-      images.forEach(item => {
-        const link = document.createElement("a");
-        link.className = isVideo ? "image-gallery-item video-gallery-item" : isAudio ? "image-gallery-item audio-gallery-item" : "image-gallery-item";
-        link.href = item.media_url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        const media = document.createElement(isVideo ? "video" : isAudio ? "audio" : "img");
-        media.src = item.media_url;
-        if(isVideo || isAudio){
-          media.controls = true;
-          media.preload = "metadata";
-          media.setAttribute("aria-label", item.prompt || (isVideo ? "Vidéo générée" : "Audio généré"));
-          media.addEventListener("click", event => event.stopPropagation());
-        }else{
-          media.alt = item.prompt || "Image générée";
-          media.loading = "lazy";
-        }
-        const prompt = document.createElement("strong");
-        prompt.textContent = item.prompt || "Image générée";
-        const conversation = document.createElement("span");
-        conversation.textContent = item.conversation_title || "Conversation";
-        link.append(media, prompt, conversation);
-        imageGalleryGrid.appendChild(link);
-      });
-    }catch(error){
-      imageGalleryStatus.textContent = error.message || "Chargement de la galerie impossible.";
-    }
-  }
-  el("openImageGalleryBtn").addEventListener("click", () => openImageGallery("image"));
-  el("openVideoGalleryBtn").addEventListener("click", () => openImageGallery("video"));
-  el("openAudioGalleryBtn").addEventListener("click", () => openImageGallery("audio"));
-  document.querySelectorAll("[data-gallery-kind]").forEach(button => {
-    button.addEventListener("click", () => openImageGallery(button.dataset.galleryKind));
-  });
-  el("closeImageGallery").addEventListener("click", () => {
-    imageGallery.hidden = true;
-  });
-  imageGallery.addEventListener("click", event => {
-    if(event.target === imageGallery) imageGallery.hidden = true;
-  });
-  document.addEventListener("keydown", event => {
-    if(event.key === "Escape" && !imageGallery.hidden) imageGallery.hidden = true;
-  });
   el("createWorkspaceBtn").addEventListener("click", () => {
     window.location.href = "/dap/";
   });
@@ -2359,14 +2342,27 @@ el("modelPickerList").addEventListener("click", event => {
 
 function filterModelPicker(value){
   const query = value.trim().toLocaleLowerCase();
+  const favoritesOnly = el('modelFavoritesOnlyBtn').getAttribute('aria-pressed') === 'true';
   let visible = 0;
   document.querySelectorAll(".model-picker-item").forEach(item => {
-    item.hidden = !item.textContent.toLocaleLowerCase().includes(query);
+    item.hidden = !item.textContent.toLocaleLowerCase().includes(query) || (favoritesOnly && !modelFavorites.has(item.dataset.modelId));
+    const row = item.closest('.model-picker-row');
+    if(row) row.hidden = item.hidden;
     if(!item.hidden) visible++;
   });
   const empty = el("modelPickerNoResults");
-  if(empty) empty.hidden = visible > 0;
+  if(empty){
+    empty.hidden = visible > 0;
+    empty.textContent = favoritesOnly ? 'Aucun favori ne correspond. Clique sur une étoile pour ajouter une IA.' : 'Aucune IA ne correspond à cette recherche.';
+  }
 }
+el('modelFavoritesOnlyBtn').addEventListener('click', event => {
+  const button = event.currentTarget;
+  const enabled = button.getAttribute('aria-pressed') !== 'true';
+  button.setAttribute('aria-pressed', String(enabled));
+  button.textContent = enabled ? '★ Favoris' : '☆ Favoris';
+  filterModelPicker(el('modelPickerSearch').value);
+});
 el("modelPickerSearch").addEventListener("input", event => {
   filterModelPicker(event.target.value);
 });
@@ -2450,28 +2446,6 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
     el("teamCount").textContent = `${el("teamModelSelect").selectedOptions.length} / 3`;
     renderSendButton();
   });
-  const mediaOptionsPanel = el("mediaOptionsPanel");
-  function updateMediaOptionControls(mode){
-    const mediaMode = ["image", "video", "audio"].includes(mode);
-    mediaOptionsPanel.hidden = !mediaMode;
-    el("imageOptions").hidden = mode !== "image";
-    el("videoOptions").hidden = mode !== "video";
-    el("audioOptions").hidden = mode !== "audio";
-  }
-  function collectMediaOptions(mode){
-    if(mode === "image") return { image_size: el("imageSizeSelect").value };
-    if(mode === "video") return {
-      aspect_ratio: el("videoAspectRatio").value,
-      resolution: el("videoResolution").value,
-      duration_seconds: Number(el("videoDuration").value),
-      generate_audio: el("videoGenerateAudio").checked,
-    };
-    return {
-      style: el("audioStyle").value,
-      instrumental: el("audioInstrumental").checked,
-    };
-  }
-  updateMediaOptionControls("chat");
   document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tool-btn[data-mode]").forEach(item => {
@@ -2480,15 +2454,12 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
       });
       button.classList.add("active");
       button.setAttribute("aria-pressed", "true");
-      updateMediaOptionControls(button.dataset.mode);
       renderSendButton();
     });
   });
-  ["imageSizeSelect", "videoAspectRatio", "videoResolution", "videoDuration", "videoGenerateAudio", "audioStyle", "audioInstrumental"]
-    .forEach(id => el(id).addEventListener("change", renderSendButton));
 const fileInput = document.createElement("input");
 fileInput.type = "file";
-fileInput.accept = ".txt,.md,.csv,.json,.py,.js,.html,.css,.pdf,.docx,.xlsx,.pptx";
+fileInput.accept = ".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.json,.py,.js,.html,.css,.pdf,.docx,.xlsx,.pptx";
 fileInput.hidden = true;
 document.body.appendChild(fileInput);
 
@@ -2504,16 +2475,6 @@ el("attachBtn").addEventListener("click", () => {
 el("plusFilesBtn").addEventListener("click", () => {
   closeComposerPlusMenu();
   fileInput.click();
-});
-el("plusImageBtn").addEventListener("click", () => {
-  if(el("plusImageBtn").disabled) return;
-  document.querySelectorAll(".tool-btn[data-mode]").forEach(button => {
-    const selected = button.dataset.mode === "image";
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
-  closeComposerPlusMenu();
-  el("composerInput").focus();
 });
 document.addEventListener("click", event => {
   if(!el("composerPlusWrap").contains(event.target)) closeComposerPlusMenu();
@@ -2536,7 +2497,9 @@ fileInput.addEventListener("change", async () => {
     return;
   }
   if(!convo.workspaceId){
-    showChatNotice("Sélectionne ou crée un espace Bara dans « Fichiers » avant de joindre un document.");
+    el("workspaceOptions").open = true;
+    el("workspaceSelect").focus();
+    showChatNotice("Sélectionne ou crée un espace dans « Fichiers et outils » avant de joindre un document.");
     fileInput.value = "";
     return;
   }
@@ -2716,12 +2679,8 @@ fileInput.addEventListener("change", async () => {
       showChatNotice("Une conversation locale ne peut pas utiliser les outils hébergés. Reviens au mode chat simple.");
       return;
     }
-    if(["video", "audio"].includes(selectedMode) && (state.temporaryChat || activeConversation?.temporary)){
-      el("creditNotice").textContent = "Les vidéos et audios doivent être générés dans une conversation enregistrée.";
-      el("creditNotice").classList.add("show");
-      window.setTimeout(() => el("creditNotice").classList.remove("show"), 3200);
-      return;
-    }
+    const problem = messageCapabilityIssue(text);
+    if(problem){ showChatNotice(problem.message); return; }
     input.value = "";
     input.style.height = "auto";
     sendMessage(text);
@@ -2753,6 +2712,18 @@ fileInput.addEventListener("change", async () => {
       }
       if(chatConfig.initialPersonaId && state.personas.some(persona => String(persona.id) === String(chatConfig.initialPersonaId))){
         await setActivePersona(chatConfig.initialPersonaId);
+      }
+      const attachment = chatConfig.initialCreationAttachment;
+      const conversation = activeConvo();
+      if(attachment && conversation?.id === chatConfig.initialConversationId){
+        if(attachment.isImage) conversation.pendingImageIds = [attachment.id];
+        input.value = attachment.isImage ? 'Que peux-tu me dire de cette image ?'
+          : `Aide-moi à travailler sur le fichier « ${attachment.name} » disponible dans cet espace.\n${attachment.context}`;
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        showChatNotice(attachment.isImage ? 'Image jointe au prochain message.' : 'Média ajouté dans « Fichiers et outils ».');
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('creation_file');
+        window.history.replaceState(null, '', cleanUrl);
       }
     } finally {
       state.initializing = false;

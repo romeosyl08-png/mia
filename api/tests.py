@@ -98,6 +98,7 @@ class ChatCompletionsTests(TestCase):
                     "id": "open/model",
                     "name": "Open Model",
                     "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+                    "supported_parameters": ["temperature", "tools"],
                     "pricing": {"prompt": "0.000001", "completion": "0.000002"},
                 },
                 {
@@ -122,6 +123,7 @@ class ChatCompletionsTests(TestCase):
         stale.refresh_from_db()
         self.assertEqual(model.input_price_per_million, 1)
         self.assertEqual(model.output_price_per_million, 2)
+        self.assertEqual(model.supported_parameters, ["temperature", "tools"])
         self.assertFalse(stale.is_active)
         self.assertFalse(AIModel.objects.filter(model_id="image/model").exists())
         self.assertFalse(AIModel.objects.filter(model_id="typesafe/jev-router").exists())

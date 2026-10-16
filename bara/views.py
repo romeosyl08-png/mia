@@ -58,6 +58,7 @@ from chat.context import conversation_history
 from chat.prompt_payloads import compact_json
 from chat.billing import settle_reservation
 from chat.routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
+from chat.capabilities import capability_issue
 
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -699,6 +700,10 @@ def send_message(request, workspace_id, conversation_id):
         )
         if routed_model:
             active_model = routed_model
+
+    problem = capability_issue(content, 'chat', [active_model], workspace)
+    if problem:
+        return JsonResponse({'error': {'message': problem['message'], 'type': 'capability_unavailable'}, 'charged_credits': 0}, status=400)
 
     api_key_obj = active_model.provider.keys.filter(is_active=True).order_by("id").first()
     if not api_key_obj and not is_local_provider(active_model.provider):

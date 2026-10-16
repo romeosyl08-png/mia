@@ -19,11 +19,36 @@ class SecurityHeadersTests(SimpleTestCase):
         self.assertIn("script-src 'self'", policy)
         self.assertNotIn("cdnjs", policy)
 
+    def test_wasm_compilation_is_allowed_without_enabling_javascript_eval(self):
+        policy = self.client.get("/auth/").headers["Content-Security-Policy"]
+        script_sources = next(
+            directive.split()[1:] for directive in policy.split(";")
+            if directive.strip().startswith("script-src ")
+        )
+        self.assertIn("'wasm-unsafe-eval'", script_sources)
+        self.assertNotIn("'unsafe-eval'", script_sources)
+        self.assertNotIn("'unsafe-inline'", script_sources)
+
     def test_security_headers_are_present(self):
         response = self.client.get("/auth/")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin")
         self.assertIn("geolocation=()", response.headers["Permissions-Policy"])
+
+    def test_forms_allow_redirects_to_only_the_trusted_payment_providers(self):
+        response = self.client.get("/auth/")
+        policy = response.headers["Content-Security-Policy"]
+        form_action = next(
+            directive.split()[1:]
+            for directive in policy.split(";")
+            if directive.strip().startswith("form-action ")
+        )
+        self.assertEqual(set(form_action), {
+            "'self'",
+            "https://app.paydunya.com",
+            "https://paydunya.com",
+            "https://checkout.stripe.com",
+        })
 
     def test_the_local_ai_stays_reachable_from_the_browser(self):
         """Dérogation assumée : Ollama / LM Studio tournent sur le poste."""

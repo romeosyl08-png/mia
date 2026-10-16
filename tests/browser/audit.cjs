@@ -127,7 +127,7 @@ async function login(p, identifier=credentials.username) {
     await page.waitForFunction(n=>document.querySelector('#personaTopSelect').options.length>n,previous);
     await page.locator('#renamePersonaBtn').click();await page.locator('#personaRenameInput').fill('Persona Playwright — test');
     await page.locator('#personaRenameForm button[type=submit]').click();
-    await page.waitForFunction(()=>document.querySelector('#activePersonaName').textContent.includes('Persona Playwright'));
+    await page.waitForFunction(()=>document.querySelector('#personaTopSelect').selectedOptions[0].textContent.includes('Persona Playwright'));
     await page.reload();await readyChat();assert.ok((await page.locator('#personaTopSelect').innerText()).includes('Persona Playwright'));
   });
   await check('Personas — mémoire et réglages enregistrés',async()=>{
@@ -198,15 +198,13 @@ async function login(p, identifier=credentials.username) {
     assert.equal(chatRequests.at(-1).team_strategy,'plan_execute_verify');await page.locator('#teamModeBtn').click();
     return {generation:'simulated',models:2};
   });
-  await check('Chat standard — réponse et galeries',async()=>{
+  await check('Chat standard — réponse et accès à Création',async()=>{
     await page.locator('#newConvoBtn').click();await page.locator('#composerInput').fill('QA conversation standard');
     await page.locator('#sendBtn').click();await page.waitForFunction(()=>!document.querySelector('#sendBtn').disabled);
     assert.equal(chatRequests.at(-1).temporary,false);
     assert.ok((await page.locator('#messages').innerText()).includes('Réponse de test Playwright'));
-    for(const id of ['openImageGalleryBtn','openVideoGalleryBtn','openAudioGalleryBtn']){
-      await page.locator('#'+id).click();assert.ok(await page.locator('#imageGallery').isVisible());
-      await page.locator('#closeImageGallery').click();
-    }
+    assert.equal(await page.locator('#openCreationLink').getAttribute('href'), '/creation/');
+    assert.equal(await page.locator('#imageGallery, #imageModeBtn, #videoModeBtn, #audioModeBtn').count(), 0);
     return {generation:'simulated'};
   });
   let workspacePath='',workspaceRoot='';

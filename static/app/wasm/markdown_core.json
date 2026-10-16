@@ -1,0 +1,11 @@
+{
+  "sources": {
+    "scripts/build_markdown_wasm.py": "2ee1cc87ebdbf53c3649f1cfd9218d51aa62193afd057b354f72b424d8a45f82",
+    "rust/markdown/Cargo.toml": "0019cbbab419c02c8f611c0ad6917fd21b56d08dc4a225161e2a2e78c94226fb",
+    "rust/markdown/Cargo.lock": "3d7e2f466f04ec8f915e000aa8e4b8e73449178bf5b0c648c2914a2f8eb3a5cc",
+    "rust/markdown/rust-toolchain.toml": "3a00ee1d8b1944b135b4b93b219422db2328a4c208bfc20c5d210f438f7207fa",
+    "rust/markdown/src/lib.rs": "625b63a69c1eb52e1f2c1c5c4c6d15f01a715b51caf7d823a4dc973e6402a57c"
+  },
+  "wasm_sha256": "143be1a0ca350c728e912a06ce79dfbdb00df51a72f619fec85b576c96466660",
+  "notices_sha256": "430643ed9fbfb1f3f429d35af161098c6e73d64914d95af9a66abec5aec73bac"
+}

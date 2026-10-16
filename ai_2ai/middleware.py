@@ -15,7 +15,8 @@ def _policy_string():
         "default-src": ["'self'"],
         # Tous les scripts sont servis par l'application (voir static/app/vendor),
         # à l'exception du widget officiel de connexion Telegram.
-        "script-src": ["'self'", "https://telegram.org"],
+        # Autorise la compilation du moteur Markdown Wasm ; eval() reste interdit.
+        "script-src": ["'self'", "'wasm-unsafe-eval'", "https://telegram.org"],
         # Les gabarits utilisent massivement des attributs style="...".
         "style-src": ["'self'", "'unsafe-inline'"],
         "img-src": ["'self'", "data:", "blob:"],
@@ -23,7 +24,14 @@ def _policy_string():
         "media-src": ["'self'"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],
-        "form-action": ["'self'"],
+        # Chrome applique aussi form-action aux redirections après un POST.
+        # Les formulaires de recharge redirigent vers ces prestataires validés.
+        "form-action": [
+            "'self'",
+            "https://app.paydunya.com",
+            "https://paydunya.com",
+            "https://checkout.stripe.com",
+        ],
         "frame-ancestors": ["'self'"],
         # Dérogation : l'IA locale est appelée depuis le navigateur vers
         # Ollama / LM Studio / Jan sur la machine de l'utilisateur.

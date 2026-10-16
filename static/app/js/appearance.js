@@ -167,6 +167,12 @@
         const themeColor = document.querySelector('meta[name="theme-color"]');
         if (themeColor) themeColor.content = appearance.theme === "dark" ? "#191c28" : appearance.accent;
 
+        const favicon = document.getElementById("appFavicon");
+        if (favicon) {
+            const source = appearance.theme === "dark" ? favicon.dataset.darkSrc : favicon.dataset.lightSrc;
+            if (favicon.getAttribute("href") !== source) favicon.setAttribute("href", source);
+        }
+
 
         /*
          * Éléments globaux
@@ -189,37 +195,6 @@
             document.title =
                 appearance.botName;
 
-        }
-
-
-        /*
-         * Favicon
-         */
-
-        const favicon =
-            document.getElementById("botFavicon");
-
-        if (favicon) {
-
-            const svg = `
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 64 64"
-                >
-                    <text
-                        x="32"
-                        y="50"
-                        text-anchor="middle"
-                        font-size="48"
-                    >
-                        ${appearance.botAvatar}
-                    </text>
-                </svg>
-            `;
-
-            favicon.href =
-                "data:image/svg+xml;charset=utf-8," +
-                encodeURIComponent(svg);
         }
     }
 

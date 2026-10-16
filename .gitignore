@@ -19,3 +19,4 @@ venv/
 .playwright-cli/
 
 node_modules/
+rust/**/target/

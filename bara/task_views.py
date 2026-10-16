@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.views.decorators.http import require_POST
 from chat.routing import eligible_models, recommend_model
+from chat.capabilities import capability_issue
 from .access import get_workspace
 from .models import AgentTask, Workspace, WorkConversation
 from .tasks import event
@@ -30,6 +31,9 @@ def create_task(request, workspace_id):
         model = next((m for m in candidates if m.model_id==decision['model_id'] and m.provider.slug==decision['provider_slug']),model)
     if not model or model not in candidates:
         return JsonResponse({'error': 'Choisis un modèle compatible avec les outils.'}, status=400)
+    problem = capability_issue(objective, 'chat', [model], workspace)
+    if problem:
+        return JsonResponse({'error': problem['message'], 'charged_credits': 0}, status=400)
     try:
         max_steps = int(request.POST.get('max_steps', 12))
         credit_limit = int(request.POST.get('credit_limit', 1000))

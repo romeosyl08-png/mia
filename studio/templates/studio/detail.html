@@ -1,47 +1,95 @@
 {% extends "base.html" %}{% load static %}
 {% block title %}{{ project.title }} · Studio 2AI{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=1">{% endblock %}
+{% block body_class %}studio-page{% endblock %}
+{% block install_controls %}{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=editor-1">{% endblock %}
 {% block body %}
-<main class="studio-shell" id="studio" data-base="{% url 'studio:detail' project.pk %}">
-  <header class="studio-header"><a href="{% url 'studio:index' %}">‹ Mes projets</a><a href="/">Chat</a>{% if project.workspace %}<a href="{% url 'bara:detail' project.workspace_id %}">Bara</a>{% endif %}<a href="{% url 'recharge-page' %}" id="studio-balance"></a></header>
-  <div class="studio-title"><div><span class="studio-kicker">STUDIO MULTIMÉDIA{% if project.persona %} · {{ project.persona.name }}{% endif %}</span><h1>{{ project.title }}</h1></div><a class="studio-button" href="{% url 'studio:json' project.pk %}">Scène JSON ↓</a></div>
+<main class="studio-shell studio-editor" id="studio" data-base="{% url 'studio:detail' project.pk %}">
+  <header class="studio-menubar">
+    <a class="studio-brand" href="{% url 'studio:index' %}"><span aria-hidden="true">◈</span> Studio <span class="studio-brand-sub">2AI</span></a>
+    <nav aria-label="Navigation du studio"><a href="{% url 'creation:index' %}">Création</a><a href="{% url 'creation:library' %}">Médiathèque</a><a href="{% url 'studio:index' %}">Mes projets</a><a href="/">Chat</a>{% if project.workspace %}<a href="{% url 'bara:detail' project.workspace_id %}">Bara</a>{% endif %}</nav>
+    <h1>{{ project.title }}</h1>
+    <a href="{% url 'recharge-page' %}" id="studio-balance" class="studio-balance"></a>
+  </header>
+  <div class="studio-toolbar" aria-label="Actions du projet">
+    <button type="button" class="primary" id="studio-save"><span aria-hidden="true">▣</span> Enregistrer</button>
+    <button type="button" id="studio-reload" title="Recharger la version enregistrée"><span aria-hidden="true">↻</span> Recharger</button>
+    <span class="studio-toolbar-divider" aria-hidden="true"></span>
+    <button type="button" id="studio-render-video"><span aria-hidden="true">↗</span> Exporter la vidéo</button>
+    <button type="button" id="studio-render-audio"><span aria-hidden="true">♫</span> Exporter l’audio</button>
+    <a class="studio-button" href="{% url 'studio:json' project.pk %}">Scène JSON ↓</a>
+    <span class="studio-toolbar-status" id="studio-dirty">Version enregistrée</span>
+  </div>
   <p id="studio-notice" class="studio-notice" role="status" aria-live="polite" hidden></p>
-  <div class="studio-layout">
-    <div class="studio-main">
-      <section class="studio-panel">
-        <div class="studio-section-title"><h2>Médiathèque</h2><span>Références et sources</span></div>
-        <form id="studio-upload" class="studio-inline">{% csrf_token %}<label class="studio-upload-label">Importer<input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*" required></label><button type="submit">Ajouter</button></form>
-        <p class="studio-hint">100 Mo par fichier, dix minutes maximum. Coche jusqu’à huit images pour guider les générations visuelles.</p>
+  <div class="studio-workspace">
+    <section class="studio-dock studio-bin" aria-label="Médias du projet">
+      <div class="studio-tabs" role="tablist" aria-label="Médias">
+        <button type="button" id="studio-bin-tab" role="tab" aria-selected="true" aria-controls="studio-bin-panel" data-tab-group="bin" data-tab-target="studio-bin-panel">Médias du projet</button>
+        <button type="button" id="studio-exports-tab" role="tab" aria-selected="false" aria-controls="studio-exports-panel" tabindex="-1" data-tab-group="bin" data-tab-target="studio-exports-panel">Exports</button>
+      </div>
+      <div id="studio-bin-panel" class="studio-dock-body" role="tabpanel" aria-labelledby="studio-bin-tab">
+        <form id="studio-upload" class="studio-upload">{% csrf_token %}<label class="studio-upload-label"><span class="sr-only">Importer un média</span><input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*" required></label><button type="submit" title="Importer le fichier sélectionné">Importer</button></form>
+        <label class="sr-only" for="studio-library-search">Rechercher un média</label><input id="studio-library-search" type="search" placeholder="Rechercher un média…" autocomplete="off">
+        <div class="studio-bin-heading"><span>Nom</span><span id="studio-asset-count">0 média</span></div>
         <div id="studio-library" class="studio-library"></div>
-      </section>
-      <section class="studio-panel">
-        <div class="studio-section-title"><h2>Montage</h2><span id="studio-dirty">Version enregistrée</span></div>
-        <label>Direction artistique<textarea id="studio-brief" maxlength="4000" rows="2" placeholder="Style, ambiance, personnages et éléments à préserver…"></textarea></label>
-        <h3>Plans visuels</h3><div id="studio-visuals" class="studio-tracks"></div>
-        <h3>Pistes audio</h3><div id="studio-audio" class="studio-tracks"></div>
-        <p class="studio-hint">Les plans se suivent dans l’ordre. La bande-son utilise les pistes audio ci-dessus ; le son intégré aux vidéos n’est pas repris dans le montage.</p>
-        <div class="studio-settings"><label>Format<select id="studio-format"><option value="1280x720">Paysage 16:9</option><option value="720x1280">Portrait 9:16</option><option value="720x720">Carré</option></select></label><label>Images / seconde<select id="studio-fps"><option value="24">24</option><option value="30">30</option></select></label><label>Export audio, durée (s)<input type="number" id="studio-duration" min="1" max="180" step="0.1"></label></div>
-        <div class="studio-actions"><button type="button" class="primary" id="studio-save">Enregistrer le montage</button><button type="button" id="studio-reload">Recharger</button><button type="button" id="studio-render-video">Préparer la vidéo</button><button type="button" id="studio-render-audio">Préparer le mix audio</button></div>
-      </section>
-      <section class="studio-panel"><h2>Exports</h2><div id="studio-exports" class="studio-library"></div></section>
-    </div>
-    <aside class="studio-aside">
-      <section class="studio-panel"><h2>Directeur IA</h2><p class="studio-hint">Décris le résultat souhaité. Examine les étapes proposées avant de les lancer.</p>
+        <p class="studio-hint">100 Mo par fichier · 10 min maximum.<br>Jusqu’à 8 images de référence pour l’IA.</p>
+      </div>
+      <div id="studio-exports-panel" class="studio-dock-body" role="tabpanel" aria-labelledby="studio-exports-tab" hidden><div id="studio-exports" class="studio-library"></div></div>
+    </section>
+    <section class="studio-dock studio-monitor-dock" aria-label="Moniteur">
+      <div class="studio-tabs studio-monitor-tabs" role="tablist" aria-label="Moniteur">
+        <button type="button" id="studio-monitor-source-tab" role="tab" aria-selected="false" aria-controls="studio-monitor-stage" tabindex="-1" data-monitor-mode="source">Source</button>
+        <button type="button" id="studio-monitor-project-tab" role="tab" aria-selected="true" aria-controls="studio-monitor-stage" data-monitor-mode="project">Montage</button>
+        <span id="studio-monitor-name">Moniteur du projet</span>
+      </div>
+      <div id="studio-monitor-stage" class="studio-monitor-stage" role="tabpanel" aria-labelledby="studio-monitor-project-tab"></div>
+      <div class="studio-monitor-transport">
+        <button type="button" id="studio-preview-start" title="Retour au début" aria-label="Retour au début">|◀</button>
+        <button type="button" id="studio-preview-play" title="Lire le montage" aria-label="Lire le montage" aria-pressed="false">▶</button>
+        <button type="button" id="studio-preview-next" title="Plan suivant" aria-label="Plan suivant">▶|</button>
+        <output id="studio-timecode">00:00:00:00</output>
+        <label class="sr-only" for="studio-preview-seek">Position dans le montage</label><input type="range" id="studio-preview-seek" min="0" max="0" step="0.0416667" value="0">
+        <span id="studio-project-length">00:00:00:00</span>
+      </div>
+      <div class="studio-monitor-footer"><span id="studio-monitor-info">1280 × 720 · 24 fps</span><span id="studio-reference-count">0 référence</span></div>
+    </section>
+    <aside class="studio-dock studio-inspector" aria-label="Réglages du projet">
+      <div class="studio-tabs" role="tablist" aria-label="Réglages">
+        <button type="button" id="studio-ai-tab" role="tab" aria-selected="true" aria-controls="studio-ai-panel" data-tab-group="inspector" data-tab-target="studio-ai-panel">Outils IA</button>
+        <button type="button" id="studio-clips-tab" role="tab" aria-selected="false" aria-controls="studio-clips-panel" tabindex="-1" data-tab-group="inspector" data-tab-target="studio-clips-panel">Clips</button>
+        <button type="button" id="studio-project-tab" role="tab" aria-selected="false" aria-controls="studio-project-panel" tabindex="-1" data-tab-group="inspector" data-tab-target="studio-project-panel">Projet</button>
+      </div>
+      <div id="studio-ai-panel" class="studio-dock-body" role="tabpanel" aria-labelledby="studio-ai-tab"><section class="studio-panel"><h2>Directeur IA</h2><p class="studio-hint">Décris le résultat souhaité. Examine les étapes proposées avant de les lancer.</p>
         <form id="studio-director" class="studio-form"><label>Ta demande<textarea id="studio-request" rows="3" maxlength="4000" required placeholder="Crée une affiche puis une ambiance musicale douce…"></textarea></label><label>Plafond pour préparer le plan (jetons)<input id="studio-director-budget" type="number" min="1" max="1000000" value="2000" required></label><button type="submit">Proposer un plan</button></form>
-      </section>
-      <section class="studio-panel"><h2>Génération directe</h2><form id="studio-generate" class="studio-form">
+      </section><section class="studio-panel"><h2>Génération directe</h2><form id="studio-generate" class="studio-form">
         <label>Média<select id="studio-kind"><option value="image">Image</option><option value="video">Vidéo</option><option value="audio">Audio</option></select></label>
         <label>Description<textarea id="studio-prompt" rows="3" maxlength="4000" required></textarea></label>
         <div data-options="image"><label>Image<select id="studio-image-size"><option value="1024x1024">Carrée</option><option value="1536x1024">Paysage</option><option value="1024x1536">Portrait</option></select></label></div>
         <div data-options="video" hidden><label>Durée<select id="studio-video-duration"><option value="4">4 secondes</option><option value="6">6 secondes</option><option value="8">8 secondes</option><option value="10">10 secondes</option><option value="15">15 secondes</option><option value="30">30 secondes</option></select></label><label>Qualité<select id="studio-video-resolution"><option value="480p">480p</option><option value="720p">720p</option></select></label><label>Format<select id="studio-video-aspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label><label>Première image<select id="studio-first-frame"><option value="">Sans image imposée</option></select></label></div>
         <div data-options="audio" hidden><label>Piste<select id="studio-audio-role"><option value="music">Musique</option><option value="voice">Voix</option><option value="ambience">Ambiance</option><option value="effect">Effet sonore</option></select></label><label>Style<select id="studio-audio-style"><option value="">Libre</option><option value="ambient">Ambient</option><option value="cinematic">Cinéma</option><option value="electronic">Électronique</option><option value="jazz">Jazz</option><option value="pop">Pop</option><option value="orchestral">Orchestral</option></select></label><label class="studio-check"><input type="checkbox" id="studio-instrumental" checked>Instrumental</label><p class="studio-hint">Le type de piste sert au montage. Les voix et autres sons dépendent des capacités du modèle audio configuré.</p></div>
         <button type="submit">Préparer la génération</button>
-      </form></section>
-      <section class="studio-panel" id="studio-plan" hidden><h2>Plan à valider</h2><p id="studio-plan-message"></p><ol id="studio-plan-steps"></ol><p id="studio-estimate"></p><form id="studio-launch" class="studio-form"><label>Plafond de génération (jetons)<input type="number" id="studio-budget" value="20000" min="0" max="1000000" required></label><button type="submit" class="primary">Lancer les étapes</button></form></section>
-      <section class="studio-panel"><h2>Tâches</h2><div id="studio-jobs"></div></section>
-      <section class="studio-panel"><h2>Historique</h2><label>Version<select id="studio-version"></select></label><button type="button" id="studio-restore">Restaurer cette version</button><p class="studio-hint">La restauration crée une nouvelle version. Les résultats précédents restent disponibles.</p></section>
+      </form></section><section class="studio-panel" id="studio-plan" hidden><h2>Plan à valider</h2><p id="studio-plan-message"></p><ol id="studio-plan-steps"></ol><p id="studio-estimate"></p><form id="studio-launch" class="studio-form"><label>Plafond de génération (jetons)<input type="number" id="studio-budget" value="20000" min="0" max="1000000" required></label><button type="submit" class="primary">Lancer les étapes</button></form></section></div>
+      <div id="studio-clips-panel" class="studio-dock-body" role="tabpanel" aria-labelledby="studio-clips-tab" hidden>
+        <section class="studio-panel"><h2>Plans visuels</h2><div id="studio-visuals" class="studio-tracks"></div></section>
+        <section class="studio-panel"><h2>Pistes audio</h2><div id="studio-audio" class="studio-tracks"></div></section>
+        <p class="studio-hint">Les plans se suivent dans l’ordre. La bande-son utilise les pistes audio ; le son intégré aux vidéos n’est pas repris.</p>
+      </div>
+      <div id="studio-project-panel" class="studio-dock-body" role="tabpanel" aria-labelledby="studio-project-tab" hidden>
+        <section class="studio-panel"><h2>Réglages du montage</h2>
+          <label>Direction artistique<textarea id="studio-brief" maxlength="4000" rows="3" placeholder="Style, ambiance, éléments à préserver…"></textarea></label>
+          <div class="studio-settings"><label>Format<select id="studio-format"><option value="1280x720">Paysage 16:9</option><option value="720x1280">Portrait 9:16</option><option value="720x720">Carré</option></select></label><label>Images / seconde<select id="studio-fps"><option value="24">24</option><option value="30">30</option></select></label><label>Export audio, durée (s)<input type="number" id="studio-duration" min="1" max="180" step="0.1"></label></div>
+          {% if project.persona %}<p class="studio-hint">Direction artistique : {{ project.persona.name }}</p>{% endif %}
+        </section>
+        <section class="studio-panel"><h2>Tâches</h2><div id="studio-jobs"></div></section><section class="studio-panel"><h2>Historique</h2><label>Version<select id="studio-version"></select></label><button type="button" id="studio-restore">Restaurer cette version</button><p class="studio-hint">La restauration crée une nouvelle version. Les résultats précédents restent disponibles.</p></section>
+      </div>
     </aside>
+    <section class="studio-dock studio-timeline" aria-label="Timeline du montage">
+      <header class="studio-timeline-toolbar"><h2>Timeline</h2><span id="studio-timeline-summary">0 plan · 0 piste</span><label for="studio-timeline-zoom">Zoom</label><input type="range" id="studio-timeline-zoom" min="12" max="120" value="42" step="2"><button type="button" id="studio-timeline-fit" title="Ajuster le montage à la largeur">Ajuster</button></header>
+      <div class="studio-timeline-scroll" id="studio-timeline-scroll"><div id="studio-timeline-content" class="studio-timeline-content"><div id="studio-timeline-ruler" class="studio-timeline-ruler"></div><div id="studio-timeline-lanes"></div><div id="studio-playhead" class="studio-playhead" aria-hidden="true"></div></div></div>
+      <footer class="studio-timeline-footer"><span>Les plans visuels sont consécutifs · les pistes audio gardent leur décalage</span><span id="studio-timeline-duration">00:00:00:00</span></footer>
+    </section>
   </div>
+  <footer class="studio-statusbar"><span id="studio-status">Projet chargé</span><span>Studio 2AI</span>{% include "includes/pwa_controls.html" with pwa_inline=True %}</footer>
   <dialog id="studio-mask-dialog"><form method="dialog"><button class="studio-dialog-close" aria-label="Fermer l’éditeur de masque">×</button></form><h2>Modifier une zone de l’image</h2><p class="studio-hint">Peins la zone à modifier. Le reste de l’image sera conservé pixel par pixel.</p><div class="studio-mask-stage"><img id="studio-mask-image" alt="Image à modifier"><canvas id="studio-mask-canvas" aria-label="Peindre la zone à modifier"></canvas></div>
     <div class="studio-inline"><label>Pinceau<input type="range" id="studio-brush" min="5" max="200" value="50"></label><label class="studio-check"><input type="checkbox" id="studio-eraser">Gomme</label><button type="button" id="studio-mask-clear">Effacer le masque</button></div>
     <div class="studio-inline"><label>Couleur<input type="color" id="studio-color" value="#df354f"></label><button type="button" class="primary" id="studio-recolor">Préparer la recoloration</button></div>
@@ -50,4 +98,4 @@
   {{ initial_state|json_script:'studio-state' }}
 </main>
 {% endblock %}
-{% block extra_js %}<script defer src="{% static 'app/js/studio.js' %}?v=1"></script>{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/studio_editor.js' %}?v=editor-1"></script><script defer src="{% static 'app/js/studio.js' %}?v=editor-1"></script>{% endblock %}

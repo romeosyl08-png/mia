@@ -9,6 +9,7 @@ from api.models import APIKey, AIModel
 
 from .models import RoutingFeedback, RoutingObservation
 from .services import is_local_provider
+from .capabilities import supports_tools
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ def eligible_models(surface="chat", workspace=False, streamed=False, tools=False
 			continue
 		provider_name = f"{provider.slug} {provider.name}".lower()
 		if workspace and "anthropic" in provider_name:
+			continue
+		if (workspace or tools) and supports_tools(model) is False:
 			continue
 		if streamed and surface == "api" and "anthropic" in provider_name:
 			continue

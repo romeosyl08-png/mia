@@ -2,13 +2,13 @@
 {% block title %}Recharger mes jetons{% endblock %}
 {% block extra_head %}
 {% load static %}
-<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=currency-1">
+<link rel="stylesheet" href="{% static 'app/css/recharge.css' %}?v=payment-validation-1">
 {% endblock %}
 {% block body %}
 <main class="recharge-page">
   <nav class="recharge-nav" aria-label="Navigation de recharge">
     <a class="recharge-back" href="{% url 'chat:chat-home' %}"><span aria-hidden="true">←</span> Retour au chat</a>
-    <span class="recharge-brand">2AI <span aria-hidden="true">/</span> MON COMPTE</span>
+    <span class="recharge-brand">{% include "includes/app_logo.html" with logo_class="app-logo--compact" %} <span aria-hidden="true">/</span> MON COMPTE</span>
   </nav>
   <header class="recharge-hero">
     <p class="recharge-eyebrow">Crédits 2AI</p>
@@ -61,16 +61,26 @@
         <p class="payment-description">{% if currency.provider == 'paydunya' %}Paie par carte ou avec les moyens Mobile Money proposés par PayDunya pour ton pays.{% else %}Paiement par carte via la page sécurisée de Stripe.{% endif %}</p>
         <fieldset class="customer-details">
           <legend>Informations de paiement</legend>
-          <label for="payment-customer-name">Nom complet<input id="payment-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" required></label>
-          <label for="payment-customer-email">E-mail<input id="payment-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" required></label>
-          <label class="customer-phone-field" for="payment-customer-phone">Téléphone<input id="payment-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" required></label>
+          <div class="customer-field">
+            <label for="payment-customer-name">Nom complet<input id="payment-customer-name" name="customer_name" type="text" maxlength="100" autocomplete="name" aria-describedby="payment-customer-name-error" required></label>
+            <p class="payment-field-error" id="payment-customer-name-error" aria-live="polite" hidden></p>
+          </div>
+          <div class="customer-field">
+            <label for="payment-customer-email">E-mail<input id="payment-customer-email" name="customer_email" type="email" maxlength="254" autocomplete="email" aria-describedby="payment-customer-email-error" required></label>
+            <p class="payment-field-error" id="payment-customer-email-error" aria-live="polite" hidden></p>
+          </div>
+          <div class="customer-field customer-phone-field">
+            <label for="payment-customer-phone">Téléphone<input id="payment-customer-phone" name="customer_phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" aria-describedby="payment-customer-phone-error" required></label>
+            <p class="payment-field-error" id="payment-customer-phone-error" aria-live="polite" hidden></p>
+          </div>
         </fieldset>
         <label class="amount-label" for="payment-amount">Montant à recharger</label>
         <div class="currency-input">
           <span class="currency-symbol{% if currency.code == 'XOF' %} currency-symbol-text{% endif %}" aria-hidden="true">{{ currency.symbol }}</span>
-          <input id="payment-amount" name="amount" type="number" min="{{ minimum_amount }}" step="{% if currency.decimals == 0 %}1{% else %}0.01{% endif %}" value="{{ minimum_amount }}" required aria-describedby="paymentRate creditsEstimate" {% if not payment_available %}disabled{% endif %}>
+          <input id="payment-amount" name="amount" type="number" min="{{ minimum_amount }}" step="{% if currency.decimals == 0 %}1{% else %}0.01{% endif %}" value="{{ minimum_amount }}" required aria-describedby="paymentRate creditsEstimate payment-amount-error" {% if not payment_available %}disabled{% endif %}>
           <span class="currency-code">{{ currency.code }}</span>
         </div>
+        <p class="payment-field-error" id="payment-amount-error" aria-live="polite" hidden></p>
         {% if payment_available %}
         <div class="amount-presets" aria-label="Montants rapides en {{ currency.code }}">
           {% for preset in presets %}<button type="button" data-set-amount="payment-amount" data-amount="{{ preset.amount }}">{{ preset.label }} {{ currency.code }}</button>{% endfor %}
@@ -82,7 +92,8 @@
           <output id="creditsEstimate" data-credits-per-dollar="{{ credits_per_dollar }}" data-rate-per-usd="{{ currency.rate_per_usd }}" data-currency="{{ currency.code }}" data-decimals="{{ currency.decimals }}" aria-live="polite">{% if payment_available %}{{ default_credits_display }} jetons{% else %}Indisponible{% endif %}</output>
         </div>
         {% if payment_available %}
-        <button class="payment-submit" type="submit">Continuer avec {% if currency.provider == 'paydunya' %}PayDunya{% else %}Stripe{% endif %} <span aria-hidden="true">→</span></button>
+        <button class="payment-submit" type="submit" aria-describedby="paymentFormHint">Continuer avec {% if currency.provider == 'paydunya' %}PayDunya{% else %}Stripe{% endif %} <span aria-hidden="true">→</span></button>
+        <p class="payment-form-hint" id="paymentFormHint" role="status">Complète tes informations de paiement pour continuer.</p>
         <p class="payment-footnote">Tu seras redirigé vers la page sécurisée du prestataire pour confirmer le paiement.</p>
         {% else %}
         <button class="payment-submit" type="button" disabled>Paiement indisponible</button>
@@ -97,5 +108,5 @@
 {% endblock %}
 {% block extra_js %}
 {% load static %}
-<script defer src="{% static 'app/js/recharge.js' %}?v=currency-1"></script>
+<script defer src="{% static 'app/js/recharge.js' %}?v=payment-validation-1"></script>
 {% endblock %}
