@@ -10,6 +10,12 @@ test('groups citations next to a claim and keeps stable source numbers', () => {
   assert.equal(groups[1].sources[0].id, 2);
 });
 
+test('citation matching safely reuses its scanner across separate text nodes', () => {
+  const sources = [{link:'https://example.test/a'}, {link:'https://example.test/b'}];
+  assert.equal(AI2AISources.citationGroups('Premier [[source:2]]', sources)[0].sources[0].id, 2);
+  assert.equal(AI2AISources.citationGroups('Second [[sources:1]]', sources)[0].sources[0].id, 1);
+});
+
 test('never turns an invented citation or a script URL into a source', () => {
   const sources = [{link:'javascript:alert(1)', title:'Unsafe'}, {link:'https://example.test/page', title:'Real'}];
   assert.deepEqual(AI2AISources.normalizeSources(sources).map(source => source.id), [2]);

@@ -7,25 +7,47 @@
       Math.floor(frames / fps) % 60, frames % fps].map(value => String(value).padStart(2, '0')).join(':');
   }
   function segments(scene, assets) {
+    const assetsById = new Map(assets.map(asset => [asset.id, asset]));
     let start = 0;
     const visuals = scene.visuals.map(row => {
-      const segment = {row, start, duration: row.duration, asset: assets.find(item => item.id === row.asset_id)};
+      const segment = {row, start, duration: row.duration, asset: assetsById.get(row.asset_id)};
       start += row.duration;
       return segment;
     });
     const audio = scene.audio.map(row => {
-      const asset = assets.find(item => item.id === row.asset_id);
+      const asset = assetsById.get(row.asset_id);
       return {row, asset, start: row.start, duration: Math.min(180 - row.start, Number(asset?.metadata?.duration) || scene.settings.duration)};
     });
     return {visuals, audio, duration: visuals.length ? start : audio.length ? scene.settings.duration : 0};
+  }
+
+  function visualAt(visuals, position, totalDuration) {
+    let low = 0, high = visuals.length - 1;
+    while(low <= high){
+      const middle = Math.floor((low + high) / 2);
+      const visual = visuals[middle];
+      if(position < visual.start) high = middle - 1;
+      else if(position >= visual.start + visual.duration) low = middle + 1;
+      else return visual;
+    }
+    return position === totalDuration ? visuals.at(-1) || null : null;
   }
   function create({root, getScene, getAssets}) {
     const $ = id => root.querySelector(`#studio-${id}`);
     let mode = 'project', selectedAssetId = null, selectedTrackId = null, position = 0;
     let playing = false, frame = 0, anchor = 0, monitorKey = '', mediaElement = null, signature = '';
+    let cachedScene = null, cachedAssets = null, cachedTimeline = null;
     let audioContext = null;
     const sounds = new Map();
-    const data = () => segments(getScene(), getAssets());
+    function data() {
+      const scene = getScene(), assets = getAssets();
+      if (!cachedTimeline || scene !== cachedScene || assets !== cachedAssets) {
+        cachedScene = scene;
+        cachedAssets = assets;
+        cachedTimeline = segments(scene, assets);
+      }
+      return cachedTimeline;
+    }
     const element = (tag, text, className) => {
       const item = document.createElement(tag);
       if (text !== undefined) item.textContent = text;
@@ -77,8 +99,7 @@
     }
     function renderMonitor(force = false) {
       const timeline = data();
-      const current = timeline.visuals.find(item => position >= item.start && position < item.start + item.duration)
-        || (position === timeline.duration ? timeline.visuals.at(-1) : null);
+      const current = visualAt(timeline.visuals, position, timeline.duration);
       const item = mode === 'source' ? getAssets().find(asset => asset.id === selectedAssetId) : current?.asset;
       const key = `${mode}:${item?.id || 'empty'}:${current?.row.id || ''}`;
       if (key !== monitorKey) {
@@ -202,13 +223,16 @@
       selection(); renderMonitor();
     }
     function refresh() {
-      const next = JSON.stringify([getScene(), getAssets().map(asset => [asset.id, asset.metadata])]);
-      if (next !== signature) {
-        signature = next; stop(); clearSounds(); position = Math.min(position, data().duration); renderTimeline();
+      const scene = getScene(), assets = getAssets();
+      const next = JSON.stringify([scene, assets.map(asset => [asset.id, asset.metadata])]);
+      if (next !== signature || scene !== cachedScene || assets !== cachedAssets) {
+        signature = next;
+        cachedTimeline = null;
+        stop(); clearSounds(); position = Math.min(position, data().duration); renderTimeline();
       }
-      const settings = getScene().settings;
+      const settings = scene.settings;
       $('monitor-info').textContent = `${settings.width} × ${settings.height} · ${settings.fps} fps`;
-      $('reference-count').textContent = `${getScene().references.length} référence${getScene().references.length > 1 ? 's' : ''}`;
+      $('reference-count').textContent = `${scene.references.length} référence${scene.references.length > 1 ? 's' : ''}`;
       selection();
     }
     $('timeline-ruler').addEventListener('click', event => { setMode('project'); setPosition((event.clientX - $('timeline-ruler').getBoundingClientRect().left) / Number($('timeline-zoom').value)); });
@@ -242,7 +266,7 @@
     if (global.ResizeObserver) new ResizeObserver(renderTimeline).observe($('timeline-scroll'));
     return {refresh, selectAsset, selectTrack, activateTab, stop};
   }
-  const api = {create, timecode, segments};
+  const api = {create, timecode, segments, visualAt};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.AI2AIStudioEditor = api;
 })(typeof window !== 'undefined' ? window : globalThis);

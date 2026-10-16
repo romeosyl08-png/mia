@@ -22,12 +22,30 @@
     }).filter(Boolean);
   }
 
+  const CITATION_PATTERN = /\[\[sources?:\s*(\d+(?:\s*,\s*\d+)*)\s*\]\]/gi;
+
+  function citationGroupsFor(text, available){
+    const groups = [];
+    CITATION_PATTERN.lastIndex = 0;
+    let match;
+    while((match = CITATION_PATTERN.exec(text)) !== null){
+      const seen = new Set();
+      const resolved = [];
+      for(const value of match[1].split(",")){
+        const id = Number(value);
+        if(seen.has(id)) continue;
+        seen.add(id);
+        const source = available.get(id);
+        if(source) resolved.push(source);
+      }
+      groups.push({index:match.index, marker:match[0], sources:resolved});
+    }
+    return groups;
+  }
+
   function citationGroups(text, sources){
     const available = new Map(normalizeSources(sources).map(source => [source.id, source]));
-    return Array.from(text.matchAll(/\[\[sources?:\s*(\d+(?:\s*,\s*\d+)*)\s*\]\]/gi), match => ({
-      index:match.index, marker:match[0],
-      sources:Array.from(new Set(match[1].split(",").map(Number))).map(id => available.get(id)).filter(Boolean)
-    }));
+    return citationGroupsFor(text, available);
   }
 
   let activeButton = null;
@@ -153,6 +171,11 @@
   function attach(content, rawSources, options={}){
     if(activeButton && !activeButton.isConnected) closePopover();
     const sources = normalizeSources(rawSources);
+    const sourcesById = new Map(sources.map(source => [source.id, source]));
+    const sourcesByURL = new Map();
+    for(const source of sources){
+      if(!sourcesByURL.has(source.link)) sourcesByURL.set(source.link, source);
+    }
     let attached = false;
     const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
       acceptNode(node){ return node.parentElement.closest("pre,code,a,button") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; }
@@ -160,7 +183,7 @@
     const nodes = [];
     while(walker.nextNode()) nodes.push(walker.currentNode);
     for(const node of nodes){
-      const groups = citationGroups(node.textContent, rawSources);
+      const groups = citationGroupsFor(node.textContent, sourcesById);
       if(!groups.length) continue;
       const fragment = document.createDocumentFragment();
       let offset = 0;
@@ -174,7 +197,8 @@
     }
     for(const link of Array.from(content.querySelectorAll("a[href]"))){
       if(link.closest("pre,code")) continue;
-      const source = sources.find(entry => entry.link === safeURL(link.getAttribute("href"))?.href);
+      const url = safeURL(link.getAttribute("href"));
+      const source = url ? sourcesByURL.get(url.href) : null;
       if(source){ link.replaceWith(pill([source])); attached = true; }
     }
     if(sources.length && !attached && options.fallback !== false){

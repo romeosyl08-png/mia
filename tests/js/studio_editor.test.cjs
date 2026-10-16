@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {timecode, segments} = require('../../static/app/js/studio_editor.js');
+const {timecode, segments, visualAt} = require('../../static/app/js/studio_editor.js');
 
 test('timecodes respect the project frame rate and minute boundaries', () => {
   assert.equal(timecode(1.5,24), '00:00:01:12');
@@ -19,7 +19,20 @@ test('visual clips follow scene order and audio keeps its independent offset', (
   assert.equal(result.duration,6.5);
   assert.equal(result.audio[0].start,1.25);
   assert.equal(result.audio[0].duration,12);
+  assert.equal(result.visuals[0].asset,assets[0]);
+  assert.equal(result.audio[0].asset,assets[2]);
   assert.equal(scene.visuals[0].duration,2.5);
+});
+
+test('playhead lookup handles clip boundaries and long timelines', () => {
+  const scene = {visuals:Array.from({length:4096}, (_, index) => ({id:`clip-${index}`,asset_id:index,duration:1})),
+    audio:[],settings:{duration:60}};
+  const timeline = segments(scene, []);
+  assert.equal(visualAt(timeline.visuals, 2048.5, timeline.duration).row.id, 'clip-2048');
+  assert.equal(visualAt(timeline.visuals, 2049, timeline.duration).row.id, 'clip-2049');
+  assert.equal(visualAt(timeline.visuals, timeline.duration, timeline.duration).row.id, 'clip-4095');
+  assert.equal(visualAt(timeline.visuals, timeline.duration + 0.1, timeline.duration), null);
+  assert.equal(visualAt([], 0, 0), null);
 });
 
 test('audio-only previews use the export duration and a new project is empty', () => {
