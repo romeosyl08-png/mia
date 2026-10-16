@@ -6,6 +6,14 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
+try:
+    from ._retrieval_native import cosine as _native_cosine
+except ImportError:
+    _native_cosine = None
+
+
+INDEX_VERSION = 2
+
 
 def terms(text):
     normalized = ''.join(c for c in unicodedata.normalize('NFKD', text.casefold()) if not unicodedata.combining(c))
@@ -48,27 +56,38 @@ def index_file(file, semantic=False):
     index = file.retrieval_index
     model = settings.EMBEDDING_MODEL if semantic else ''
     if index.get('hash') == digest and (not semantic or index.get('model') == model):
-        return index
-    rows = list(chunks(file.extracted_text))
-    if semantic:
-        try:
-            vectors = embeddings([r['text'] for r in rows]) if rows else []
-            if rows and not vectors:
+        if index.get('version') == INDEX_VERSION:
+            return index
+        # Upgrade local metadata without discarding existing semantic vectors or
+        # asking the provider to embed an unchanged document again.
+        index = {**index, 'version': INDEX_VERSION,
+                 'chunks': [{**row, 'terms': sorted(terms(row['text']))} for row in index['chunks']]}
+    else:
+        rows = [{**row, 'terms': sorted(terms(row['text']))} for row in chunks(file.extracted_text)]
+        if semantic:
+            try:
+                vectors = embeddings([r['text'] for r in rows]) if rows else []
+                if rows and not vectors:
+                    model = ''
+                for row, vector in zip(rows, vectors):
+                    row['vector'] = vector
+            except (requests.RequestException, ValueError, KeyError, TypeError):
                 model = ''
-            for row, vector in zip(rows, vectors):
-                row['vector'] = vector
-        except (requests.RequestException, ValueError, KeyError, TypeError):
-            model = ''
-    index = {'hash':digest,'model':model,'chunks':rows}
+        index = {'hash': digest, 'model': model, 'version': INDEX_VERSION, 'chunks': rows}
     type(file).objects.filter(pk=file.pk).update(retrieval_index=index)
+    file.retrieval_index = index
     return index
 
 
-def cosine(a,b):
+def python_cosine(a,b):
     if len(a) != len(b):
         return 0
     divisor = math.sqrt(sum(v*v for v in a) * sum(v*v for v in b))
     return sum(x*y for x,y in zip(a,b))/divisor if divisor else 0
+
+
+def cosine(a, b):
+    return _native_cosine(a, b) if _native_cosine is not None else python_cosine(a, b)
 
 
 def merge_passages(matches):
@@ -111,14 +130,14 @@ def retrieve(workspace, query, limit=6):
     rows = []
     for file in workspace.files.exclude(extracted_text='').order_by('id')[:300]:
         index = index_file(file, semantic=False)
-        # Semantic indexes are built explicitly; request handling never indexes documents remotely.
-        saved = file.retrieval_index
-        if workspace.semantic_search and saved.get('hash') == index['hash'] and saved.get('model') == settings.EMBEDDING_MODEL:
-            index = saved
+        # Semantic indexes are built explicitly; request handling never embeds
+        # documents remotely. Ignore vectors from a different embedding model.
+        use_vectors = bool(vector) and index.get('model') == settings.EMBEDDING_MODEL
         for chunk in index['chunks']:
-            lexical = len(query_terms & terms(chunk['text'])) / max(1,len(query_terms))
-            semantic = max(0,cosine(vector,chunk.get('vector',[]))) if vector and chunk.get('vector') else 0
+            lexical = len(query_terms.intersection(chunk['terms'])) / len(query_terms)
+            semantic = max(0,cosine(vector,chunk.get('vector',[]))) if use_vectors and chunk.get('vector') else 0
             score = lexical + semantic
             if score:
-                rows.append({'file_id':file.pk, 'name':file.original_name, 'score':score, **chunk})
+                passage = {key: value for key, value in chunk.items() if key != 'terms'}
+                rows.append({'file_id':file.pk, 'name':file.original_name, 'score':score, **passage})
     return sorted(rows,key=lambda r:(-r['score'],r['file_id'],r['start']))[:limit]

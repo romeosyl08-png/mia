@@ -51,6 +51,14 @@ pour les réponses longues, avec chargement à la demande et repli JavaScript.
 Le module compilé est fourni dans les fichiers statiques : Rust n'est requis que
 pour le reconstruire avec `python scripts/build_markdown_wasm.py`.
 
+La recherche documentaire Bara conserve les mots-clés normalisés dans son index
+et peut accélérer la similarité des vecteurs avec un [petit module C](native/retrieval/README.md).
+Compile-le avec `python scripts/build_retrieval_native.py` ; sans compilation,
+le repli Python reste disponible. Render tente cette construction pendant le build.
+Les index existants sont actualisés localement à leur prochaine lecture, sans
+recalcul distant des embeddings. Mesures reproductibles :
+`python tests/bench/retrieval.py` (hors base de données et appels fournisseur).
+
 ## Modèles texte : OpenRouter et IA locale
 
 Le chat cloud utilise OpenRouter. Ajoute la clé au fichier `.env` du projet, puis initialise le fournisseur, sa clé chiffrée et le catalogue des modèles :

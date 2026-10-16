@@ -20,3 +20,5 @@ venv/
 
 node_modules/
 rust/**/target/
+bara/_retrieval_native*.so
+bara/.retrieval-build-*/

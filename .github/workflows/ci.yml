@@ -30,6 +30,9 @@ jobs:
         run: |
           echo "FERNET_KEY=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
 
+      - name: Construction de l’accélérateur C de recherche documentaire
+        run: python scripts/build_retrieval_native.py
+
       - name: Règles de lint
         run: ruff check --exclude node_modules,.venv .
 
@@ -54,6 +57,11 @@ jobs:
 
       - name: Suite de tests
         run: python manage.py test --noinput
+
+      - name: Vérification du repli Python de recherche documentaire
+        run: |
+          python -c "from pathlib import Path; [p.unlink() for p in Path('bara').glob('_retrieval_native*.so')]"
+          python manage.py test bara.test_retrieval chat.test_memory --noinput
 
   frontend:
     runs-on: ubuntu-latest
