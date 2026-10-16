@@ -44,6 +44,7 @@ python manage.py check
 python manage.py makemigrations --check --dry-run
 python manage.py test --noinput
 node --test tests/js/*.cjs
+node --test integrations/vscode/tests/*.test.cjs
 ```
 
 Le chat et Bara utilisent désormais un [moteur Markdown Rust/WebAssembly](rust/markdown/README.md)
@@ -307,6 +308,14 @@ directly; `--no-color` or `NO_COLOR=1` disables color. Redirected output stays p
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed
 tool calls are not currently supported by this CLI.
+
+### Extension VS Code
+
+L’extension `integrations/vscode/` complète le terminal Barrassons avec des suggestions de code inline et un chat natif. Ouvre ce dossier dans VS Code et appuie sur **F5** pour l’essayer dans Extension Development Host, ou crée un VSIX depuis ce dossier avec `npx --yes @vscode/vsce package` puis installe le fichier via **Install from VSIX**. Il faut VS Code 1.90 ou plus récent ; l’extension n’est pas publiée sur le Marketplace.
+
+Connecte-la avec **Barrassons : configurer la clé API**, ou connecte d’abord le CLI avec `barrassons login` : l’extension réutilise sa configuration locale. Une clé saisie dans VS Code est conservée dans `SecretStorage`. Pour discuter, ouvre la vue Chat et écris `@barrassons` ; `/explain` explique le code et `/fix` propose une correction. Les commandes **Barrassons : démarrer dans le projet** et **reprendre une session** lancent toujours le CLI dans le terminal intégré.
+
+Les complétions inline sont désactivées par défaut. Lance **Barrassons : activer/désactiver les suggestions inline** et confirme l’avertissement pour les activer : les appels au modèle consomment les crédits du compte. Le modèle par défaut est `auto` ; **Barrassons : choisir le modèle** permet d’en sélectionner un autre. L’extension transmet le code autour du curseur (4 500 caractères maximum par défaut), la sélection active ou les fichiers explicitement référencés dans le chat (24 000 caractères maximum au total). Elle ne parcourt pas le workspace et ignore les emplacements/noms usuels de secrets (`.env`, `.git`, `.ssh`, `.aws`, clés privées, jetons ou identifiants). Ces extraits sont envoyés au serveur configuré par `barrassons.apiBase`, puis par la configuration du CLI si le réglage VS Code n’a pas été défini (Render par défaut) ; adapte ce réglage si tu utilises un déploiement AI2AI différent. HTTPS est requis sauf pour les serveurs de développement en loopback (`localhost` ou `127.0.0.1`).
 
 ## Tâches, mémoire, documents et collaboration
 

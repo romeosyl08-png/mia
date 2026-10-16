@@ -1,9 +1,135 @@
 {
-  "name": "barrassons", "displayName": "Barrassons AI2AI", "version": "0.1.0",
-  "publisher": "ai2ai", "engines": {"vscode": "^1.90.0"}, "main": "./extension.js",
-  "activationEvents": ["onCommand:barrassons.start", "onCommand:barrassons.resume"],
-  "contributes": {"commands": [
-    {"command": "barrassons.start", "title": "Barrassons : ouvrir dans ce projet"},
-    {"command": "barrassons.resume", "title": "Barrassons : reprendre la session"}
-  ]}
+  "name": "barrassons",
+  "displayName": "Barrassons AI2AI",
+  "description": "Suggestions de code inline et assistant de programmation Barrassons dans VS Code.",
+  "publisher": "ai2ai",
+  "version": "0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/romeosyl08-png/mia.git",
+    "directory": "integrations/vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai2ai",
+    "barrassons",
+    "assistant",
+    "inline completions",
+    "chat"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onChatParticipant:ai2ai.barrassons.chat",
+    "onCommand:barrassons.start",
+    "onCommand:barrassons.resume",
+    "onCommand:barrassons.configure",
+    "onCommand:barrassons.selectModel",
+    "onCommand:barrassons.toggleInlineCompletions",
+    "onCommand:barrassons.openChat"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "barrassons.start",
+        "title": "Barrassons: démarrer dans le projet"
+      },
+      {
+        "command": "barrassons.resume",
+        "title": "Barrassons: reprendre une session"
+      },
+      {
+        "command": "barrassons.configure",
+        "title": "Barrassons: configurer la clé API"
+      },
+      {
+        "command": "barrassons.selectModel",
+        "title": "Barrassons: choisir le modèle"
+      },
+      {
+        "command": "barrassons.toggleInlineCompletions",
+        "title": "Barrassons: activer/désactiver les suggestions inline"
+      },
+      {
+        "command": "barrassons.openChat",
+        "title": "Barrassons: ouvrir le chat"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "ai2ai.barrassons.chat",
+        "name": "barrassons",
+        "fullName": "Barrassons",
+        "description": "Assistant de programmation 2AI : pose une question, demande une explication ou propose une correction.",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Expliquer le code sélectionné ou référencé."
+          },
+          {
+            "name": "fix",
+            "description": "Analyser un problème et proposer une correction."
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Barrassons AI2AI",
+      "properties": {
+        "barrassons.apiBase": {
+          "type": "string",
+          "default": "https://mia-vkl1.onrender.com/v1",
+          "description": "URL de base de l’API AI2AI. Utilise HTTPS, sauf en loopback pour le développement ; n’inclus jamais de clé API dans l’URL."
+        },
+        "barrassons.model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Modèle AI2AI utilisé par le chat et les complétions inline. « auto » laisse Barrassons choisir."
+        },
+        "barrassons.inlineCompletions.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Autoriser les complétions de code inline. Désactivé par défaut pour éviter les requêtes et frais inattendus."
+        },
+        "barrassons.inlineCompletions.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Délai d’inactivité avant une requête de complétion inline."
+        },
+        "barrassons.inlineCompletions.maxContextChars": {
+          "type": "number",
+          "default": 4500,
+          "minimum": 1000,
+          "maximum": 12000,
+          "description": "Nombre maximal de caractères de code envoyés autour du curseur."
+        },
+        "barrassons.inlineCompletions.maxTokens": {
+          "type": "number",
+          "default": 96,
+          "minimum": 32,
+          "maximum": 192,
+          "description": "Longueur maximale d’une suggestion inline."
+        },
+        "barrassons.chat.maxTokens": {
+          "type": "number",
+          "default": 1400,
+          "minimum": 128,
+          "maximum": 4096,
+          "description": "Longueur maximale d’une réponse dans le chat Barrassons."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs"
+  }
 }

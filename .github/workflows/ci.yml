@@ -67,13 +67,17 @@ jobs:
       - name: Tests JavaScript
         run: node --test tests/js/*.cjs
 
+      - name: Tests de l’extension VS Code
+        working-directory: integrations/vscode
+        run: npm test
+
       - name: Cohérence du module Rust distribué
         run: python3 scripts/build_markdown_wasm.py --check
 
       - name: Syntaxe des scripts du navigateur
         run: |
           status=0
-          for file in static/app/js/*.js; do node --check "$file" || status=1; done
+          for file in static/app/js/*.js integrations/vscode/*.js; do node --check "$file" || status=1; done
           exit $status
 
   rust:

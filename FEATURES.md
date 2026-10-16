@@ -51,7 +51,9 @@ Les écritures affichent un diff et demandent confirmation. `/diff` affiche le d
 
 `--worktree` crée une branche indépendante à partir d’un dépôt propre. Le terminal affiche son chemin ; tu peux y consulter le diff et préparer une PR avec tes outils Git habituels. Les commandes shell locales restent soumises à confirmation et s’exécutent avec les droits de ton terminal.
 
-L’extension dans `integrations/vscode/` propose les commandes **Barrassons : ouvrir dans ce projet** et **reprendre la session** dans le terminal intégré. Lance-la avec Extension Development Host dans VS Code ; le binaire `barrassons` doit être installé et accessible dans PATH. Elle n’est pas publiée sur le Marketplace.
+L’extension dans `integrations/vscode/` ajoute des suggestions de code inline et un participant de chat natif : écris `@barrassons` dans le chat VS Code, puis utilise `/explain` ou `/fix`. Les références de fichiers explicitement jointes et la sélection active peuvent être transmises au modèle ; les emplacements et noms usuels de secrets (`.env`, `.git`, `.ssh`, `.aws`, clés privées, jetons ou identifiants) sont ignorés. Le contexte est borné et le workspace n’est pas parcouru automatiquement. Les commandes du terminal intégré (**démarrer**, **reprendre une session**) restent disponibles ; elles requièrent le binaire `barrassons` dans PATH.
+
+L’extension exige VS Code 1.90 ou supérieur. Lance-la en ouvrant `integrations/vscode/` dans VS Code puis en appuyant sur F5, ou empaquette-la avec `npx --yes @vscode/vsce package` depuis ce dossier. La clé est réutilisée depuis la configuration locale du CLI ou saisie via **Barrassons : configurer la clé API** et stockée dans le coffre sécurisé de VS Code. Les suggestions inline sont désactivées par défaut : **Barrassons : activer/désactiver les suggestions inline** demande une confirmation, car chaque requête peut consommer des crédits. Les messages de chat et les extraits joints sont envoyés à l’API AI2AI sélectionnée. L’extension n’est pas publiée sur le Marketplace.
 
 ## 4. Mémoire et contexte
 
