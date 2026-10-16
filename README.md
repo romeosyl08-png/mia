@@ -1,6 +1,18 @@
 # ai_2ai
 # mia
 
+Le système Side-by-Side est décrit dans [EVALUATIONS.md](EVALUATIONS.md) : architecture, migrations, tests, paramètres et activation progressive. Ses quatre fonctionnalités sont désactivées par défaut.
+
+Le chat propose aussi des [aperçus interactifs et un lecteur de liens ChatGPT](IDEAS_AND_SHARED_LINKS.md), accessibles dans le menu **+**. Des exemples gratuits se trouvent à `/chat/ideas/`.
+
+L’espace **Création** (`/creation/`) regroupe la génération d’images, de vidéos et de sons, avec les fournisseurs et jetons du compte. Il fonctionne sans projet ni conversation. La **Médiathèque** (`/creation/library/`) rassemble les créations, les anciens médias du chat et les médias des projets Studio, avec recherche, filtres et pagination. Le montage reste dans le Studio (`/studio/`).
+
+Le chat conserve les pièces jointes et leur analyse. **Créer à partir de ce message** préremplit une demande dans Création ; aucune génération n’est lancée automatiquement. Depuis la médiathèque, **Utiliser dans une conversation** copie le fichier dans un nouvel espace privé et ouvre le chat : une image est jointe au prochain message, les vidéos et sons sont disponibles comme fichiers de l’espace. **Utiliser dans le Studio** ajoute le média à un montage nouveau ou existant. Ces transferts ne déclenchent aucun appel IA.
+
+Applique `python manage.py migrate` pour la migration `chat.0026_generatedmedia_independent_conversation` ; le démarrage Render l’applique automatiquement au prochain déploiement. Les médias existants restent disponibles aux mêmes adresses et sont conservés après suppression de leur conversation. Les liens d’origine deviennent facultatifs. La médiathèque, les fichiers et les transferts vérifient le propriétaire du compte.
+
+Vérifications de Création sans appels fournisseur payants : `python manage.py test creation chat.tests chat.test_frontend studio --noinput --settings=evaluations.test_settings`, `node --test tests/js/*.test.cjs` et, avec Chrome et Playwright, `python tests/browser/creation.py`.
+
 ## Démarrage
 
 Le projet exige **Python 3.12 ou plus** (Django 6.1) et Node 22 pour les tests
@@ -33,6 +45,11 @@ python manage.py makemigrations --check --dry-run
 python manage.py test --noinput
 node --test tests/js/*.cjs
 ```
+
+Le chat et Bara utilisent désormais un [moteur Markdown Rust/WebAssembly](rust/markdown/README.md)
+pour les réponses longues, avec chargement à la demande et repli JavaScript.
+Le module compilé est fourni dans les fichiers statiques : Rust n'est requis que
+pour le reconstruire avec `python scripts/build_markdown_wasm.py`.
 
 ## Modèles texte : OpenRouter et IA locale
 

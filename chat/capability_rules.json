@@ -19,9 +19,9 @@
     "file_delete": ["delete_file"]
   },
   "mediaMessages": {
-    "image": "Cette demande nécessite la génération d’images. Choisis le mode « Générer une image » avant d’envoyer.",
-    "video": "Cette demande nécessite la génération de vidéos. Choisis le mode « Générer une vidéo » avant d’envoyer.",
-    "audio": "Cette demande nécessite la génération audio. Choisis le mode « Générer un audio » avant d’envoyer."
+    "image": "Pour cette demande, ouvre « Création » et utilise « Générer une image ». Tu peux reprendre un message avec « Créer à partir de ce message ».",
+    "video": "Pour cette demande, ouvre « Création » et utilise « Générer une vidéo ». Tu peux reprendre un message avec « Créer à partir de ce message ».",
+    "audio": "Pour cette demande, ouvre « Création » et utilise « Générer un son ». Tu peux reprendre un message avec « Créer à partir de ce message »."
   },
   "messages": {
     "local": "L’IA locale peut répondre en texte, mais ce chat local ne dispose pas des outils web, des fichiers Bara ou de la génération de médias. Choisis une IA hébergée pour cette demande.",

@@ -15,7 +15,8 @@ def _policy_string():
         "default-src": ["'self'"],
         # Tous les scripts sont servis par l'application (voir static/app/vendor),
         # à l'exception du widget officiel de connexion Telegram.
-        "script-src": ["'self'", "https://telegram.org"],
+        # Autorise la compilation du moteur Markdown Wasm ; eval() reste interdit.
+        "script-src": ["'self'", "'wasm-unsafe-eval'", "https://telegram.org"],
         # Les gabarits utilisent massivement des attributs style="...".
         "style-src": ["'self'", "'unsafe-inline'"],
         "img-src": ["'self'", "data:", "blob:"],

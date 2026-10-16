@@ -193,7 +193,9 @@ class GeneratedMedia(models.Model):
     )
     conversation = models.ForeignKey(
         Conversation,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="generated_media",
     )
     message = models.OneToOneField(

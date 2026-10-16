@@ -7,7 +7,7 @@
 <main class="studio-shell studio-editor" id="studio" data-base="{% url 'studio:detail' project.pk %}">
   <header class="studio-menubar">
     <a class="studio-brand" href="{% url 'studio:index' %}"><span aria-hidden="true">◈</span> Studio <span class="studio-brand-sub">2AI</span></a>
-    <nav aria-label="Navigation du studio"><a href="{% url 'studio:index' %}">Mes projets</a><a href="/">Chat</a>{% if project.workspace %}<a href="{% url 'bara:detail' project.workspace_id %}">Bara</a>{% endif %}</nav>
+    <nav aria-label="Navigation du studio"><a href="{% url 'creation:index' %}">Création</a><a href="{% url 'creation:library' %}">Médiathèque</a><a href="{% url 'studio:index' %}">Mes projets</a><a href="/">Chat</a>{% if project.workspace %}<a href="{% url 'bara:detail' project.workspace_id %}">Bara</a>{% endif %}</nav>
     <h1>{{ project.title }}</h1>
     <a href="{% url 'recharge-page' %}" id="studio-balance" class="studio-balance"></a>
   </header>

@@ -442,6 +442,8 @@ def _validate_url(url):
         return "Seules les URL http(s) sont autorisées."
     if not parsed.hostname:
         return "URL invalide."
+    if parsed.username or parsed.password:
+        return "Les identifiants dans une URL ne sont pas autorisés."
     if port not in (None, 80, 443):
         return "Port non autorisé."
     try:
@@ -515,6 +517,13 @@ def fetch_url(workspace, url):
 
     title = ""
     if "html" in content_type:
+        from chat.shared_links import SHARE_HOSTS, SharedLinkError, canonical_share_url, parse_shared_conversation
+        if urlparse(current).hostname in SHARE_HOSTS:
+            try:
+                canonical = canonical_share_url(current)
+                return {'url': canonical, **parse_shared_conversation(body, MAX_FETCH_CHARS)}
+            except SharedLinkError as error:
+                return {'error': str(error), 'code': 'shared_link_unavailable', 'paste_available': True}
         soup = BeautifulSoup(body, "html.parser")
         if soup.title and soup.title.string:
             title = soup.title.string.strip()

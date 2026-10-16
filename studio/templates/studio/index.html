@@ -4,7 +4,7 @@
 {% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/studio.css' %}?v=editor-1">{% endblock %}
 {% block body %}
 <main class="studio-shell studio-home">
-  <header class="studio-header"><a class="studio-brand" href="{% url 'studio:index' %}"><span aria-hidden="true">◈</span> Studio 2AI</a><a href="/">Chat</a><a href="{% url 'bara:home' %}">Bara</a><a href="{% url 'recharge-page' %}">Jetons</a></header>
+  <header class="studio-header"><a class="studio-brand" href="{% url 'studio:index' %}"><span aria-hidden="true">◈</span> Studio 2AI</a><a href="{% url 'creation:index' %}">Création</a><a href="{% url 'creation:library' %}">Médiathèque</a><a href="/">Chat</a><a href="{% url 'recharge-page' %}">Jetons</a></header>
   <div class="studio-intro"><span class="studio-kicker">ESPACE DE MONTAGE</span><h1>Studio multimédia</h1><p>Retrouve tes projets ou commence un montage avec tes images, vidéos et pistes audio.</p></div>
   <div class="studio-home-grid">
     <section class="studio-panel"><h2>Nouveau projet</h2>

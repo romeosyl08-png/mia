@@ -1,0 +1,15 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Statistiques privées, réservées à l’administration. Les cohortes sont séparées ; aucun prompt n’est affiché. Rafraîchissement par <code>rebuild_evaluation_stats</code>.</p>
+<table><caption>Activité et budget</caption><tbody>{% for name,value in metrics.items %}<tr><th>{{ name }}</th><td>{{ value }}</td></tr>{% endfor %}</tbody></table>
+<h2>Modes</h2><ul>{% for row in modes %}<li>{{ row.selection_mode }} : {{ row.count }}</li>{% endfor %}</ul>
+<h2>Modèles les plus comparés</h2><ul>{% for row in models %}<li>{{ row.model__name }} ({{ row.model__provider__name }}) : {{ row.count }}</li>{% endfor %}</ul>
+<h2>Observation du routeur par catégorie</h2>
+<p>Classement Bradley–Terry régularisé, pondération par utilisateur et propension plafonnée. Le groupe « routing » ne contient que les évaluations Surprise sans récompense, avec consentement. Les intervalles sont indicatifs.</p>
+{% for row in performance %}
+<details><summary>{{ row.model.name }} · {{ row.category }} · qualité {{ row.estimated_quality|floatformat:3 }} · {{ row.total_comparisons }} votes</summary>
+<table><thead><tr><th>Cohorte</th><th>Votes</th><th>Utilisateurs</th><th>Échantillon effectif</th><th>Victoires</th><th>Égalités</th><th>Deux mauvaises</th><th>Confiance</th><th>Intervalle 95 %</th></tr></thead><tbody>
+{% for cohort,stats in row.statistics.items %}<tr><td>{{ cohort }}</td><td>{{ stats.total_comparisons }}</td><td>{{ stats.unique_users }}</td><td>{{ stats.effective_samples|floatformat:1 }}</td><td>{{ stats.win_rate|floatformat:3 }}</td><td>{{ stats.tie_rate|floatformat:3 }}</td><td>{{ stats.both_bad_rate|floatformat:3 }}</td><td>{{ stats.confidence|floatformat:3 }}</td><td>{{ stats.win_rate_interval }}</td></tr>{% endfor %}
+</tbody></table></details>
+{% empty %}<p>Données insuffisantes. Le routage existant reste utilisé.</p>{% endfor %}
+{% endblock %}

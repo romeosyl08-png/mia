@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{% if tab == 'library' %}Médiathèque{% else %}Création{% endif %} — 2AI{% endblock %}
+{% block body_class %}creation-page{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/creation.css' %}?v=1">{% endblock %}
+{% block body %}
+<div class="creation-shell">
+  <header class="creation-header">
+    <a class="creation-brand" href="{% url 'creation:index' %}" aria-label="2AI, Création">{% include 'includes/app_logo.html' %}<span>Création</span></a>
+    <nav aria-label="Espaces 2AI"><a href="{% url 'chat:chat-home' %}">Discuter <span aria-hidden="true">↗</span></a><a class="creation-balance" href="{% url 'recharge-page' %}"><span id="creationBalance">{{ creation_config.balance }}</span> jetons</a></nav>
+  </header>
+  <nav class="creation-nav" aria-label="Création">
+    <a href="{% url 'creation:index' %}" {% if tab == 'generate' %}aria-current="page"{% endif %}>Générer</a>
+    <a href="{% url 'creation:library' %}" {% if tab == 'library' %}aria-current="page"{% endif %}>Médiathèque</a>
+    <a href="{% url 'studio:index' %}">Projets et montage <span aria-hidden="true">↗</span></a>
+  </nav>
+  <main>
+  {% if tab == 'generate' %}
+    <div class="creation-intro"><p class="page-eyebrow">De l’idée au média</p><h1>Que veux-tu créer ?</h1><p>Une image, une vidéo ou un son. Tes créations se retrouvent dans ta médiathèque.</p></div>
+    <div class="creation-workspace">
+      <section class="creation-card" aria-labelledby="generationTitle">
+        <h2 id="generationTitle" class="sr-only">Générer un média</h2>
+        <form id="creationForm">{% csrf_token %}
+          <fieldset class="creation-kind"><legend class="sr-only">Type de média</legend>
+            <label><input type="radio" name="kind" value="image" checked><span><b aria-hidden="true">▧</b> Image</span></label>
+            <label><input type="radio" name="kind" value="video"><span><b aria-hidden="true">▷</b> Vidéo</span></label>
+            <label><input type="radio" name="kind" value="audio"><span><b aria-hidden="true">♫</b> Son</span></label>
+          </fieldset>
+          {% if source %}<p class="creation-source">À partir d’un message de <a href="{% url 'chat:chat-home' %}?conversation={{ source.conversation_id }}">{{ source.conversation.title }}</a></p>{% endif %}
+          <label class="creation-label" for="creationPrompt">Décris ton idée</label>
+          <textarea id="creationPrompt" rows="7" maxlength="2000" required placeholder="Une terrasse à Abidjan au coucher du soleil, des plantes et une lumière douce…">{{ creation_config.prompt }}</textarea>
+          <fieldset class="creation-options" data-kind-options="image"><legend>Format de l’image</legend>
+            <label class="sr-only" for="creationImageSize">Dimensions</label><select id="creationImageSize"><option value="1024x1024">Carré · 1024 × 1024</option><option value="1024x1536">Portrait · 1024 × 1536</option><option value="1536x1024">Paysage · 1536 × 1024</option></select>
+          </fieldset>
+          <fieldset class="creation-options" data-kind-options="video" hidden><legend>Réglages de la vidéo</legend>
+            <div class="creation-option-grid">
+              <label>Format<select id="creationVideoAspect"><option>16:9</option><option>9:16</option><option>1:1</option></select></label>
+              <label>Résolution<select id="creationVideoResolution"><option value="480p">480p</option><option value="720p" selected>720p</option></select></label>
+              <label>Durée<select id="creationVideoDuration"><option value="4">4 secondes</option><option value="6">6 secondes</option><option value="8" selected>8 secondes</option><option value="10">10 secondes</option><option value="15">15 secondes</option><option value="30">30 secondes</option></select></label>
+            </div>
+            <label class="creation-check"><input id="creationVideoAudio" type="checkbox" checked> Générer aussi le son</label>
+          </fieldset>
+          <fieldset class="creation-options" data-kind-options="audio" hidden><legend>Réglages du son</legend>
+            <label>Style<select id="creationAudioStyle"><option value="">Décrit dans ma demande</option><option value="ambient">Ambient</option><option value="cinematic">Cinématique</option><option value="electronic">Électronique</option><option value="jazz">Jazz</option><option value="pop">Pop</option><option value="orchestral">Orchestral</option></select></label>
+            <label class="creation-check"><input id="creationInstrumental" type="checkbox"> Instrumental, sans voix</label>
+          </fieldset>
+          <p class="creation-hint" id="creationAvailability"></p>
+          <button class="button-primary creation-submit" id="creationSubmit" type="submit">Générer une image <span aria-hidden="true">↗</span></button>
+          <p id="creationStatus" class="creation-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="creation-preview creation-card" aria-labelledby="creationPreviewTitle" aria-busy="false">
+        <div class="creation-preview-header"><h2 id="creationPreviewTitle">Ton résultat</h2><span id="creationResultBadge" hidden>Enregistré</span></div>
+        <div id="creationPreview" class="creation-preview-stage"><div class="creation-placeholder"><span class="creation-placeholder-mark" aria-hidden="true">✦</span><h3>Place à ton imagination</h3><p>Ton média apparaîtra ici.<br>Tu pourras le télécharger ou poursuivre dans le Studio.</p></div></div>
+        <div id="creationResultActions" class="creation-result-actions" hidden></div>
+        <a class="creation-library-link" href="{% url 'creation:library' %}">Retrouver toutes mes créations <span aria-hidden="true">→</span></a>
+      </section>
+    </div>
+  {% else %}
+    <div class="creation-intro creation-library-intro"><div><p class="page-eyebrow">Tes idées prennent forme</p><h1>Médiathèque</h1><p>Les médias de tes créations, conversations et projets Studio.</p></div><a class="button-primary" href="{% url 'creation:index' %}">＋ Créer un média</a></div>
+    <form id="libraryFilters" class="creation-filters" role="search">{% csrf_token %}
+      <label class="sr-only" for="libraryKind">Type de média</label><select id="libraryKind"><option value="">Tous les médias</option><option value="image">Images</option><option value="video">Vidéos</option><option value="audio">Sons</option></select>
+      <label class="sr-only" for="librarySearch">Rechercher un média</label><input type="search" id="librarySearch" placeholder="Rechercher une description ou un projet…" maxlength="200"><button class="creation-button" type="submit">Rechercher</button>
+    </form>
+    <p class="creation-status" id="libraryStatus" role="status" aria-live="polite"></p>
+    <div class="creation-library-grid" id="libraryGrid" aria-busy="true"></div>
+    <button class="creation-button creation-load-more" id="libraryMore" type="button" hidden>Afficher la suite</button>
+    <div class="creation-empty" id="libraryEmpty" hidden><span aria-hidden="true">▧</span><h2 id="libraryEmptyTitle">Ta médiathèque commence ici</h2><p id="libraryEmptyCopy">Crée ton premier média. Tu pourras le retrouver et le réutiliser à tout moment.</p><a class="button-primary" href="{% url 'creation:index' %}">Créer un média</a></div>
+  {% endif %}
+  </main>
+  <footer class="creation-footer"><span>2AI · Création</span><a href="{% url 'studio:index' %}">Assembler mes médias dans le Studio →</a></footer>
+</div>
+<dialog id="creationStudioDialog" class="creation-dialog" aria-labelledby="creationStudioTitle">
+  <form id="creationStudioForm">
+    <div class="creation-dialog-header"><h2 id="creationStudioTitle">Utiliser dans le Studio</h2><button type="button" class="creation-button" id="closeCreationStudio" aria-label="Fermer">×</button></div>
+    <p>Ajoute ce média à un projet pour commencer ou poursuivre un montage.</p>
+    <label class="creation-label" for="creationProject">Projet</label><select id="creationProject"><option value="">Nouveau montage</option>{% for project in projects %}<option value="{{ project.pk }}">{{ project.title }}</option>{% endfor %}</select>
+    <p class="creation-status" id="creationStudioStatus" role="status"></p><button type="submit" class="button-primary" id="creationStudioSubmit">Ouvrir le Studio →</button>
+  </form>
+</dialog>
+{{ creation_config|json_script:'creation-config' }}
+{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/creation.js' %}?v=1"></script>{% endblock %}

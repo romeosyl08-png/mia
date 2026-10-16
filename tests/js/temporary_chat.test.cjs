@@ -18,7 +18,7 @@ function section(start, end) {
   return source.slice(from, to);
 }
 
-function harness({personas = [], temporaryChat = false, initializing = false, retryPersonas = [], mode = 'image', serverError = null} = {}) {
+function harness({personas = [], temporaryChat = false, initializing = false, retryPersonas = [], mode = 'chat', serverError = null} = {}) {
   let click, renders = 0, loads = 0, sequence = 0;
   const requests = [], notices = [];
   const composerInput = {value: ''};
@@ -112,7 +112,7 @@ test('startup and in-progress turns cannot be replaced by a temporary session', 
   }
 });
 
-for (const mode of ['image', 'chat']) {
+for (const mode of ['chat']) {
   test(`a temporary ${mode} request uses the fallback when persona loading fails`, async () => {
     const app = harness({mode});
     await app.click();
@@ -121,12 +121,12 @@ for (const mode of ['image', 'chat']) {
 
     assert.equal(app.requests.length, 1);
     const request = app.requests[0];
-    assert.equal(request.url, mode === 'image' ? '/chat/api/media/generate/' : '/chat/api/send/');
+    assert.equal(request.url, '/chat/api/send/');
     assert.equal(request.body.content, text);
     assert.equal(request.body.system_prompt, 'Tu es un assistant poli, clair et utile.');
     assert.equal(request.body.persona_id, null);
     assert.equal(request.body.temporary, true);
-    assert.equal(request.body.kind, mode === 'image' ? 'image' : null);
+    assert.equal(request.body.kind, undefined);
     assert.equal(app.state.conversations[0].messages.at(-1).content, 'Image générée');
     assert.equal(app.state.conversations[0].messages.at(-1).mediaUrl, '/image.png');
     assert.equal(app.state.usageLog.length, 2);
@@ -135,11 +135,11 @@ for (const mode of ['image', 'chat']) {
   });
 }
 
-test('an image request keeps the persona selected for its conversation', async () => {
+test('a chat request keeps the persona selected for its conversation', async () => {
   const app = harness({personas: [{id: 7, name: 'Général', prompt: 'Général'},
     {id: 9, name: 'Artiste', prompt: 'Instructions artiste'}]});
   await app.newConversation(9);
-  await app.send('Crée une image');
+  await app.send('Décris un paysage');
 
   assert.equal(app.requests.length, 1);
   assert.equal(app.requests[0].body.persona_id, 9);
@@ -152,7 +152,7 @@ test('an existing saved conversation reports missing personas before sending', a
   const app = harness();
   app.state.conversations.push({id: 22, personaId: 7, messages: []});
   app.state.activeConvoId = 22;
-  await app.send('Crée une image');
+  await app.send('Bonjour');
 
   assert.equal(app.requests.length, 0);
   assert.equal(app.state.conversations[0].messages.length, 0);

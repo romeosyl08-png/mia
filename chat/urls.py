@@ -1,10 +1,12 @@
 from django.urls import path
 
-from . import views, memory_views, recovery_views, persona_views, temporary_views
+from . import views, memory_views, recovery_views, persona_views, temporary_views, shared_link_views, idea_preview_views
 
 app_name = 'chat'
 
 urlpatterns = [
+    path('chat/ideas/', idea_preview_views.examples, name='idea-preview-examples'),
+    path('chat/api/shared-links/preview/', shared_link_views.preview_shared_link, name='shared-link-preview'),
     path('chat/api/big-persona/', persona_views.big_persona, name='big-persona'),
     path('chat/api/personas/<int:pk>/context/', persona_views.persona_context, name='persona-context'),
     path('chat/api/recovery/<str:token>/',recovery_views.recovery,name='recovery'),

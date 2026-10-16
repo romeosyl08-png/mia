@@ -19,6 +19,16 @@ class SecurityHeadersTests(SimpleTestCase):
         self.assertIn("script-src 'self'", policy)
         self.assertNotIn("cdnjs", policy)
 
+    def test_wasm_compilation_is_allowed_without_enabling_javascript_eval(self):
+        policy = self.client.get("/auth/").headers["Content-Security-Policy"]
+        script_sources = next(
+            directive.split()[1:] for directive in policy.split(";")
+            if directive.strip().startswith("script-src ")
+        )
+        self.assertIn("'wasm-unsafe-eval'", script_sources)
+        self.assertNotIn("'unsafe-eval'", script_sources)
+        self.assertNotIn("'unsafe-inline'", script_sources)
+
     def test_security_headers_are_present(self):
         response = self.client.get("/auth/")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")

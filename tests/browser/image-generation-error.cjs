@@ -24,7 +24,7 @@ let browser;
     page.locator('#panelLogin button[type=submit]').click(),
   ]);
   await page.waitForFunction(() => document.querySelector('#personaTopSelect')?.options.length > 0);
-  await page.route('**/chat/api/media/generate/', route => route.fulfill({
+  await page.route('**/creation/api/generate/', route => route.fulfill({
     status: 502,
     contentType: 'application/json',
     body: JSON.stringify({
@@ -33,15 +33,14 @@ let browser;
     }),
   }));
 
-  await page.locator('#newConvoBtn').click();
-  await page.locator('#imageModeBtn').click();
-  await page.locator('#composerInput').fill("Crée un fond d’écran");
-  await page.locator('#sendBtn').click();
-  await page.waitForFunction(() => document.querySelector('#messages .msg.bot')?.textContent.includes('format demandé'));
+  await page.goto(origin + '/creation/');
+  await page.locator('#creationPrompt').fill("Crée un fond d’écran");
+  await page.locator('#creationSubmit').click();
+  await page.waitForFunction(() => document.querySelector('#creationStatus')?.textContent.includes('format demandé'));
 
-  assert.equal(await page.locator('#creditPillText').innerText(), '12 345 jetons');
-  assert.equal(await page.locator('#messages .msg-footer').count(), 0);
-  assert.match(await page.locator('#messages .msg.bot').innerText(), /format demandé a été refusé/);
+  assert.equal(await page.locator('#creationBalance').innerText(), '12 345');
+  assert.equal(await page.locator('#creationResultActions').isVisible(), false);
+  assert.match(await page.locator('#creationStatus').innerText(), /format demandé a été refusé/);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({balanceResynced:true, zeroCounterHidden:true, providerErrorVisible:true}));
 })().finally(async () => { if(browser) await browser.close(); });

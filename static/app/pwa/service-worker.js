@@ -1,4 +1,4 @@
-const STATIC_CACHE = "2ai-public-static-v4";
+const STATIC_CACHE = "2ai-public-static-v5";
 const STATIC_PREFIX = "/static/";
 
 self.addEventListener("install", event => {
@@ -61,8 +61,8 @@ self.addEventListener("fetch", event => {
       const cache = await caches.open(STATIC_CACHE);
       const cachedResponse = await cache.match(request);
       const update = fetchStaticAsset(request, cachedResponse);
-      // The page and its interactive scripts must use the same deployed version.
-      if (url.pathname.endsWith(".js")) {
+      // The page, scripts and Wasm modules must use the same deployed version.
+      if (/\.(?:js|wasm)$/.test(url.pathname)) {
         return (await update) || unavailableResponse();
       }
       if (cachedResponse) {

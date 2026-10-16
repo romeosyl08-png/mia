@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Comparaison IA — 2AI{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{% static 'app/css/comparisons.css' %}">{% endblock %}
+{% block body %}
+<main class="work-page comparison-page" id="comparisonApp" data-user-id="{{ request.user.pk }}" data-sessions-url="{% url 'evaluations:sessions' %}" data-models-url="{% url 'evaluations:models' %}">
+  <a href="{% url 'chat:chat-home' %}" class="page-back">← Retour au chat</a>
+  <p class="page-eyebrow">Deux regards, une question</p>
+  <h1>Comparaison IA</h1>
+  <p>Comparez deux réponses, puis donnez votre avis. En mode Surprise, les identités restent masquées jusqu’au vote.</p>
+  <form id="comparisonForm">
+    {% csrf_token %}
+    <fieldset id="comparisonInputs">
+      <legend class="sr-only">Nouvelle comparaison</legend>
+      <div class="comparison-modes" role="group" aria-label="Sélection des modèles">
+        <button type="button" data-mode="manual" aria-pressed="true">Choisir les IA</button>
+        {% if automatic_enabled %}<button type="button" data-mode="automatic" aria-pressed="false">Surprise</button>{% endif %}
+      </div>
+      <div class="comparison-models" id="manualModels">
+        <label>Modèle A<select id="modelA" required><option value="">Chargement…</option></select></label>
+        <label>Modèle B<select id="modelB" required><option value="">Chargement…</option></select></label>
+      </div>
+      <label>Catégorie<select name="category">{% for value,label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+      <label class="comparison-question">Votre question<textarea name="prompt" rows="4" maxlength="{{ max_prompt_chars }}" required placeholder="Posez la même question à deux IA…"></textarea></label>
+      <p class="comparison-help">Texte uniquement · {{ max_tokens }} tokens de sortie maximum par modèle. Deux appels facturés selon leur consommation, dans la limite de {{ max_credits }} jetons ({{ automatic_max_credits }} en mode Surprise). Le coût affiché dans la liste est indicatif, hors question.</p>
+      <label><input type="checkbox" name="analysis_consent"> J’autorise l’utilisation de cette évaluation pour les statistiques et l’amélioration d’Auto IA. Ce choix est facultatif ; mes conversations des autres modes ne sont pas utilisées.</label>
+      <p class="comparison-help">Questions et réponses privées, conservées {{ retention_days }} jours maximum. Les données sont envoyées aux deux fournisseurs sélectionnés pour répondre. Vous pouvez supprimer le contenu et retirer votre consentement dans l’historique.</p>
+      <button type="submit" id="compareButton">Comparer les réponses</button>
+    </fieldset>
+  </form>
+  <p id="comparisonNotice" role="status" aria-live="polite"></p>
+  <section id="comparisonResults" hidden aria-label="Réponses à comparer">
+    <h2 id="comparisonQuestion"></h2>
+    <div class="comparison-columns">
+      <article><h2 id="titleA">Modèle A</h2><p id="statusA" class="task-status"></p><div id="responseA" class="comparison-answer" tabindex="0" aria-label="Réponse A"></div><p id="costA"></p></article>
+      <article><h2 id="titleB">Modèle B</h2><p id="statusB" class="task-status"></p><div id="responseB" class="comparison-answer" tabindex="0" aria-label="Réponse B"></div><p id="costB"></p></article>
+    </div>
+    <form id="voteForm" hidden>
+      <fieldset><legend>Quelle réponse préférez-vous ?</legend>
+        <div class="comparison-choices">
+          <label><input type="radio" name="preferred_response" value="A" required> Je préfère A</label>
+          <label><input type="radio" name="preferred_response" value="B"> Je préfère B</label>
+          <label><input type="radio" name="preferred_response" value="tie"> Égalité</label>
+          <label><input type="radio" name="preferred_response" value="both_bad"> Les deux sont mauvais</label>
+        </div>
+        <details><summary>Évaluation détaillée (facultative)</summary><div class="comparison-scores">
+          <label>Exactitude<select name="accuracy_score"><option value="">Sans note</option>{% for n in '12345' %}<option value="{{ n }}">{{ n }}/5</option>{% endfor %}</select></label>
+          <label>Pertinence<select name="relevance_score"><option value="">Sans note</option>{% for n in '12345' %}<option value="{{ n }}">{{ n }}/5</option>{% endfor %}</select></label>
+          <label>Clarté<select name="clarity_score"><option value="">Sans note</option>{% for n in '12345' %}<option value="{{ n }}">{{ n }}/5</option>{% endfor %}</select></label>
+          <label class="comparison-question">Justification<textarea name="justification" maxlength="3000" rows="3"></textarea></label>
+        </div><p class="comparison-help">Les notes portent sur la réponse préférée, ou sur l’ensemble en cas d’égalité. Les éventuels bonus font l’objet d’une validation humaine ; aucun vote ne garantit une récompense.</p></details>
+        <button type="submit">Valider mon vote</button>
+      </fieldset>
+    </form>
+    <button type="button" id="newComparison">Nouvelle comparaison</button>
+  </section>
+  <details><summary>Mes comparaisons</summary><ul id="comparisonHistory"></ul></details>
+  <details><summary>Mes récompenses</summary><p>Bonus utilisables uniquement sur 2AI, sans retrait en argent.</p><ul>{% for reward in rewards %}<li>{{ reward.created_at|date:"d/m/Y" }} · {{ reward.credits }} jetons · {{ reward.get_status_display }}</li>{% empty %}<li>Aucune récompense.</li>{% endfor %}</ul></details>
+</main>
+{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/comparisons.js' %}"></script>{% endblock %}

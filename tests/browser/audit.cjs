@@ -198,18 +198,13 @@ async function login(p, identifier=credentials.username) {
     assert.equal(chatRequests.at(-1).team_strategy,'plan_execute_verify');await page.locator('#teamModeBtn').click();
     return {generation:'simulated',models:2};
   });
-  await check('Chat standard — réponse et galeries',async()=>{
+  await check('Chat standard — réponse et accès à Création',async()=>{
     await page.locator('#newConvoBtn').click();await page.locator('#composerInput').fill('QA conversation standard');
     await page.locator('#sendBtn').click();await page.waitForFunction(()=>!document.querySelector('#sendBtn').disabled);
     assert.equal(chatRequests.at(-1).temporary,false);
     assert.ok((await page.locator('#messages').innerText()).includes('Réponse de test Playwright'));
-    await page.locator('#openMediaGalleryBtn').click();
-    assert.ok(await page.locator('#imageGallery').isVisible());
-    for(const kind of ['image','video','audio']){
-      await page.locator(`[data-gallery-kind="${kind}"]`).click();
-      assert.equal(await page.locator(`[data-gallery-kind="${kind}"]`).getAttribute('aria-selected'),'true');
-    }
-    await page.locator('#closeImageGallery').click();
+    assert.equal(await page.locator('#openCreationLink').getAttribute('href'), '/creation/');
+    assert.equal(await page.locator('#imageGallery, #imageModeBtn, #videoModeBtn, #audioModeBtn').count(), 0);
     return {generation:'simulated'};
   });
   let workspacePath='',workspaceRoot='';

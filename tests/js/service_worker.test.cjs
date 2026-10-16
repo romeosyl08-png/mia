@@ -42,6 +42,21 @@ test('scripts fall back to the cached version when the network is unavailable', 
   assert.equal(await app.result, cached);
 });
 
+test('Wasm modules wait for the current network version and use cached bytes offline', async () => {
+  const app = harness('/static/app/wasm/markdown_core.wasm');
+  let delivered = false;
+  app.result.then(() => { delivered = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(delivered, false);
+  const current = response('new-wasm');
+  app.resolveFetch(current);
+  assert.equal(await app.result, current);
+  const offline = response('cached-wasm');
+  const fallback = harness('/static/app/wasm/markdown_core.wasm', offline);
+  fallback.rejectFetch(new TypeError('Offline'));
+  assert.equal(await fallback.result, offline);
+});
+
 test('public images remain immediately available from cache while being refreshed', async () => {
   const cached = response('cached-icon');
   const app = harness('/static/app/pwa/icon-192.png', cached);

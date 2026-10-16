@@ -39,12 +39,13 @@ class ChatHomeTests(TestCase):
 		self.assertIsNotNone(main.select_one('#composerPlusMenu'))
 		self.assertIsNotNone(main.select_one('#plusFilesBtn'))
 		self.assertIsNone(main.select_one('#plusImageBtn'))
-		self.assertIsNotNone(main.select_one('#imageModeBtn'))
+		self.assertIsNone(main.select_one('#imageModeBtn, #videoModeBtn, #audioModeBtn, #mediaOptionsPanel'))
 		self.assertIsNotNone(main.select_one('#voiceBtn'))
 		self.assertIsNotNone(main.select_one('#memorySuggestBtn'))
 		sidebar = soup.select_one('aside.sidebar')
 		sidebar_html = str(sidebar)
-		self.assertIsNotNone(sidebar.select_one('#openMediaGalleryBtn'))
+		self.assertEqual(sidebar.select_one('#openCreationLink')['href'], '/creation/')
+		self.assertIsNone(sidebar.select_one('#openMediaGalleryBtn'))
 		self.assertIsNotNone(sidebar.select_one('#conversationSearch'))
 		self.assertIsNotNone(sidebar.select_one('#archiveFilterBtn'))
 		self.assertIsNotNone(sidebar.select_one('#folderFilter'))
@@ -58,9 +59,7 @@ class ChatHomeTests(TestCase):
 		self.assertIsNone(sidebar.select_one('#openImageGalleryBtn, #openVideoGalleryBtn, #openAudioGalleryBtn'))
 		self.assertFalse(sidebar.select_one('.secondary-nav').has_attr('open'))
 		self.assertFalse(main.select_one('#workspaceOptions').has_attr('open'))
-		self.assertContains(response, 'data-gallery-kind="image"')
-		self.assertContains(response, 'data-gallery-kind="video"')
-		self.assertContains(response, 'data-gallery-kind="audio"')
+		self.assertNotContains(response, 'id="imageGallery"')
 		self.assertLess(sidebar_html.index('personaTopSelect'), sidebar_html.index('conversationsSectionTitle'))
 		self.assertGreater(sidebar_html.index('quick-nav'), sidebar_html.index('convoList'))
 
@@ -142,7 +141,7 @@ class ChatHomeTests(TestCase):
 		self.assertEqual(Conversation.objects.filter(user=user).count(), 1)
 		self.assertEqual(conversation.messages.count(), 4)
 
-	def test_media_controls_use_openrouter_and_hide_media_provider_selection(self):
+	def test_media_controls_live_in_creation_and_hide_media_provider_selection(self):
 		user = User.objects.create_user(username='configured-media-user', password='test-password')
 		openrouter = APIProvider.objects.create(name='OpenRouter', slug='openrouter', base_url='https://openrouter.ai/api')
 		openrouter.keys.create(name='openrouter-key', key='server-secret')
@@ -150,18 +149,17 @@ class ChatHomeTests(TestCase):
 		audio_provider.keys.create(name='audio-key', key='audio-secret')
 		self.client.force_login(user)
 
-		response = self.client.get('/')
+		response = self.client.get('/creation/')
 		soup = BeautifulSoup(response.content, 'html.parser')
-		chat_config = json.loads(soup.select_one('#chat-config').string)
+		creation_config = json.loads(soup.select_one('#creation-config').string)
 
 		self.assertEqual(response.status_code, 200)
-		self.assertIsNotNone(soup.select_one('#imageModeBtn[data-mode="image"]:not([disabled])'))
-		self.assertIsNotNone(soup.select_one('#videoModeBtn[data-mode="video"]:not([disabled])'))
-		self.assertIsNotNone(soup.select_one('#audioModeBtn[data-mode="audio"]:not([disabled])'))
+		self.assertIsNotNone(soup.select_one('input[name="kind"][value="image"]'))
+		self.assertIsNotNone(soup.select_one('input[name="kind"][value="video"]'))
+		self.assertIsNotNone(soup.select_one('input[name="kind"][value="audio"]'))
 		self.assertIsNone(soup.select_one('#mediaProviderSelect'))
-		self.assertIs(chat_config['imageGenerationAvailable'], True)
-		self.assertIs(chat_config['videoGenerationAvailable'], True)
-		self.assertNotIn('mediaProviders', chat_config)
+		self.assertEqual(creation_config['available'], {'image': True, 'video': True, 'audio': True})
+		self.assertNotIn('mediaProviders', creation_config)
 		self.assertNotContains(response, 'Configured audio')
 
 	def test_shadow_recommendation_does_not_change_selected_chat_model(self):

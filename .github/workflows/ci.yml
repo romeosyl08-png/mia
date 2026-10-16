@@ -67,8 +67,32 @@ jobs:
       - name: Tests JavaScript
         run: node --test tests/js/*.cjs
 
+      - name: Cohérence du module Rust distribué
+        run: python3 scripts/build_markdown_wasm.py --check
+
       - name: Syntaxe des scripts du navigateur
         run: |
           status=0
           for file in static/app/js/*.js; do node --check "$file" || status=1; done
           exit $status
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installation de la chaîne Rust du projet
+        working-directory: rust/markdown
+        run: rustup show
+
+      - name: Format Rust
+        working-directory: rust/markdown
+        run: cargo fmt --check
+
+      - name: Tests Rust
+        working-directory: rust/markdown
+        run: cargo test --locked
+
+      - name: Vérification de la compilation WebAssembly
+        working-directory: rust/markdown
+        run: cargo clippy --locked --release --target wasm32-unknown-unknown -- -D warnings

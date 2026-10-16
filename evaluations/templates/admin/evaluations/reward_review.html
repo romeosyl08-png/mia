@@ -1,0 +1,12 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Contenu privé pour validation de qualité. Ne pas recopier ni publier les questions ou réponses. Vérifier les faits et la cohérence de la préférence et des notes ; la longueur ne prouve pas la qualité.</p>
+{% if evaluation and comparison.prompt %}
+<h2>Question</h2><pre style="white-space:pre-wrap">{{ comparison.prompt }}</pre>
+{% for response in responses %}<h2>Réponse {{ response.slot }} · {{ response.model.name }}</h2><pre style="white-space:pre-wrap">{{ response.response_text }}</pre>{% endfor %}
+<h2>Évaluation</h2><p>Préférence : {{ evaluation.get_preferred_response_display }} · Exactitude : {{ evaluation.accuracy_score|default_if_none:"—" }} · Pertinence : {{ evaluation.relevance_score|default_if_none:"—" }} · Clarté : {{ evaluation.clarity_score|default_if_none:"—" }}</p>
+<pre style="white-space:pre-wrap">{{ evaluation.justification }}</pre>
+<p>Signaux à examiner : {{ evaluation.suspicious_reasons|default:"aucun" }}</p>
+{% if reward.status == 'pending' %}<form method="post">{% csrf_token %}<label for="reviewNote">Motivation de la validation après vérification</label><br><textarea id="reviewNote" name="review_note" maxlength="500" rows="4" cols="70" required>{{ reward.review_note }}</textarea><br><button type="submit">Valider la qualité</button></form>{% else %}<p>État : {{ reward.get_status_display }}</p>{% endif %}
+{% else %}<p>Contenu supprimé ; aucune nouvelle validation possible.</p>{% endif %}
+{% endblock %}
