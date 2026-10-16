@@ -47,6 +47,8 @@ WEB_SEARCH_COMMAND_RE = re.compile(
 	re.IGNORECASE,
 )
 WEB_SEARCH_MARKUP_RE = re.compile(r"<\s*/?\s*web_search\b", re.IGNORECASE)
+PERSONA_APPEARANCE_ACCENTS = {'#6C6FCB', '#E8A33D', '#3F8E8A', '#B4483A', '#4E9F3D'}
+BARA_APPEARANCE_ACCENTS = PERSONA_APPEARANCE_ACCENTS | {'#007ACC'}
 
 
 def _web_search_query(content, messages):
@@ -1303,8 +1305,14 @@ class ConversationDeleteView(View):
 
 
 def _persona_data(persona):
-	return {**persona_settings(persona), 'is_big_persona': persona.is_big_persona,
+	data = {**persona_settings(persona), 'is_big_persona': persona.is_big_persona,
 		'share_with_personas': persona.share_with_personas}
+	if persona.is_big_persona:
+		data.update({
+			'bara_appearance_accent': persona.bara_appearance_accent,
+			'bara_appearance_theme': persona.bara_appearance_theme,
+		})
+	return data
 
 
 @method_decorator(login_required(login_url='/auth/?next=/chat/api/personas/'), name='dispatch')
@@ -1324,9 +1332,11 @@ class PersonaListView(View):
 			return _chat_error('Le type Big Persona est géré par le site.', 'invalid_request', 400)
 		if 'share_with_personas' in payload and not isinstance(payload['share_with_personas'], bool):
 			return _chat_error('L’autorisation de liaison doit être un booléen.', 'invalid_request', 400)
+		if 'bara_appearance_accent' in payload or 'bara_appearance_theme' in payload:
+			return _chat_error('Les thèmes des applications se modifient dans le panneau Big Persona.', 'invalid_request', 400)
 		appearance_accent = str(payload.get('appearance_accent', '') or '')
 		appearance_theme = str(payload.get('appearance_theme', '') or '')
-		if appearance_accent and appearance_accent not in {'#6C6FCB', '#E8A33D', '#3F8E8A', '#B4483A', '#4E9F3D'}:
+		if appearance_accent and appearance_accent not in PERSONA_APPEARANCE_ACCENTS:
 			return _chat_error('Couleur d’apparence invalide.', 'invalid_request', 400)
 		if appearance_theme not in {'', 'light', 'dark'}:
 			return _chat_error('Thème d’apparence invalide.', 'invalid_request', 400)
@@ -1365,6 +1375,8 @@ class PersonaDetailView(View):
 			if persona.is_big_persona and payload['share_with_personas']:
 				return _chat_error('Big Persona reçoit les données autorisées et ne sert pas de source partagée.', 'invalid_request', 400)
 			persona.share_with_personas = payload['share_with_personas']
+		if ('bara_appearance_accent' in payload or 'bara_appearance_theme' in payload) and not persona.is_big_persona:
+			return _chat_error('Les réglages visuels de Bara sont réservés à Big Persona.', 'invalid_request', 400)
 		if 'name' in payload:
 			if not isinstance(payload['name'], str) or not payload['name'].strip():
 				return _chat_error('Le nom du persona est obligatoire.', 'invalid_request', 400)
@@ -1380,7 +1392,7 @@ class PersonaDetailView(View):
 			persona.appearance_avatar = str(payload['appearance_avatar'] or '')[:16]
 		if 'appearance_accent' in payload:
 			appearance_accent = str(payload['appearance_accent'] or '')
-			if appearance_accent and appearance_accent not in {'#6C6FCB', '#E8A33D', '#3F8E8A', '#B4483A', '#4E9F3D'}:
+			if appearance_accent and appearance_accent not in PERSONA_APPEARANCE_ACCENTS:
 				return _chat_error('Couleur d’apparence invalide.', 'invalid_request', 400)
 			persona.appearance_accent = appearance_accent
 		if 'appearance_theme' in payload:
@@ -1388,10 +1400,21 @@ class PersonaDetailView(View):
 			if appearance_theme not in {'', 'light', 'dark'}:
 				return _chat_error('Thème d’apparence invalide.', 'invalid_request', 400)
 			persona.appearance_theme = appearance_theme
+		if 'bara_appearance_accent' in payload:
+			bara_accent = str(payload['bara_appearance_accent'] or '')
+			if bara_accent and bara_accent not in BARA_APPEARANCE_ACCENTS:
+				return _chat_error('Couleur de Bara invalide.', 'invalid_request', 400)
+			persona.bara_appearance_accent = bara_accent or '#007ACC'
+		if 'bara_appearance_theme' in payload:
+			bara_theme = str(payload['bara_appearance_theme'] or '')
+			if bara_theme not in {'light', 'dark'}:
+				return _chat_error('Thème de Bara invalide.', 'invalid_request', 400)
+			persona.bara_appearance_theme = bara_theme
 		if 'temp' in payload:
 			persona.temperature = payload['temp']
 		fields = set(payload) & {'name', 'prompt', 'tone', 'length', 'memory', 'appearance_name',
-			'appearance_avatar', 'appearance_accent', 'appearance_theme', 'share_with_personas'}
+			'appearance_avatar', 'appearance_accent', 'appearance_theme', 'share_with_personas',
+			'bara_appearance_accent', 'bara_appearance_theme'}
 		if 'temp' in payload:
 			fields.add('temperature')
 		if fields:

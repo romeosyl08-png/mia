@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -16,7 +17,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from api.models import AIModel, APIProvider
-from bara.models import ToolExecution, WorkConversation, WorkFile, Workspace, WorkspaceMCPServer
+from bara.models import ToolExecution, WorkConversation, WorkFile, Workspace, WorkspaceMCPServer, WorkspacePluginConnection
 from bara.mcp_client import validate_mcp_endpoint
 from bara.services import actual_cost_credits, call_llm_with_tools_stream, get_workspace_context
 from bara.tools.definitions import compare_files, read_file_lines, run_command, search_code
@@ -336,6 +337,66 @@ class WorkspaceToolTests(TestCase):
             self.user.credit_account.balance,
             100000 - actual_cost_credits(model, 1200, 800),
         )
+
+    def test_plugin_activity_is_persisted_and_rendered_in_its_conversation(self):
+        provider = APIProvider.objects.create(
+            name="Plugin history provider", slug="plugin-history", base_url="https://provider.example.test"
+        )
+        provider.keys.create(name="server-key", key="server-secret")
+        model = AIModel.objects.create(
+            provider=provider, name="Plugin history model", model_id="plugin-history-model",
+            input_price_per_million=1, output_price_per_million=1,
+        )
+        self.workspace.active_model = model
+        self.workspace.save(update_fields=["active_model"])
+        WorkspacePluginConnection.objects.create(workspace=self.workspace, plugin="google_mail")
+        conversation = WorkConversation.objects.create(workspace=self.workspace)
+        self.user.credit_account.balance = 100000
+        self.user.credit_account.save(update_fields=["balance"])
+        self.client.force_login(self.user)
+        query = "private mailbox query"
+        tool_call_events = [
+            {"type": "tool_call_delta", "index": 0, "id": "call-plugin", "name": "email_search",
+             "arguments_delta": json.dumps({"provider": "google_mail", "query": query})},
+            {"type": "done", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        ]
+        answer_events = [
+            {"type": "delta", "content": "Aucun résultat pertinent."},
+            {"type": "done", "usage": {"prompt_tokens": 10, "completion_tokens": 5}},
+        ]
+
+        with patch("bara.views.estimate_cost", return_value=(1, 1)), patch(
+            "bara.views.call_llm_with_tools_stream",
+            side_effect=[iter(tool_call_events), iter(answer_events)],
+        ), patch(
+            "bara.views.dispatch_tool",
+            return_value={"provider": "google_mail", "messages": [{"id": "private-message-id"}]},
+        ):
+            response = self.client.post(
+                reverse("bara:message", args=[self.workspace.id, conversation.id]),
+                {"content": "Cherche dans mes e-mails"},
+                HTTP_ACCEPT="text/event-stream",
+            )
+            body = b"".join(response.streaming_content)
+
+        self.assertEqual(response.status_code, 200)
+        stream_events = [json.loads(line[6:]) for line in body.decode().splitlines() if line.startswith("data: ")]
+        activity_events = [event for event in stream_events if event.get("type") == "plugin_activity"]
+        self.assertEqual([event["status"] for event in activity_events], ["running", "success"])
+        self.assertEqual(activity_events[0]["activity_id"], activity_events[1]["activity_id"])
+        assistant = conversation.messages.get(role="assistant")
+        self.assertEqual(len(assistant.tool_events), 1)
+        self.assertEqual(assistant.tool_events[0]["plugin"], "Gmail")
+        self.assertEqual(assistant.tool_events[0]["label"], "Recherche d’e-mails")
+        self.assertEqual(assistant.tool_events[0]["status"], "success")
+        self.assertNotIn(query, json.dumps(assistant.tool_events))
+        self.assertNotIn("private-message-id", json.dumps(assistant.tool_events))
+
+        history = self.client.get(reverse("bara:conversation", args=[self.workspace.id, conversation.id]))
+        self.assertEqual(history.status_code, 200)
+        self.assertContains(history, "Gmail")
+        self.assertContains(history, "Recherche d’e-mails")
+        self.assertContains(history, "Terminé")
 
     def test_message_requires_an_explicit_model_or_auto_route(self):
         conversation = WorkConversation.objects.create(workspace=self.workspace)

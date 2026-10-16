@@ -203,6 +203,7 @@ class WorkMessage(models.Model):
     )
 
     content = models.TextField()
+    tool_events = models.JSONField(default=list, blank=True)
 
     conversation = models.ForeignKey(
         "WorkConversation", on_delete=models.CASCADE, related_name="messages", null=True, blank=True

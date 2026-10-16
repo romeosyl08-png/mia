@@ -61,6 +61,27 @@ class FrontendAssetTests(TestCase):
         self.assertEqual(page.select_one('script[data-wasm-url]')['data-wasm-url'], '/static/app/wasm/markdown_core.wasm')
         self.assertFalse(page.body.has_attr('data-keep-title'))
 
+    def test_big_persona_groups_independent_application_appearance_settings(self):
+        self.client.force_login(self.user)
+        page = self.page(reverse('chat:customize'))
+        self.assertIsNotNone(page.select_one('#bigPersonaSettings'))
+        self.assertIsNotNone(page.select_one('#webThemeLight'))
+        self.assertIsNotNone(page.select_one('#baraThemeLight'))
+        self.assertIsNotNone(page.select_one('#vscodeAppearanceInfo'))
+        self.assertIsNone(page.select_one('#swatches'))
+
+    def test_bara_uses_the_big_persona_surface_theme(self):
+        self.client.force_login(self.user)
+        big_persona = self.user.personas.get(is_big_persona=True)
+        big_persona.bara_appearance_theme = 'light'
+        big_persona.bara_appearance_accent = '#E8A33D'
+        big_persona.save(update_fields=['bara_appearance_theme', 'bara_appearance_accent'])
+        page = self.page(reverse('bara:detail', args=[self.workspace.pk]))
+        wrapper = page.select_one('.bara-wrap')
+        self.assertEqual(wrapper['data-bara-theme'], 'light')
+        self.assertIn('#E8A33D', wrapper['style'])
+        self.assertIn('#211914', wrapper['style'])
+
     def test_temporary_chat_starts_without_memory_and_exposes_separate_actions(self):
         self.client.force_login(self.user)
         page = self.page(reverse('chat:chat-home'))

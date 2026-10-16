@@ -118,6 +118,44 @@ class BigPersonaTests(TestCase):
         for secret in ['server-secret-sentinel', 'oauth-secret-sentinel', 'database-secret-sentinel', 'private-provider-key', self.user.password, self.other.email]:
             self.assertNotIn(secret, response.content.decode())
 
+    def test_big_persona_keeps_barrassons_and_bara_appearance_independent(self):
+        url = reverse('chat:chat-persona-detail', args=[self.big.pk])
+        payload = {
+            'appearance_theme': 'dark',
+            'appearance_accent': '#3F8E8A',
+            'bara_appearance_theme': 'light',
+            'bara_appearance_accent': '#E8A33D',
+        }
+        response = self.client.patch(url, data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()['appearance_theme'], 'dark')
+        self.assertEqual(response.json()['bara_appearance_theme'], 'light')
+        self.assertEqual(response.json()['appearance_accent'], '#3F8E8A')
+        self.assertEqual(response.json()['bara_appearance_accent'], '#E8A33D')
+
+        profile = self.client.get(reverse('chat:big-persona')).json()['persona']
+        self.assertEqual(profile['appearance_theme'], 'dark')
+        self.assertEqual(profile['bara_appearance_theme'], 'light')
+        self.assertEqual(profile['bara_appearance_accent'], '#E8A33D')
+
+    def test_bara_appearance_is_big_persona_only_and_validated(self):
+        source_url = reverse('chat:chat-persona-detail', args=[self.source.pk])
+        response = self.client.patch(
+            source_url,
+            data=json.dumps({'bara_appearance_theme': 'light'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+        big_url = reverse('chat:chat-persona-detail', args=[self.big.pk])
+        for payload in [
+            {'bara_appearance_theme': 'sepia'},
+            {'bara_appearance_accent': '#123456'},
+        ]:
+            with self.subTest(payload=payload):
+                response = self.client.patch(big_url, data=json.dumps(payload), content_type='application/json')
+                self.assertEqual(response.status_code, 400)
+
     def test_context_routes_require_authentication_and_owner_access(self):
         self.assertEqual(self.client.get(reverse('chat:persona-context', args=[self.foreign.pk])).status_code, 404)
         self.assertEqual(self.client.patch(reverse('chat:chat-persona-detail', args=[self.foreign.pk]),

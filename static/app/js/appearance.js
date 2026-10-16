@@ -121,6 +121,7 @@
 
     let appearance = load();
     const defaultAppearance = { ...appearance };
+    let centralAppearance = null;
     const botNameElements = Array.from(document.querySelectorAll("[data-bot-name]"));
     const botAvatarElements = Array.from(document.querySelectorAll("[data-bot-avatar]"));
 
@@ -285,12 +286,27 @@
                 ? "2AI"
                 : personaName;
             appearance.botAvatar = normalizeValue(persona.appearance_avatar, defaultAppearance.botAvatar);
-            appearance.accent = ACCENTS.includes(persona.appearance_accent)
+            appearance.accent = centralAppearance?.accent || (ACCENTS.includes(persona.appearance_accent)
+                ? persona.appearance_accent
+                : defaultAppearance.accent);
+            appearance.theme = centralAppearance?.theme || (persona.appearance_theme === "dark" || persona.appearance_theme === "light"
+                ? persona.appearance_theme
+                : defaultAppearance.theme);
+            apply();
+        },
+
+        setCentralAppearance(persona) {
+            if (!persona) return;
+            const accent = ACCENTS.includes(persona.appearance_accent)
                 ? persona.appearance_accent
                 : defaultAppearance.accent;
-            appearance.theme = persona.appearance_theme === "dark" || persona.appearance_theme === "light"
+            const theme = persona.appearance_theme === "dark" || persona.appearance_theme === "light"
                 ? persona.appearance_theme
                 : defaultAppearance.theme;
+            centralAppearance = {accent, theme};
+            appearance.accent = accent;
+            appearance.theme = theme;
+            save(appearance);
             apply();
         },
 

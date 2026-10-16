@@ -17,7 +17,13 @@ def big_persona(request):
     persona = ensure_big_persona(request.user)
     snapshot = persona_snapshot(request.user, persona)
     return JsonResponse({
-        'persona': {**persona_settings(persona), 'is_big_persona': True, 'share_with_personas': False},
+        'persona': {
+            **persona_settings(persona),
+            'is_big_persona': True,
+            'share_with_personas': False,
+            'bara_appearance_accent': persona.bara_appearance_accent,
+            'bara_appearance_theme': persona.bara_appearance_theme,
+        },
         **snapshot,
         'context_chars': len(shared_persona_context(request.user, persona)),
     })

@@ -4,7 +4,7 @@
 {% block title %}Paramètres — 2AI{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/customize.css' %}?v=logo-1">
+<link rel="stylesheet" href="{% static 'app/css/customize.css' %}?v=big-persona-appearance-1">
 {% endblock %}
 
 {% block body %}
@@ -130,6 +130,46 @@
             <h2>Big Persona</h2>
             <p class="settings-description">Il réunit les mémoires et les réglages des personas dont tu as autorisé la liaison. Il reçoit aussi ton profil (nom, e-mail et solde) et les réglages fonctionnels du site lorsque tu l’utilises avec un modèle IA.</p>
             <p class="persona-save-status" id="bigPersonaStatus" role="status" aria-live="polite">Chargement des autorisations…</p>
+            <div class="big-persona-appearance" aria-labelledby="bigPersonaAppearanceTitle">
+                <h3 id="bigPersonaAppearanceTitle">Styles et thèmes des applications</h3>
+                <p class="field-hint">Les réglages restent indépendants pour chaque application. Barrassons Web et Bara se règlent ici sans forcer un thème commun.</p>
+                <p class="persona-save-status" id="bigPersonaAppearanceStatus" role="status" aria-live="polite"></p>
+                <div class="big-persona-appearance-grid">
+                    <section class="surface-appearance-card" aria-labelledby="webAppearanceTitle">
+                        <h4 id="webAppearanceTitle">Barrassons · application web</h4>
+                        <div class="toggle-row">
+                            <label>Thème</label>
+                            <div class="theme-toggle" role="group" aria-label="Thème de Barrassons Web">
+                                <button type="button" id="webThemeLight" data-theme="light">Clair</button>
+                                <button type="button" id="webThemeDark" data-theme="dark">Sombre</button>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label>Couleur d’accent</label>
+                            <div class="swatches" id="webSwatches" role="group" aria-label="Couleur d’accent de Barrassons Web"></div>
+                        </div>
+                    </section>
+                    <section class="surface-appearance-card" aria-labelledby="baraAppearanceTitle">
+                        <h4 id="baraAppearanceTitle">Bara</h4>
+                        <div class="toggle-row">
+                            <label>Thème</label>
+                            <div class="theme-toggle" role="group" aria-label="Thème de Bara">
+                                <button type="button" id="baraThemeLight" data-theme="light">Clair</button>
+                                <button type="button" id="baraThemeDark" data-theme="dark">Sombre</button>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label>Couleur d’accent</label>
+                            <div class="swatches" id="baraSwatches" role="group" aria-label="Couleur d’accent de Bara"></div>
+                        </div>
+                    </section>
+                    <section class="surface-appearance-card vscode-appearance-card" id="vscodeAppearanceInfo" aria-labelledby="vscodeAppearanceTitle">
+                        <h4 id="vscodeAppearanceTitle">Barrassons · VS Code</h4>
+                        <p>Les réponses et l’extension héritent du thème actif de VS Code. Big Persona ne remplace pas le thème de l’éditeur.</p>
+                        <p class="field-hint">Pour changer le thème de VS Code : ouvre la palette de commandes avec <kbd>Ctrl+K</kbd>, puis <kbd>Ctrl+T</kbd>.</p>
+                    </section>
+                </div>
+            </div>
             <ul id="bigPersonaSources" class="big-persona-sources"></ul>
             <a href="/" id="bigPersonaChatLink" class="button-primary">Discuter avec Big Persona</a>
             <details class="big-persona-details">
@@ -142,9 +182,9 @@
 
         <section class="settings-section">
 
-            <h2>{% if is_authenticated %}Apparence du persona{% else %}Apparence{% endif %}</h2>
+            <h2>{% if is_authenticated %}Identité visuelle du persona{% else %}Apparence{% endif %}</h2>
             {% if is_authenticated %}
-            <p class="settings-description">Ces réglages appartiennent au persona sélectionné ci-dessus.</p>
+            <p class="settings-description">Le nom et l’avatar restent propres au persona sélectionné. Les thèmes et couleurs des applications se règlent dans le panneau Big Persona.</p>
             {% endif %}
             <div class="customize-brand persona-preview">
                 <span class="brand-avatar" id="customizeAvatar" data-bot-avatar>🐘</span>
@@ -178,45 +218,19 @@
             </div>
 
 
+            {% if not is_authenticated %}
             <div class="field">
-
-                <label>
-                    Couleur d'accent
-                </label>
-
-                <div
-                    class="swatches"
-                    id="swatches"
-                    role="group"
-                    aria-label="Couleurs d'accent">
-                </div>
-
+                <label>Couleur d'accent</label>
+                <div class="swatches" id="swatches" role="group" aria-label="Couleurs d'accent"></div>
             </div>
-
-
             <div class="toggle-row">
-
-                <label>
-                    Thème
-                </label>
-
+                <label>Thème</label>
                 <div class="theme-toggle">
-
-                    <button
-                        type="button"
-                        id="themeLight">
-                        Clair
-                    </button>
-
-                    <button
-                        type="button"
-                        id="themeDark">
-                        Sombre
-                    </button>
-
+                    <button type="button" id="themeLight">Clair</button>
+                    <button type="button" id="themeDark">Sombre</button>
                 </div>
-
             </div>
+            {% endif %}
 
         </section>
 
@@ -252,7 +266,10 @@
 
 
 {% block extra_js %}
-<script defer src="{% static 'app/js/customize.js' %}?v=big-persona-1"></script>
-{% if is_authenticated %}<script defer src="{% static 'app/js/persona_sharing.js' %}?v=big-persona-1"></script>{% endif %}
+<script defer src="{% static 'app/js/customize.js' %}?v=big-persona-2"></script>
+{% if is_authenticated %}
+<script defer src="{% static 'app/js/big_persona_appearance.js' %}?v=big-persona-1"></script>
+<script defer src="{% static 'app/js/persona_sharing.js' %}?v=big-persona-1"></script>
+{% endif %}
 
 {% endblock %}

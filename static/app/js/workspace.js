@@ -121,6 +121,51 @@
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
   }
 
+  const pluginActivityStatuses = {
+    pending: 'Confirmation requise', running: 'En cours', success: 'Terminé',
+    error: 'Échec', rejected: 'Refusé', unavailable: 'Indisponible'
+  };
+
+  function addPluginActivityCard(container, event){
+    const activityId = typeof event.activity_id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(event.activity_id)
+      ? event.activity_id : '';
+    const card = activityId
+      ? messagesDiv.querySelector(`.bara-plugin-activity[data-activity-id="${activityId}"]`)
+      : null;
+    const existing = Boolean(card);
+    const activityCard = card || document.createElement('div');
+    activityCard.className = 'bara-plugin-activity';
+    if(activityId) activityCard.dataset.activityId = activityId;
+    const actionId = Number.isInteger(event.action_id) && event.action_id > 0 ? String(event.action_id) : '';
+    if(actionId) activityCard.dataset.actionId = actionId;
+    const status = typeof event.status === 'string' ? event.status : 'success';
+    activityCard.dataset.status = status;
+    let plugin = activityCard.querySelector('.bara-plugin-name');
+    if(!plugin){ plugin = document.createElement('span'); plugin.className = 'bara-plugin-name'; }
+    plugin.textContent = String(event.plugin || 'Plugin');
+    let label = activityCard.querySelector('.bara-plugin-action');
+    if(!label){ label = document.createElement('span'); label.className = 'bara-plugin-action'; }
+    label.textContent = String(event.label || 'Action');
+    let state = activityCard.querySelector('.bara-plugin-status');
+    if(!state){ state = document.createElement('span'); state.className = 'bara-plugin-status'; }
+    state.textContent = pluginActivityStatuses[status] || 'État inconnu';
+    if(!existing) activityCard.append(plugin, label, state);
+    if(!existing) container.appendChild(activityCard);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    return activityCard;
+  }
+
+  function updatePluginActivityStatus(actionId, status){
+    const id = String(Number(actionId));
+    if(!Number.isInteger(Number(actionId)) || Number(actionId) <= 0) return;
+    messagesDiv.querySelectorAll('.bara-plugin-activity[data-action-id]').forEach(card => {
+      if(card.dataset.actionId !== id) return;
+      card.dataset.status = status;
+      const state = card.querySelector('.bara-plugin-status');
+      if(state) state.textContent = pluginActivityStatuses[status] || 'État inconnu';
+    });
+  }
+
   // ---------- Saisie ----------
   textarea.addEventListener('input', () => {
     textarea.style.height = 'auto';
@@ -180,11 +225,14 @@
         });
         const data = await res.json().catch(() => ({}));
         if(!res.ok){
+          updatePluginActivityStatus(event.action_id, res.status === 409 ? 'unavailable' : 'error');
           const error = new Error(data.error || 'Échec de la confirmation.');
           error.status = res.status;
           throw error;
         }
         actions.remove();
+        updatePluginActivityStatus(event.action_id, decision === 'reject'
+          ? 'rejected' : data.status === 'error' ? 'error' : 'success');
         if(decision === 'confirm'){
           text.textContent = (event.mcp || event.plugin)
             ? event.description + ' : ' + JSON.stringify(data.result || {})
@@ -198,6 +246,7 @@
         }
       } catch(err){
         if((decision === 'confirm' && event.plugin) || err.status === 409){
+          updatePluginActivityStatus(event.action_id, 'unavailable');
           actions.remove();
           text.textContent = `${event.description} : ${err.message} Vérifie le résultat avant toute nouvelle action.`;
         } else {
@@ -267,6 +316,8 @@
             rawText += event.text;
             bodyEl.textContent = rawText;
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          } else if(event.type === 'plugin_activity'){
+            addPluginActivityCard(assistantDiv, event);
           } else if(event.type === 'step'){
             if(!stepEl){
               stepEl = document.createElement('div');
@@ -283,12 +334,13 @@
           } else if(event.type === 'visualization'){
             addChartCard(event.chart);
           } else if(event.type === 'error'){
-            assistantDiv.remove();
+            if(!assistantDiv.querySelector('.bara-plugin-activity')) assistantDiv.remove();
             appendMessage('error', event.message);
             if(event.billing_warning) appendMessage('error', event.billing_warning);
           } else if(event.type === 'done'){
             if(stepEl) stepEl.remove();
-            if(rawText){ renderMarkdown(bodyEl, rawText); } else { assistantDiv.remove(); }
+            if(rawText){ renderMarkdown(bodyEl, rawText); }
+            else if(!assistantDiv.querySelector('.bara-plugin-activity')) assistantDiv.remove();
             if(typeof event.remaining_balance === 'number'){
               document.getElementById('creditPillText').textContent =
                 Math.max(0, Math.round(event.remaining_balance)).toLocaleString('fr-FR') + ' jetons';
@@ -313,7 +365,7 @@
         if(stepEl) stepEl.remove();
         if(rawText){
           renderMarkdown(bodyEl, rawText + '\n\n*(interrompu)*');
-        } else {
+        } else if(!assistantDiv.querySelector('.bara-plugin-activity')) {
           assistantDiv.remove();
         }
       } else {

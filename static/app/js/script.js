@@ -360,6 +360,8 @@ let state = {
       if(!res.ok) throw new Error("Erreur serveur " + res.status);
       const list = await res.json();
       state.personas = list;
+      const bigPersona = list.find(persona => persona.is_big_persona);
+      if(bigPersona) window.AI2AIAppearance?.setCentralAppearance(bigPersona);
       state.activePersonaId = list.length ? list[0].id : null;
     }catch(err){
       console.error("Erreur chargement personas", err);

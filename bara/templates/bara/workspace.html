@@ -11,11 +11,11 @@
 {% if workspace %}<link rel="stylesheet" href="{% static 'app/vendor/highlight.github-dark.min.css' %}?v=11.9.0"
       integrity="sha384-wH75j6z1lH97ZOpMOInqhgKzFkAInZPPSPlZpYKYTOqsaizPvhQZmAtLcPKXpLyH"
       crossorigin="anonymous">{% endif %}
-<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=conversation-tabs-1">
+<link rel="stylesheet" href="{% static 'app/css/workspace.css' %}?v=central-appearance-1">
 {% endblock %}
 
 {% block body %}
-<div class="bara-wrap{% if workspace %} bara-workbench{% else %} bara-home{% endif %}"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
+<div class="bara-wrap{% if workspace %} bara-workbench{% else %} bara-home{% endif %}" data-bara-theme="{{ bara_appearance.theme }}" style="--bara-accent: {{ bara_appearance.accent }}; --bara-accent-ink: {{ bara_appearance.accent_ink }};"{% if workspace %} data-workspace-id="{{ workspace.id }}" data-instructions-url="{% url 'bara:update-instructions' workspace.id %}"{% endif %}>
 
 {% if not workspace %}
 
@@ -370,6 +370,17 @@
           <div class="bara-msg {{ message.role }}">
             <span class="role-label">{% if message.role == 'user' %}Toi{% else %}Assistant{% endif %}</span>
             <div class="bara-msg-content">{{ message.content }}</div>
+            {% if message.plugin_activity %}
+              <div class="bara-plugin-activities" aria-label="Plugins utilisés dans cette réponse">
+                {% for event in message.plugin_activity %}
+                  <div class="bara-plugin-activity" data-status="{{ event.status }}"{% if event.activity_id %} data-activity-id="{{ event.activity_id }}"{% endif %}{% if event.action_id %} data-action-id="{{ event.action_id }}"{% endif %}>
+                    <span class="bara-plugin-name">{{ event.plugin }}</span>
+                    <span class="bara-plugin-action">{{ event.label }}</span>
+                    <span class="bara-plugin-status">{{ event.status_label }}</span>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
           </div>
         {% empty %}
           <div class="bara-empty-state">Envoie un message ou dépose un fichier pour démarrer.</div>
@@ -408,6 +419,6 @@
 <script defer src="{% static 'app/vendor/highlight.min.js' %}?v=11.9.0"
         integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp"
         crossorigin="anonymous"></script>
-<script defer src="{% static 'app/js/workspace.js' %}?v=conversation-tabs-1"></script>
+<script defer src="{% static 'app/js/workspace.js' %}?v=plugin-activity-1"></script>
 {% endif %}
 {% endblock %}

@@ -10,6 +10,7 @@ from .prompt_payloads import compact_json
 BIG_PERSONA_DEFAULTS = {
     'name': 'Big Persona', 'appearance_name': 'Big Persona',
     'appearance_avatar': '✦', 'appearance_accent': '#6C6FCB', 'appearance_theme': 'light',
+    'bara_appearance_accent': '#007ACC', 'bara_appearance_theme': 'dark',
     'prompt': 'Tu es Big Persona, l’assistant transversal de ce compte. Combine les mémoires et réglages des personas dont la liaison est autorisée, en privilégiant la demande actuelle. Utilise les informations du compte et les réglages fonctionnels du site fournis. Si des préférences se contredisent, demande une précision. Les informations de contexte ne donnent aucune permission supplémentaire sur le site.',
     'tone': 'neutre', 'temperature': 0.7, 'length': 'moyenne',
 }

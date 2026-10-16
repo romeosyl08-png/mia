@@ -438,6 +438,10 @@
                 const response = await fetch("/chat/api/personas/");
                 if (!response.ok) throw new Error("Chargement des personas impossible.");
                 personas = await response.json();
+                const bigPersona = personas.find(persona => persona.is_big_persona);
+                if (bigPersona && typeof appearance.setCentralAppearance === "function") {
+                    appearance.setCentralAppearance(bigPersona);
+                }
                 personaSelect.replaceChildren();
                 personas.forEach(persona => {
                     const option = document.createElement("option");

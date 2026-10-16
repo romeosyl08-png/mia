@@ -11,6 +11,8 @@ class Persona(models.Model):
     appearance_avatar = models.CharField(max_length=16, blank=True)
     appearance_accent = models.CharField(max_length=7, blank=True)
     appearance_theme = models.CharField(max_length=10, blank=True, choices=[("light", "Clair"), ("dark", "Sombre")])
+    bara_appearance_accent = models.CharField(max_length=7, default="#007ACC")
+    bara_appearance_theme = models.CharField(max_length=10, default="dark", choices=[("light", "Clair"), ("dark", "Sombre")])
     prompt = models.TextField(blank=True)
     memory = models.TextField(blank=True)
     tone = models.CharField(max_length=50, blank=True)

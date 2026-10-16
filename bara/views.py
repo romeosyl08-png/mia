@@ -16,6 +16,7 @@ from django.views.decorators.http import require_POST
 
 from api.crypto import decrypt_value
 from chat.services import ProviderError, check_user_rate_limit, estimate_cost
+from chat.persona_context import ensure_big_persona
 from api.models import AIModel
 from ai_user.models import InsufficientCreditsError
 
@@ -44,7 +45,8 @@ from .tools.registry import get_tools
 from .tools import definitions  # noqa: F401 — déclenche l'enregistrement des outils via les décorateurs
 from .tools import plugins as plugin_tool_definitions  # noqa: F401 — enregistre les outils d'automatisation
 from .tools import visualizations as visualization_tool_definitions  # noqa: F401 — enregistre les outils de visualisation
-from .tools.plugins import PLUGIN_TOOL_NAMES
+from .tools.connectors import CONNECTOR_TOOLS
+from .tools.plugins import BLENDER_PLUGIN_TOOL_NAMES, EMAIL_PLUGIN_TOOL_NAMES, PLUGIN_TOOL_NAMES
 from .mcp_client import call_mcp_tool, list_mcp_tools, validate_mcp_endpoint
 from .plugin_services import (
     BLENDER_HEARTBEAT_SECONDS,
@@ -67,9 +69,21 @@ MAX_AGENT_ITERATIONS = 5
 from .agent_tools import CODE_EXECUTION_TOOLS, _tools_schema, _log_tool, _shrink_result, dispatch_tool
 
 
+def _bara_appearance_settings(persona):
+    theme = persona.bara_appearance_theme if persona.bara_appearance_theme in {"light", "dark"} else "dark"
+    accent = persona.bara_appearance_accent if persona.bara_appearance_accent in {
+        "#6C6FCB", "#E8A33D", "#3F8E8A", "#B4483A", "#4E9F3D", "#007ACC"
+    } else "#007ACC"
+    channels = [int(accent[index:index + 2], 16) for index in (1, 3, 5)]
+    luminance = (0.299 * channels[0] + 0.587 * channels[1] + 0.114 * channels[2]) / 255
+    return {"theme": theme, "accent": accent, "accent_ink": "#211914" if luminance > 0.62 else "#FFFFFF"}
+
+
 @login_required
 def workspace_home(request):
     workspaces = accessible_workspaces(request.user)
+    big_persona = ensure_big_persona(request.user)
+    bara_appearance = _bara_appearance_settings(big_persona)
     available_models = AIModel.objects.filter(
         is_active=True,
         provider__is_active=True,
@@ -79,6 +93,7 @@ def workspace_home(request):
         "workspaces": workspaces,
         "available_models": available_models,
         "default_model_name": default_model.name if default_model else "",
+        "bara_appearance": bara_appearance,
     })
 
 
@@ -141,6 +156,77 @@ def upload_file(request, workspace_id):
 
 def _sse(event_type, data):
     return f"data: {json.dumps({'type': event_type, **data}, ensure_ascii=False)}\n\n"
+
+
+PLUGIN_TOOL_LABELS = {
+    "email_search": "Recherche d’e-mails",
+    "email_read": "Lecture d’e-mail",
+    "email_create_draft": "Création d’un brouillon",
+    "email_send": "Envoi d’e-mail",
+    "blender_get_scene": "Lecture de la scène",
+    "blender_list_objects": "Liste des objets",
+    "blender_create_primitive": "Création d’un objet",
+    "drive_search": "Recherche dans Drive",
+    "drive_read": "Lecture dans Drive",
+    "calendar_events": "Consultation du calendrier",
+    "github_repositories": "Liste des dépôts",
+    "github_read_file": "Lecture d’un fichier GitHub",
+}
+PLUGIN_CONNECTION_LABELS = {
+    "google_mail": "Gmail",
+    "microsoft_mail": "Outlook",
+    "blender": "Blender",
+    "google_drive": "Google Drive",
+    "google_calendar": "Google Calendar",
+    "github": "GitHub",
+}
+PLUGIN_ACTIVITY_STATUS_LABELS = {
+    "pending": "Confirmation requise",
+    "running": "En cours",
+    "success": "Terminé",
+    "error": "Échec",
+    "rejected": "Refusé",
+    "unavailable": "Indisponible",
+}
+
+
+def _plugin_activity_event(tool_name, arguments, result, mcp_tool_map, status_override=None):
+    arguments = arguments if isinstance(arguments, dict) else {}
+    if tool_name in mcp_tool_map:
+        server, remote_name = mcp_tool_map[tool_name]
+        plugin = f"MCP · {str(server.name)[:80]}"
+        label = f"Outil {str(remote_name)[:80]}"
+    elif tool_name in EMAIL_PLUGIN_TOOL_NAMES:
+        plugin = PLUGIN_CONNECTION_LABELS.get(arguments.get("provider"), "E-mail")
+        label = PLUGIN_TOOL_LABELS[tool_name]
+    elif tool_name in BLENDER_PLUGIN_TOOL_NAMES:
+        plugin = "Blender"
+        label = PLUGIN_TOOL_LABELS[tool_name]
+    elif tool_name in CONNECTOR_TOOLS:
+        plugin = PLUGIN_CONNECTION_LABELS[CONNECTOR_TOOLS[tool_name]]
+        label = PLUGIN_TOOL_LABELS[tool_name]
+    else:
+        return None
+
+    if status_override:
+        status = status_override
+    elif isinstance(result, dict) and result.get("status") == "pending_confirmation":
+        status = "pending"
+    elif isinstance(result, dict) and (result.get("error") or result.get("is_error")):
+        status = "error"
+    else:
+        status = "success"
+    event = {
+        "type": "plugin_activity",
+        "plugin": plugin,
+        "label": label,
+        "tool": str(tool_name)[:100],
+        "status": status,
+    }
+    action_id = result.get("action_id") if isinstance(result, dict) else None
+    if status == "pending" and isinstance(action_id, int):
+        event["action_id"] = action_id
+    return event
 
 
 @login_required
@@ -479,11 +565,40 @@ def workspace_detail(request, workspace_id, conversation_id=None):
         conversation = workspace.conversations.first() or WorkConversation.objects.create(workspace=workspace)
         return redirect("bara:conversation", workspace_id=workspace.id, conversation_id=conversation.id)
     conversation = get_object_or_404(WorkConversation, id=conversation_id, workspace=workspace)
+    messages = list(conversation.messages.all())
+    action_ids = {
+        event.get("action_id")
+        for message in messages
+        for event in (message.tool_events if isinstance(message.tool_events, list) else [])
+        if isinstance(event, dict)
+        and event.get("type") == "plugin_activity"
+        and isinstance(event.get("action_id"), int)
+    }
+    action_statuses = dict(
+        ToolExecution.objects.filter(workspace=workspace, id__in=action_ids).values_list("id", "status")
+    ) if action_ids else {}
+    for message in messages:
+        activity = []
+        for event in message.tool_events if isinstance(message.tool_events, list) else []:
+            if not isinstance(event, dict) or event.get("type") != "plugin_activity":
+                continue
+            saved_event = dict(event)
+            if isinstance(saved_event.get("action_id"), int):
+                saved_event["status"] = action_statuses.get(saved_event["action_id"], "unavailable")
+            saved_event["status_label"] = PLUGIN_ACTIVITY_STATUS_LABELS.get(
+                saved_event.get("status"), "État inconnu"
+            )
+            activity.append(saved_event)
+        message.plugin_activity = activity
+
+    big_persona = ensure_big_persona(request.user)
+    bara_appearance = _bara_appearance_settings(big_persona)
     return render(request, "bara/workspace.html", {
         "workspace": workspace,
         "conversation": conversation,
         "conversations": workspace.conversations.all(),
-        "messages": conversation.messages.all(),
+        "messages": messages,
+        "bara_appearance": bara_appearance,
         "tree": build_tree(list(workspace.files.all())),
         "builtin_tools": [tool for tool in get_tools() if tool["name"] not in PLUGIN_TOOL_NAMES],
         "disabled_tools": workspace.disabled_tools or [],
@@ -741,6 +856,8 @@ def send_message(request, workspace_id, conversation_id):
     usage = {"prompt": 0, "completion": 0, "chars": 0, "calls": 0}
     text_parts = []
     tools_used = set()
+    tool_events = []
+    activity_stream_id = secrets.token_urlsafe(12)
     settled = {"done": False, "charged_credits": 0, "shortfall": 0}
 
     def settle(outcome):
@@ -761,8 +878,14 @@ def send_message(request, workspace_id, conversation_id):
         text = "".join(text_parts).strip()
         if text and outcome == "stopped":
             text += "\n\n*(réponse interrompue)*"
-        if text:
-            WorkMessage.objects.create(workspace=workspace, conversation=conversation, role="assistant", content=text)
+        if text or tool_events:
+            WorkMessage.objects.create(
+                workspace=workspace,
+                conversation=conversation,
+                role="assistant",
+                content=text,
+                tool_events=tool_events,
+            )
         route_outcome = "success" if outcome == "ok" and usage["calls"] else "error" if outcome == "error" else "interrupted"
         record_shadow_run(
             request.user,
@@ -840,6 +963,16 @@ def send_message(request, workspace_id, conversation_id):
                         tool_args["conversation_id"] = conversation.id
 
                     yield _sse("step", {"status": "calling_tool", "tool": tool_name})
+                    activity_event = _plugin_activity_event(
+                        tool_name, tool_args, None, mcp_tool_map, status_override="running"
+                    )
+                    if activity_event:
+                        activity_event["activity_id"] = f"{activity_stream_id}-{len(tool_events) + 1}"
+                        tool_events.append(activity_event)
+                        yield _sse(
+                            "plugin_activity",
+                            {key: value for key, value in activity_event.items() if key != "type"},
+                        )
                     if tool_name.startswith("blender_"):
                         yield _sse("step", {"status": "waiting_plugin", "tool": tool_name})
                     if tool_blocked:
@@ -847,6 +980,17 @@ def send_message(request, workspace_id, conversation_id):
                     else:
                         tool_result = dispatch_tool(workspace, tool_name, tool_args, mcp_tool_map, conversation_id=conversation.id)
                     _log_tool(workspace, tool_name, tool_args, tool_result)
+                    resolved_activity = _plugin_activity_event(tool_name, tool_args, tool_result, mcp_tool_map)
+                    if resolved_activity:
+                        if activity_event:
+                            activity_event.update(resolved_activity)
+                        else:
+                            activity_event = resolved_activity
+                            tool_events.append(activity_event)
+                        yield _sse(
+                            "plugin_activity",
+                            {key: value for key, value in activity_event.items() if key != "type"},
+                        )
                     if (
                         isinstance(tool_result, dict)
                         and tool_result.get("status") == "visualization_ready"

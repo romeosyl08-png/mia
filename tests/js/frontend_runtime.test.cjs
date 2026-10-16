@@ -127,6 +127,49 @@ test('invalid appearance data and unavailable storage keep usable defaults', () 
   assert.equal(app.properties.get('--accent'), '#6C6FCB');
 });
 
+function appearanceHarness(saved = null) {
+  const properties = new Map(), rootAttributes = {}, bodyAttributes = {};
+  let persisted = saved;
+  const root = {
+    style: {setProperty(name, value) { properties.set(name, value); }},
+    setAttribute(name, value) { rootAttributes[name] = value; }
+  };
+  const body = {
+    setAttribute(name, value) { bodyAttributes[name] = value; },
+    hasAttribute(name) { return Object.hasOwn(bodyAttributes, name); }
+  };
+  const window = {};
+  run('appearance.js', {
+    window,
+    document: {
+      documentElement: root, body, title: '',
+      querySelectorAll: () => [], querySelector: () => null, getElementById: () => null
+    },
+    localStorage: {
+      getItem() { return persisted; },
+      setItem(_key, value) { persisted = value; }
+    }
+  });
+  return {window, properties, rootAttributes, bodyAttributes, get persisted() { return persisted; }};
+}
+
+test('Big Persona surface appearance remains the Barrassons theme across persona switches', () => {
+  const app = appearanceHarness();
+  const appearance = app.window.AI2AIAppearance;
+  appearance.setCentralAppearance({appearance_theme: 'dark', appearance_accent: '#3F8E8A'});
+  appearance.applyPersona({
+    appearance_name: 'Coach code', appearance_avatar: '⌘',
+    appearance_theme: 'light', appearance_accent: '#E8A33D'
+  });
+  assert.equal(appearance.get().botName, 'Coach code');
+  assert.equal(appearance.get().botAvatar, '⌘');
+  assert.equal(appearance.get().theme, 'dark');
+  assert.equal(appearance.get().accent, '#3F8E8A');
+  assert.equal(app.rootAttributes['data-theme'], 'dark');
+  assert.equal(app.properties.get('--accent'), '#3F8E8A');
+  assert.equal(JSON.parse(app.persisted).theme, 'dark');
+});
+
 function authHarness(signup = false) {
   const ids = ['tabLogin', 'tabSignup', 'panelLogin', 'panelSignup', 'linkToSignup', 'linkToLogin'];
   const nodes = Object.fromEntries(ids.map(id => [id, Object.assign(element(signup && id === 'tabSignup'), {id})]));

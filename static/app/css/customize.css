@@ -533,3 +533,17 @@
 .settings-action-danger:hover{border-color:var(--danger);background:rgba(217,74,86,.08)}
 .settings-logout{margin-top:14px}
 .settings-note{margin:10px 0 0;font-size:13px;opacity:.75}
+
+.big-persona-appearance{margin:20px 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--paper),var(--canvas) 24%)}
+.big-persona-appearance>h3{margin:0 0 8px;font-size:15px;font-weight:600}
+.big-persona-appearance>.field-hint{margin:0 0 12px}
+.big-persona-appearance .persona-save-status{margin:0 0 8px}
+.big-persona-appearance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:10px}
+.surface-appearance-card{min-width:0;padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.surface-appearance-card h4{margin:0 0 12px;font-size:13px;font-weight:600}
+.surface-appearance-card .toggle-row{margin:10px 0;align-items:center}
+.surface-appearance-card .field{margin:10px 0 0}
+.surface-appearance-card p{margin:7px 0;color:var(--ink);font-size:11px;line-height:1.45;opacity:.72}
+.vscode-appearance-card{grid-column:1/-1}
+.vscode-appearance-card .field-hint{margin-bottom:0}
+.vscode-appearance-card kbd{display:inline-block;padding:2px 5px;border:1px solid var(--line);border-radius:4px;background:var(--canvas);font:11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;opacity:1}

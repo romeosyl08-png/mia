@@ -184,6 +184,8 @@ Chaque compte dispose aussi de **Big Persona**, créé par la migration `chat.00
 
 Big Persona reçoit les sources autorisées, le profil du compte (nom, e-mail, date d’inscription et solde) et les réglages fonctionnels du site : génération, fonctionnalités, limites, tarification et modèles de médias. Ces informations sont sélectionnées explicitement côté serveur ; les mots de passe, clés API, secrets OAuth et paramètres de connexion à la base ne sont pas transmis. Le panneau **Big Persona** permet de consulter le profil et les réglages accessibles et d’ouvrir sa conversation. Le contexte est relu à chaque demande, pour les modèles hébergés comme locaux, sans recopier les mémoires sources dans celle de Big Persona. Une révocation s’applique aux prochaines demandes ; les messages déjà échangés ne sont pas effacés. Le contexte partagé utilise du JSON compact, mais sa taille augmente avec les sources autorisées.
 
+Le même panneau regroupe les thèmes et couleurs d’accent par surface : Barrassons Web et Bara ont des réglages distincts, donc le thème choisi pour l’un ne force pas l’autre. Le thème de l’extension Barrassons dans VS Code reste celui de l’éditeur hôte (palette de commandes `Ctrl+K`, puis `Ctrl+T`).
+
 Applique la migration avec `python manage.py migrate` avant de démarrer cette version. Les nouveaux endpoints authentifiés `/chat/api/big-persona/` et `/chat/api/personas/<id>/context/` renvoient uniquement le contexte du compte connecté avec `Cache-Control: no-store`. Big Persona est un persona intégré, unique par compte ; son type ne peut pas être forgé via l’API et il ne peut pas servir de source partagée ni être supprimé par cette API.
 
 ### Sécurité des outils Bara
@@ -199,6 +201,8 @@ Le panneau `AUTOMATISATIONS` propose Gmail, Outlook et Blender, ainsi que des se
 Gmail demande `gmail.readonly` et `gmail.compose` ; Outlook demande `Mail.ReadWrite` et `Mail.Send` (la permission Microsoft `Mail.ReadWrite` est plus large que les opérations exposées). Bara ne propose que la recherche/lecture, la création de brouillons et l'envoi après confirmation explicite. Le contenu des e-mails est non fiable et n'est pas conservé dans le journal des outils.
 
 Pour Blender, connecte le module complémentaire téléchargeable dans le panneau. Le module interroge Bara par HTTPS sortant avec un jeton secret, qui n'est affiché qu'à sa création ; aucun code Python arbitraire n'est exécuté. La lecture de scène est en lecture seule et toute modification de scène demande une confirmation dans Bara. HTTP n'est autorisé que pour les adresses loopback en développement.
+
+Les outils des plugins et serveurs MCP utilisés dans Bara apparaissent aussi sous la réponse concernée, avec le service, l’action et son état. L’historique conserve uniquement ces métadonnées d’activité (pas les arguments, corps d’e-mail ni résultats sensibles) ; l’état des actions à confirmer est relu dans le journal sécurisé de l’espace.
 
 Le panneau `VISUALISATIONS` ouvre un site directement dans le navigateur, dans un iframe sandboxé, ou prépare une demande de graphique. Le site n'est pas récupéré par le serveur ; certains sites refusent les iframes ou leur authentification ne fonctionne pas dans le cadre isolé, et doivent alors être ouverts dans un nouvel onglet. L'outil `visualize_chart` affiche des graphiques SVG avec infobulles à partir des données fournies dans la conversation ou les fichiers.
 
