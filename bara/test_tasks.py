@@ -60,10 +60,18 @@ class DurableTaskTests(TestCase):
         call = {'id':'uncertain', 'type':'function','function':{'name':'write_file','arguments':'{}'}}
         task = self.task(state={'messages':[],'calls':[call],'inflight':'uncertain'})
         repeated = {**call,'id':'new-id'}
-        with patch('bara.tasks.dispatch_tool') as dispatch, patch('bara.tasks.call_llm_with_tools',side_effect=[({'tool_calls':[repeated]},1,1),({'content':'Vérifie le journal'},1,1)]):
+        with patch('bara.tasks.dispatch_tool') as dispatch, patch('bara.tasks.call_llm_with_tools') as provider:
             execute_task(claim_task(task.pk))
+            task.refresh_from_db()
+            self.assertEqual(task.status, 'paused')
+            # Even a requeued checkpoint with a new ID cannot replay an
+            # uncertain effect. Reviewing it must not incur another model call.
+            task.state['calls'] = [repeated]
+            task.status = 'queued'
+            task.save()
             execute_task(claim_task(task.pk))
         dispatch.assert_not_called()
+        provider.assert_not_called()
 
     def test_confirmation_resumes_task_with_actual_result(self):
         action = ToolExecution.objects.create(workspace=self.workspace,tool_name='delete_file',status='pending')

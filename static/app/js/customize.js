@@ -363,7 +363,7 @@
         async function savePreferences() {
             const tokenLimit = Number(defaultMaxTokens.value);
             if (!Number.isInteger(tokenLimit) || tokenLimit < 1 || tokenLimit > 8192) {
-                if (preferencesSaveStatus) preferencesSaveStatus.textContent = "Choisis une limite entre 1 et 8192 tokens.";
+                if (preferencesSaveStatus) preferencesSaveStatus.textContent = "Choisis une limite entre 1 et 8192 jetons de texte.";
                 return;
             }
             try {

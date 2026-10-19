@@ -209,7 +209,7 @@ def _parse_params(payload):
     try:
         max_tokens = int(raw_max)
     except (TypeError, ValueError):
-        return None, "max_tokens must be an integer."
+        return None, "Le plafond de réponse doit être un entier."
     params = {"max_tokens": max(1, min(max_tokens, MAX_OUTPUT_TOKENS))}
     try:
         if payload.get("temperature") is not None:
@@ -382,7 +382,7 @@ def models_view(request):
             "owned_by": m.provider.slug,
             "supports_tools": False if _is_anthropic(m.provider) else supports_tools(m),
             "pricing": {
-                "unit": "jetons per million tokens",
+                "unit": "jetons 2AI par million de jetons de texte",
                 "input": credits_per_million_tokens(m.input_price_per_million),
                 "output": credits_per_million_tokens(m.output_price_per_million),
             },
@@ -511,7 +511,7 @@ def chat_completions(request):
         account.debit(reserve, reason="usage", note=f"API — {model.model_id}")
     except InsufficientCreditsError:
         return _error(
-            f"Jetons insuffisants : cette requête peut coûter jusqu’à {reserve} jetons (diminue max_tokens pour réduire la réserve).",
+            f"Jetons insuffisants : cette requête peut coûter jusqu’à {reserve} jetons (diminue le plafond de réponse pour réduire la réserve).",
             "insufficient_quota",
             402,
         )

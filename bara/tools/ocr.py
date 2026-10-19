@@ -1,4 +1,5 @@
 import tempfile
+import hashlib
 from pathlib import Path
 from .registry import register_tool
 from .sandbox import run_sandbox_command
@@ -32,4 +33,5 @@ def extract_document_text(workspace, file_id):
         file.extracted_text = result['stdout'][:50000]
         file.retrieval_index = {}
         file.save(update_fields=['extracted_text','retrieval_index'])
-        return {'file_id':file.pk,'text':file.extracted_text,'max_pages':10,'may_be_truncated':len(result['stdout'])>=12000}
+        return {'file_id':file.pk,'text':file.extracted_text,'max_pages':10,'may_be_truncated':len(result['stdout'])>=12000,
+                'source_sha256':hashlib.sha256(data).hexdigest()}

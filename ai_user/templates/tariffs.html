@@ -17,7 +17,7 @@
   <header class="tariffs-hero">
     <p class="tariffs-eyebrow">Tarification transparente</p>
     <h1>Combien coûte chaque IA ?</h1>
-    <p>Les jetons sont calculés selon les tokens réellement utilisés en entrée et en sortie.</p>
+    <p>Le débit en jetons 2AI dépend des jetons de texte réellement utilisés en entrée et en sortie.</p>
     <div class="tariffs-equivalence">
       <strong>Un seul solde de jetons pour Chat, Bara et Barrassons</strong>
       <span>{{ model_count }} modèle{{ model_count|pluralize }} cloud disponible{{ model_count|pluralize }}</span>
@@ -28,7 +28,7 @@
     <div class="tariffs-panel-heading">
       <div>
         <p class="tariffs-eyebrow">Catalogue cloud</p>
-        <h2 id="modelTariffsHeading">Tarifs 2AI en jetons par million de tokens</h2>
+        <h2 id="modelTariffsHeading">Tarifs en jetons 2AI par million de jetons de texte</h2>
       </div>
       <label class="tariffs-search">
         <span>Rechercher une IA</span>
@@ -37,7 +37,7 @@
     </div>
 
     <p class="tariffs-explanation">
-      Les tarifs incluent la marge du service ({{ margin_multiplier }}×). Les tokens du message et de l’historique
+      Les tarifs incluent la marge du service ({{ margin_multiplier }}×). Les jetons de texte du message et de l’historique
       sont facturés au tarif « entrée » ; la réponse est facturée au tarif « sortie ».
       Le débit s’effectue en jetons 2AI, arrondis au jeton le plus proche, avec un minimum d’un jeton par appel facturé.
       <a href="{% url 'recharge-page' %}">Acheter des jetons</a>.
@@ -48,8 +48,8 @@
         <thead>
           <tr>
             <th scope="col">IA / modèle</th>
-            <th scope="col">Entrée<br><span>jetons / 1M tokens · marge incluse</span></th>
-            <th scope="col">Sortie<br><span>jetons / 1M tokens · marge incluse</span></th>
+            <th scope="col">Entrée<br><span>jetons 2AI / 1M jetons de texte · marge incluse</span></th>
+            <th scope="col">Sortie<br><span>jetons 2AI / 1M jetons de texte · marge incluse</span></th>
           </tr>
         </thead>
         <tbody id="tariffsTableBody">

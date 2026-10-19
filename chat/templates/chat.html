@@ -175,7 +175,7 @@
           <input id="topPControl" type="range" min="0" max="1" step="0.05" value="1">
         </label>
         <label class="generation-control generation-token-control">
-          <span>Tokens max.</span>
+          <span>Jetons max.</span>
           <input id="maxTokensControl" type="number" min="1" max="8192" step="1" value="500" inputmode="numeric">
         </label>
       </div>
@@ -218,7 +218,7 @@
           <option value="plan_execute_verify">Planifier, réaliser, vérifier</option>
         </select>
         <p class="team-exchange-hint">Les IA échangent des notes courtes et des corrections. Une seule réponse finale est rédigée.</p>
-        <p class="team-exchange-hint">Tarifs 2AI en jetons, marge incluse, par million de tokens. Chaque appel de l’équipe utilise le même solde de jetons. <a href="{% url 'tariffs-page' %}">Voir les tarifs</a>.</p>
+        <p class="team-exchange-hint">Tarifs en jetons 2AI, marge incluse, par million de jetons de texte. Chaque appel de l’équipe utilise le même solde de jetons. <a href="{% url 'tariffs-page' %}">Voir les tarifs</a>.</p>
         <div class="team-model-grid" id="teamModelGrid">
   {% for ai_model in ai_models %}
         <div class="team-model-row">
@@ -291,7 +291,7 @@
       <input class="model-picker-search" id="modelPickerSearch" type="search" placeholder="Rechercher un modèle">
       <button type="button" class="model-favorites-filter" id="modelFavoritesOnlyBtn" aria-pressed="false">☆ Favoris</button>
     </div>
-    <p class="model-picker-pricing-note">Tarifs 2AI en jetons, marge du service incluse, par million de tokens : entrée = messages et contexte, sortie = réponse. <a href="{% url 'tariffs-page' %}">Voir les tarifs</a>.</p>
+    <p class="model-picker-pricing-note">Tarifs en jetons 2AI, marge du service incluse, par million de jetons de texte : entrée = messages et contexte, sortie = réponse. <a href="{% url 'tariffs-page' %}">Voir les tarifs</a>.</p>
     <div class="model-picker-list" id="modelPickerList">
       {% for ai_model in ai_models %}
       <div class="model-picker-row">
@@ -300,7 +300,7 @@
           <strong>{{ ai_model.name }}</strong>
           <span class="model-picker-ranking" hidden></span>
         </span>
-        <span class="model-picker-price"><span>Entrée : {{ ai_model.input_price_per_million|model_price }}</span><span>Sortie : {{ ai_model.output_price_per_million|model_price }}</span><small>/ 1M tokens · marge incluse</small></span>
+        <span class="model-picker-price"><span>Entrée : {{ ai_model.input_price_per_million|model_price }}</span><span>Sortie : {{ ai_model.output_price_per_million|model_price }}</span><small>/ 1M jetons de texte · marge incluse</small></span>
       </button>
       <button type="button" class="model-favorite-btn" data-model-favorite="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" aria-pressed="false" aria-label="Ajouter {{ ai_model.name }} aux favoris" title="Ajouter aux favoris">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.4l-5.6 2.9 1.1-6.3-4.6-4.4 6.3-.9Z"></path></svg>
@@ -372,5 +372,5 @@
 <script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-actions-2"></script>
 <script defer src="{% static 'app/js/capabilities.js' %}?v=chat-creation-1"></script>
 <script defer src="{% static 'app/js/model_favorites.js' %}?v=favorites-1"></script>
-<script defer src="{% static 'app/js/script.js' %}?v=jetons-1"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=jetons-2"></script>
 {% endblock %}

@@ -126,7 +126,7 @@ class RechargeTests(TestCase):
 
 		response = self.client.get("/tarifs/", HTTP_CF_IPCOUNTRY="CI")
 
-		self.assertContains(response, "Tarifs 2AI en jetons par million de tokens")
+		self.assertContains(response, "Tarifs en jetons 2AI par million de jetons de texte")
 		self.assertContains(response, "Un seul solde de jetons pour Chat, Bara et Barrassons")
 		for fiat in ('FCFA', 'EUR', 'USD', 'XOF', '€'):
 			self.assertNotContains(response, fiat)

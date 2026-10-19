@@ -61,9 +61,9 @@ def apply_invoice(data, *, expected_token=None, user_id=None):
         raise PayDunyaError("Facture PayDunya invalide.")
     token = invoice.get("token")
     if not isinstance(token, str) or not token:
-        raise PayDunyaError("Token PayDunya manquant.")
+        raise PayDunyaError("Jeton PayDunya manquant.")
     if expected_token is not None and token != expected_token:
-        raise PayDunyaError("Token PayDunya incoherent.")
+        raise PayDunyaError("Jeton PayDunya incoherent.")
 
     with transaction.atomic():
         purchases = RechargePurchase.objects.select_for_update().filter(

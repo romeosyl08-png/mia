@@ -10,7 +10,7 @@ from .models import ToolExecution
 from .tools.registry import get_tools
 from .tools.executor import execute_tool
 from .tool_reliability import verify_file_action
-from .tools import definitions, plugins, visualizations, documents, ocr, connectors  # noqa: F401
+from .tools import definitions, plugins, visualizations, documents, document_inspection, ocr, connectors  # noqa: F401
 from .tools.plugins import BLENDER_PLUGIN_TOOL_NAMES, EMAIL_PLUGIN_TOOL_NAMES, PLUGIN_TOOL_NAMES
 from .tools.connectors import CONNECTOR_TOOLS
 from .plugin_services import BLENDER_HEARTBEAT_SECONDS

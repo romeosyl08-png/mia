@@ -663,10 +663,10 @@ def search_code(workspace, query, file_pattern=None, max_results=50):
 @register_tool(
     name="run_command",
     description=(
-        "Exécute une commande de développement sur le serveur de l'application, "
-        "dans une copie temporaire du workspace. Ce processus n'est pas isolé "
-        "du système hôte et peut accéder à ses permissions et au réseau. "
-        "Les modifications ne sont pas automatiquement enregistrées dans le workspace."
+        "Exécute une commande de développement dans un conteneur isolé sans réseau, "
+        "sur une copie temporaire en lecture seule du workspace. "
+        "Les dépendances doivent être présentes dans l’image du runtime. "
+        "Les fichiers créés par la commande ne sont pas enregistrés dans le workspace."
     ),
     parameters={
         "type": "object",

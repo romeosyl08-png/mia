@@ -263,7 +263,7 @@
           {% csrf_token %}
           <input type="text" name="name" maxlength="100" placeholder="Nom du serveur" required>
           <input type="url" name="endpoint" maxlength="500" placeholder="https://serveur.example/mcp" required>
-          <input type="password" name="bearer_token" autocomplete="new-password" placeholder="Bearer token (facultatif)">
+          <input type="password" name="bearer_token" autocomplete="new-password" placeholder="Jeton d’authentification (facultatif)">
           <button type="submit">Connecter l'automatisation</button>
         </form>
         <div class="mcp-status" id="mcp-status" role="status" aria-live="polite"></div>

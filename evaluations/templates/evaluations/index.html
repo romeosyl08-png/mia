@@ -22,7 +22,7 @@
       </div>
       <label>Catégorie<select name="category">{% for value,label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
       <label class="comparison-question">Votre question<textarea name="prompt" rows="4" maxlength="{{ max_prompt_chars }}" required placeholder="Posez la même question à deux IA…"></textarea></label>
-      <p class="comparison-help">Texte uniquement · {{ max_tokens }} tokens de sortie maximum par modèle. Deux appels facturés selon leur consommation, dans la limite de {{ max_credits }} jetons ({{ automatic_max_credits }} en mode Surprise). Le coût affiché dans la liste est indicatif, hors question.</p>
+      <p class="comparison-help">Texte uniquement · {{ max_tokens }} jetons de texte en sortie maximum par modèle. Deux appels facturés selon leur consommation, dans la limite de {{ max_credits }} jetons ({{ automatic_max_credits }} en mode Surprise). Le coût affiché dans la liste est indicatif, hors question.</p>
       <label><input type="checkbox" name="analysis_consent"> J’autorise l’utilisation de cette évaluation pour les statistiques et l’amélioration d’Auto IA. Ce choix est facultatif ; mes conversations des autres modes ne sont pas utilisées.</label>
       <p class="comparison-help">Questions et réponses privées, conservées {{ retention_days }} jours maximum. Les données sont envoyées aux deux fournisseurs sélectionnés pour répondre. Vous pouvez supprimer le contenu et retirer votre consentement dans l’historique.</p>
       <button type="submit" id="compareButton">Comparer les réponses</button>

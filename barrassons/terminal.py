@@ -118,7 +118,7 @@ class Terminal:
     def status(self, model, tokens=0, credits=0, balance=None):
         parts = [model]
         if tokens:
-            parts.append(f'{tokens:,} tokens'.replace(',', ' '))
+            parts.append(f'{tokens:,} jetons de texte'.replace(',', ' '))
         if credits:
             parts.append(f'{credits:,} jetons utilisés'.replace(',', ' '))
         if balance is not None:

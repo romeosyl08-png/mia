@@ -54,7 +54,7 @@
             </div>
 
             <div class="field">
-                <label for="defaultMaxTokens">Tokens maximum par réponse</label>
+                <label for="defaultMaxTokens">Jetons de texte maximum par réponse</label>
                 <input type="number" id="defaultMaxTokens" min="1" max="8192" step="1" value="500" inputmode="numeric">
             </div>
         </section>
@@ -252,7 +252,7 @@
 
 
 {% block extra_js %}
-<script defer src="{% static 'app/js/customize.js' %}?v=big-persona-1"></script>
+<script defer src="{% static 'app/js/customize.js' %}?v=jetons-2"></script>
 {% if is_authenticated %}<script defer src="{% static 'app/js/persona_sharing.js' %}?v=big-persona-1"></script>{% endif %}
 
 {% endblock %}

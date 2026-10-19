@@ -45,7 +45,7 @@ def validate_messages(raw_messages, workspace):
         for field in ('prompt_tokens', 'completion_tokens'):
             value = item.get(field, 0)
             if type(value) is not int or not 0 <= value <= 100_000_000:
-                raise ValueError('Le nombre de tokens est invalide.')
+                raise ValueError('Le nombre de jetons de texte est invalide.')
             message[field] = value
         sources = item.get('sources', [])
         if not isinstance(sources, list) or len(sources) > 24 or any(

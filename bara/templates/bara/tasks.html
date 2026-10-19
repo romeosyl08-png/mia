@@ -13,6 +13,8 @@
     <fieldset {% if not workspace.can_write %}disabled{% endif %}>
     {% csrf_token %}
     <textarea name="objective" required maxlength="16000" rows="3" placeholder="Quel résultat veux-tu obtenir ?" style="width:100%"></textarea>
+    <label>Travail <select name="harness"><option value="auto">Choix automatique</option><option value="code">Bara Code</option><option value="documents">Bara Docs</option><option value="general">Bara général</option></select></label>
+    <label>Commande de contrôle pour Bara Code (facultative) <input name="verification_command" maxlength="1000" placeholder="python -m unittest"></label>
     <label>Étapes <input type="number" name="max_steps" min="1" max="100" value="12"></label>
     <label>Jetons maximum <input type="number" name="credit_limit" min="1" max="100000" value="1000"></label>
     <button>Lancer</button>
@@ -22,6 +24,9 @@
   <article data-task="{{ task.id }}" data-status="{{ task.status }}">
     <h2>{{ task.objective|truncatechars:120 }}</h2>
     <p class="task-status" aria-live="polite">{{ task.status }} · {{ task.spent_credits }} jetons</p>
+    <p class="task-harness"></p>
+    <p class="task-verification" aria-live="polite"></p>
+    <p class="task-verification-limits"></p>
     <pre class="task-result" style="white-space:pre-wrap">{{ task.result }}</pre>
     <p class="task-error">{{ task.error }}</p>
     <div class="task-actions"></div>
@@ -36,5 +41,5 @@
 
 {% block extra_js %}
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
-<script defer src="{% static 'app/js/tasks.js' %}?v=jetons-1"></script>
+<script defer src="{% static 'app/js/tasks.js' %}?v=harness-2"></script>
 {% endblock %}

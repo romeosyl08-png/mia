@@ -44,7 +44,7 @@ for morceau in flux:
   <p>Le streaming n'est pas encore disponible pour tous les modèles.</p>
 
   <h2>Modèles et prix</h2>
-  <p>Prix en jetons 2AI pour un million de tokens. Les tokens mesurent le texte traité ; les jetons sont la monnaie commune à Chat, Bara et Barrassons. Le débit dépend des tokens réellement utilisés en entrée et en sortie, marge du service incluse.</p>
+  <p>Prix en jetons 2AI pour un million de jetons de texte. Les jetons de texte mesurent la quantité traitée ; les jetons 2AI constituent le solde commun à Chat, Bara et Barrassons. Le débit dépend des jetons de texte réellement utilisés en entrée et en sortie, marge du service incluse.</p>
   <table>
     <thead><tr><th>Modèle</th><th>Entrée</th><th>Sortie</th></tr></thead>
     <tbody>
@@ -65,16 +65,16 @@ for morceau in flux:
 
   <h2>Limites</h2>
   <ul>
-    <li><code>max_tokens</code> : {{ max_output_tokens }} au maximum (valeur par défaut : 1024). Le pire coût possible est réservé avant l'appel, puis l'excédent est remboursé.</li>
+    <li>Plafond de réponse : {{ max_output_tokens }} jetons de texte au maximum (valeur par défaut : 1024). Le pire coût possible est réservé avant l'appel, puis l'excédent est remboursé.</li>
     <li>{{ rate_limit }} requêtes par tranche de {{ rate_window }} secondes, par clé.</li>
-    <li>Paramètres acceptés : <code>model</code>, <code>messages</code> (texte), <code>max_tokens</code>, <code>temperature</code>, <code>top_p</code>, <code>stop</code>, <code>stream</code>. Les autres sont ignorés (pas d'images, d'appels d'outils ni de <code>n</code>).</li>
+    <li>Paramètres acceptés : <code>model</code>, <code>messages</code> (texte), plafond de réponse, <code>temperature</code>, <code>top_p</code>, <code>stop</code>, <code>stream</code>. Les autres sont ignorés (pas d'images, d'appels d'outils ni de <code>n</code>).</li>
   </ul>
 
   <h2>Erreurs</h2>
   <table>
     <tbody>
       <tr><td><code>401</code></td><td>Clé absente ou invalide.</td></tr>
-      <tr><td><code>402</code></td><td>Jetons insuffisants pour le pire cas de la requête : baisse <code>max_tokens</code> ou recharge.</td></tr>
+      <tr><td><code>402</code></td><td>Jetons insuffisants pour le pire cas de la requête : baisse le plafond de réponse ou recharge.</td></tr>
       <tr><td><code>404</code></td><td>Modèle inconnu.</td></tr>
       <tr><td><code>429</code></td><td>Trop de requêtes : attends le délai indiqué dans <code>Retry-After</code>.</td></tr>
       <tr><td><code>502</code></td><td>La génération a échoué. Tes jetons sont remboursés automatiquement.</td></tr>

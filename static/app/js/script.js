@@ -511,7 +511,7 @@ let state = {
     const rankedCount = rankLabels.length;
     el("modelRankingStatus").textContent = rankedCount
       ? category === "all"
-        ? "Tri hebdomadaire par volume de tokens texte. L’usage indique la popularité, pas la qualité."
+        ? "Tri hebdomadaire par volume de jetons de texte. L’usage indique la popularité, pas la qualité."
         : "Tri hebdomadaire estimé à partir d’un échantillon de requêtes de cette tâche; ce n’est pas un benchmark."
       : "Classement non synchronisé pour cette tâche; les modèles sont alors triés par prix de sortie.";
     if(models.some(item => modelFavorites.has(item.dataset.modelId))){
@@ -1230,7 +1230,7 @@ function renderMessages(){
     if(Number.isFinite(tokenCount) && tokenCount > 0){
       const footer = document.createElement("div");
       footer.className = "msg-footer";
-      footer.innerHTML = `<span class="meta">${Math.round(tokenCount).toLocaleString("fr-FR")} tokens</span>`;
+      footer.innerHTML = `<span class="meta">${Math.round(tokenCount).toLocaleString("fr-FR")} jetons de texte</span>`;
       div.appendChild(footer);
     }
 

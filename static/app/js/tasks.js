@@ -16,6 +16,17 @@
       card.querySelector('.task-status').textContent = `${labels[t.status] || t.status} · ${t.steps}/${t.max_steps} étapes · ${t.credits}/${t.credit_limit} jetons`;
       card.querySelector('.task-result').textContent = t.result;
       card.querySelector('.task-error').textContent = t.error;
+      const harnessLabel = card.querySelector('.task-harness');
+      const verificationLabel = card.querySelector('.task-verification');
+      if (harnessLabel) harnessLabel.textContent = ({code:'Bara Code', documents:'Bara Docs', general:'Bara général'})[t.harness?.id] || '';
+      if (verificationLabel) {
+        const report = t.harness?.verification;
+        verificationLabel.textContent = !report ? '' : report.status !== 'passed'
+          ? 'Vérification incomplète : ' + report.missing.join(' ; ')
+          : Object.keys(report.checks).length ? 'Contrôles techniques réussis.' : 'Aucune opération technique à vérifier.';
+      }
+      const limitations = card.querySelector('.task-verification-limits');
+      if (limitations) limitations.textContent = t.harness?.verification?.limitations?.join(' ') || '';
       for (const ev of t.events) {
         const result = ev.data.result;
         if(result?.status === 'visualization_ready' && result.chart && globalThis.AI2AICharts){

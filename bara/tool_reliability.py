@@ -9,7 +9,7 @@ from .models import WorkFile
 
 FILE_ACTIONS = {'write_file', 'edit_file', 'rename_file', 'create_document'}
 EVIDENCE = {
-    'file_read': {'read_file', 'read_file_lines', 'extract_document_text', 'compare_files'},
+    'file_read': {'read_file', 'read_file_lines', 'read_document', 'extract_document_text', 'compare_files'},
     'file_create': {'write_file', 'create_document'},
     'file_edit': {'edit_file', 'write_file', 'create_document'},
     'file_rename': {'rename_file'},
@@ -82,7 +82,7 @@ class ToolRun:
             return
         pending = result.get('status') == 'pending_confirmation'
         failed = bool(result.get('error')) or result.get('status') == 'error' or result.get('exit_code', 0) not in (0, None)
-        if name in {'read_file', 'read_file_lines', 'extract_document_text'}:
+        if name in {'read_file', 'read_file_lines', 'read_document', 'extract_document_text'}:
             failed = failed or not (result.get('content') or result.get('text'))
         if pending or failed or name in FILE_ACTIONS:
             self.cached[self.key(name, arguments)] = result

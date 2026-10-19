@@ -33,7 +33,7 @@ function taskHarness({hidden = false, status = 'queued'} = {}) {
   const timers = [], requests = [];
   const card = element();
   card.dataset = {task: '8', status};
-  const fields = Object.fromEntries(['.task-status', '.task-result', '.task-error', '.task-actions', '.task-steps', '.task-budget'].map(selector => [selector, element()]));
+  const fields = Object.fromEntries(['.task-status', '.task-result', '.task-error', '.task-actions', '.task-steps', '.task-budget', '.task-harness', '.task-verification', '.task-verification-limits'].map(selector => [selector, element()]));
   const buttons = ['pause', 'resume', 'cancel'].map(action => Object.assign(element(), {dataset: {action}}));
   fields['.task-steps'].value = '12';
   fields['.task-budget'].value = '1000';
@@ -52,8 +52,8 @@ function taskHarness({hidden = false, status = 'queued'} = {}) {
       return new Promise((resolve, reject) => requests.push({url, options, resolve, reject}));
     }
   });
-  async function respond(index, status, events = []) {
-    requests[index].resolve({ok: true, json: async () => ({status, events, steps: 4, max_steps: 12, credits: 10, credit_limit: 1000, result: 'Résultat', error: ''})});
+  async function respond(index, status, events = [], harness) {
+    requests[index].resolve({ok: true, json: async () => ({status, events, harness, steps: 4, max_steps: 12, credits: 10, credit_limit: 1000, result: 'Résultat', error: ''})});
     await flush();
   }
   return {card, fields, buttons, document, timers, requests, respond};
@@ -83,6 +83,16 @@ test('completed and cancelled tasks render their final result then stop polling'
     assert.equal(app.timers.length, 0);
     assert.ok(app.buttons.every(button => button.disabled));
   }
+});
+
+test('document completion shows technical checks while preserving visual review limitations', async () => {
+  const app = taskHarness();
+  await app.respond(0, 'completed', [], {id:'documents', verification:{
+    status:'passed', checks:{document_outputs:true}, limitations:['Le rendu visuel reste à relire.']
+  }});
+  assert.equal(app.fields['.task-harness'].textContent, 'Bara Docs');
+  assert.equal(app.fields['.task-verification'].textContent, 'Contrôles techniques réussis.');
+  assert.equal(app.fields['.task-verification-limits'].textContent, 'Le rendu visuel reste à relire.');
 });
 
 test('hidden pages avoid task requests and paused tasks refresh less often', async () => {
