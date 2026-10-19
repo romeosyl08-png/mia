@@ -43,6 +43,15 @@ def request_requirements(content):
     return {name for _, names in request_steps(content) for name in names}
 
 
+def generation_kind(content, mode='chat'):
+    if mode in {'image', 'video', 'audio'}:
+        return mode
+    requirements = request_requirements(content)
+    if len(requirements) == 1:
+        return next(iter(requirements & {'image', 'video', 'audio'}), None)
+    return None
+
+
 def requires_tools(content, mode='chat'):
     # Reading and web search can be prepared by 2AI without model tool calls.
     return bool(request_requirements(content) - {'file_read', 'web'})

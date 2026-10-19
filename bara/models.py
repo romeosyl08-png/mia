@@ -100,6 +100,8 @@ class Workspace(models.Model):
     instructions = models.TextField(blank=True)
     memory = models.TextField(blank=True)
     memory_enabled = models.BooleanField(default=True)
+    memory_in_chat = models.BooleanField(default=True)
+    memory_in_barrassons = models.BooleanField(default=False)
     semantic_search = models.BooleanField(default=False)
     disabled_tools = models.JSONField(default=list, blank=True)
 

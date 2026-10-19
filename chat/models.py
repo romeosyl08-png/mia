@@ -139,6 +139,9 @@ class UserMemory(models.Model):
     user = models.OneToOneField(django_settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assistant_memory')
     content = models.TextField(blank=True)
     enabled = models.BooleanField(default=True)
+    use_in_chat = models.BooleanField(default=True)
+    use_in_bara = models.BooleanField(default=True)
+    use_in_barrassons = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
 

@@ -3,7 +3,7 @@
   "rules": {
     "image": "^(?:genere|generer|cree|creer|dessine|dessiner|produis|fais|generate|create|draw|make)(?:[- ]moi)?\\s+(?:(?:une?|des|l[' ]|a|an|the)\\s*)?(?:images?|photos?|illustrations?|dessins?|pictures?)\\b",
     "video": "^(?:genere|generer|cree|creer|produis|fais|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:videos?|clips?|animations?)\\b",
-    "audio": "^(?:genere|generer|cree|creer|produis|fais|compose|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:audios?|musiques?|chansons?|songs?|music|podcasts?)\\b",
+    "audio": "^(?:genere|generer|cree|creer|produis|fais|compose|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:audios?|sons?|sounds?|bandes?[- ]son|bruitages?|musiques?|chansons?|songs?|music|podcasts?)\\b",
     "web": "^(?:(?:cherche|recherche|search|look up|browse)\\b[^\\n]{0,180}\\b(?:web|internet|en ligne|online)\\b|(?:fais|effectue|lance)\\s+une\\s+recherche\\s+(?:web|sur internet|sur le web)\\b)",
     "execute": "^(?:execute|executer|lance|lancer|run|execute)(?:[- ]moi)?\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|this|the|a|my|mon|ma|mes)\\s+)?(?:code|scripts?|programmes?|programs?|tests?|commandes?|commands?)\\b",
     "file_read": "^(?:lis|lire|ouvre|ouvrir|analyse|analyser|resume|resumer|read|open|analyze|summarize)\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|documents?|pdf|cv|rapports?|classeurs?|tableaux?\\s+excel|factures?|file|spreadsheet|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv|py|js))\\b",
@@ -35,11 +35,13 @@
     ]
   },
   "mediaMessages": {
-    "image": "Pour cette demande, ouvre « Création » et utilise « Générer une image ». Tu peux reprendre un message avec « Créer à partir de ce message ».",
-    "video": "Pour cette demande, ouvre « Création » et utilise « Générer une vidéo ». Tu peux reprendre un message avec « Créer à partir de ce message ».",
-    "audio": "Pour cette demande, ouvre « Création » et utilise « Générer un son ». Tu peux reprendre un message avec « Créer à partir de ce message »."
+    "image": "Demande une image dans un message séparé du chat, ou choisis son mode Image. Le Studio permet d’assembler plusieurs créations.",
+    "video": "Demande une vidéo dans un message séparé du chat, ou choisis son mode Vidéo. Le Studio permet d’assembler plusieurs créations.",
+    "audio": "Demande un son dans un message séparé du chat, ou choisis son mode Son. Le Studio permet d’assembler plusieurs créations."
   },
   "messages": {
+    "media_unavailable": "Ce type de création n’est pas configuré pour le moment.",
+    "temporary_media": "Enregistre cette conversation ou ouvre une conversation enregistrée pour créer une vidéo ou un son.",
     "local": "L’IA locale peut répondre en texte, mais ce chat local ne dispose pas des outils web, des fichiers Bara ou de la génération de médias. Choisis une IA hébergée pour cette demande.",
     "web": "La recherche web n’est pas disponible. Choisis un espace où elle est activée ou fournis directement les informations à analyser.",
     "execute": "L’exécution de code n’est pas disponible pour cette demande. Sélectionne un espace Bara où l’outil d’exécution est activé.",

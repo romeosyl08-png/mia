@@ -16,11 +16,22 @@ const check = (content, options = {}, overrides = {}) => context.window.AI2AICap
   content, {modelIds: ['text'], ...options}, {...config, ...overrides}
 );
 
-test('direct media requests require the dedicated generation mode', () => {
+test('direct media requests use generation without depending on text model tools', () => {
   for(const [content, kind] of [['Peux-tu me générer une image ?', 'image'], ['Create a video', 'video'], ['Compose une chanson', 'audio']]){
-    assert.equal(check(content).code, 'media_mode_required');
+    assert.equal(check(content), null);
     assert.equal(check(content, {mode: kind}), null);
+    assert.equal(context.window.AI2AICapabilities.generationKind(content, 'chat', config.capabilityRules), kind);
   }
+});
+
+test('generation checks provider availability, temporary sessions and mixed requests', () => {
+  assert.equal(check('Crée une image', {}, {imageGenerationAvailable: false}).code, 'media_unavailable');
+  assert.equal(check('Crée une vidéo', {temporary: true}).code, 'temporary_media');
+  assert.equal(check('Une forêt', {mode: 'audio', temporary: true}).code, 'temporary_media');
+  assert.equal(check('Crée une image', {temporary: true}), null);
+  assert.equal(check('Crée une image', {local: true}).code, 'local');
+  assert.equal(check('Crée une image puis crée une vidéo').code, 'media_mode_required');
+  assert.equal(context.window.AI2AICapabilities.generationKind('Écris un prompt pour une vidéo', 'chat', config.capabilityRules), null);
 });
 
 test('text explanations, code and quoted content are allowed', () => {

@@ -395,6 +395,7 @@ let state = {
         content: m.content,
         mediaUrl: m.media_url || null,
         mediaKind: m.media_kind || "image",
+        mediaId: m.media_id || null,
           routingObservationId: m.routing_observation_id || null,
           feedback: m.routing_feedback || null,
         sources: Array.isArray(m.sources) ? m.sources : [],
@@ -550,6 +551,7 @@ let state = {
     const labelElement = el("sendButtonLabel");
     if(!button || !labelElement) return;
     const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    const mediaKind = window.AI2AICapabilities.generationKind(el('composerInput').value, mode, chatConfig.capabilityRules);
     const conversation = activeConvo();
     const modelId = conversation?.localOnly
       ? `local:${conversation.localModel?.modelId || state.localAI?.modelId || ""}`
@@ -564,7 +566,10 @@ let state = {
           || "Choisir une IA";
     let label = modelName;
     let details = modelName;
-    if(el("teamModeBtn").classList.contains("active")){
+    if(mediaKind){
+      label = {image: 'Créer une image', video: 'Créer une vidéo', audio: 'Créer un son'}[mediaKind];
+      details = label;
+    }else if(el("teamModeBtn").classList.contains("active")){
       const count = el("teamModelSelect").selectedOptions.length;
       label = count ? `Équipe IA · ${count}` : "Équipe IA";
       details = label;
@@ -1056,6 +1061,34 @@ function renderMessages(){
         mediaElement.loading = "lazy";
       }
       media.appendChild(mediaElement);
+      const mediaActions = document.createElement('div');
+      mediaActions.className = 'chat-media-actions';
+      const download = document.createElement('a');
+      download.textContent = 'Télécharger';
+      download.href = m.mediaId ? `${m.mediaUrl}?download=1` : m.mediaUrl;
+      download.download = `creation-${m.mediaKind || 'image'}`;
+      mediaActions.append(download);
+      if(m.mediaId){
+        const library = document.createElement('a');
+        library.textContent = 'Médiathèque'; library.href = '/creation/library/';
+        const studio = document.createElement('button');
+        studio.type = 'button'; studio.textContent = 'Monter dans le Studio';
+        studio.addEventListener('click', async () => {
+          studio.disabled = true;
+          try{
+            const response = await fetch('/creation/api/use-in-studio/', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+              body: JSON.stringify({source: 'generated', id: m.mediaId})
+            });
+            const data = await response.json();
+            if(!response.ok) throw new Error(data.error?.message || 'Impossible d’ouvrir le Studio.');
+            window.location.assign(data.url);
+          }catch(error){ showChatNotice(error.message); studio.disabled = false; }
+        });
+        mediaActions.append(library, studio);
+      }
+      media.append(mediaActions);
       div.appendChild(media);
     }
     if(m.role === "bot"){
@@ -1104,7 +1137,8 @@ function renderMessages(){
           event.preventDefault();
           const updatedText = textarea.value.trim();
           if(!updatedText || updatedText === m.content) return;
-          sendMessage(updatedText, false, { messageId: m.id, messageIndex });
+          const reply = convo.messages[messageIndex + 1];
+          sendMessage(updatedText, false, { messageId: m.id, messageIndex, mode: reply?.mediaUrl ? reply.mediaKind : null });
         });
         controls.append(submit, cancel);
         form.append(textarea, controls);
@@ -1402,8 +1436,8 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return sentences.slice(0, n).join(" ");
   }
 
-  async function callBackend(persona, userText, convo, onDelta, editMessageId, onEvent){
-    const mode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+  async function callBackend(persona, userText, convo, onDelta, editMessageId, onEvent, requestMode = null){
+    const mode = requestMode || document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
     const res = await fetch("/chat/api/send/", {
       method: "POST",
       headers: {
@@ -1441,7 +1475,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       if(Number.isFinite(remainingBalance)) state.credits = remainingBalance;
       const error = new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
       error.capabilityCode = data.required_capability;
-      error.preflight = ['capability_unavailable', 'unsupported_tools', 'vision_unavailable'].includes(data.error?.type);
+      error.preflight = ['capability_unavailable', 'unsupported_tools', 'vision_unavailable', 'image_generation_unavailable', 'media_generation_unavailable'].includes(data.error?.type);
       throw error;
     }
     if(res.headers.get("Content-Type")?.includes("application/json")){
@@ -1551,13 +1585,14 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     return { reply, prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens };
   }
 
-  function messageCapabilityIssue(text, convo = activeConvo(), imageIds = null, history = null){
+  function messageCapabilityIssue(text, convo = activeConvo(), imageIds = null, history = null, requestMode = null){
     const workspaceId = convo ? convo.workspaceId : state.selectedWorkspaceId;
     const workspace = workspaceId ? state.workspaces.find(row => String(row.id) === String(workspaceId)) || {id: workspaceId} : null;
     const team = el('teamModeBtn').classList.contains('active');
     return window.AI2AICapabilities.check(text, {
-      mode: document.querySelector('.tool-btn[data-mode].active')?.dataset.mode || 'chat',
+      mode: requestMode || document.querySelector('.tool-btn[data-mode].active')?.dataset.mode || 'chat',
       local: isLocalModelSelected() || Boolean(convo?.localOnly),
+      temporary: Boolean(convo?.temporary || (!convo && state.temporaryChat)),
       team, workspace,
       hasImages: Boolean((imageIds || convo?.pendingImageIds || []).length || (history || convo?.messages || []).some(row => row.imageFileIds?.length)),
       modelIds: team ? Array.from(el('teamModelSelect').selectedOptions).map(row => row.value) : [state.modelId]
@@ -1568,9 +1603,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const localModelSelected = isLocalModelSelected();
     if(state.initializing || state.sending || state.savingTemporary || (localModelSelected ? !state.isAuthenticated : !ensureCreditAccess())) return;
     const current = activeConvo();
+    const selectedMode = editTarget?.mode || document.querySelector('.tool-btn[data-mode].active')?.dataset.mode || 'chat';
     const targetMessage = editTarget ? current?.messages[editTarget.messageIndex] : reuseLastUser ? current?.messages.at(-1) : null;
     const problem = messageCapabilityIssue(text, current, targetMessage?.imageFileIds,
-      editTarget ? current?.messages.slice(0, editTarget.messageIndex) : null);
+      editTarget ? current?.messages.slice(0, editTarget.messageIndex) : null, selectedMode);
     if(problem){ showCapabilityIssue(problem); return; }
     state.sending = true;
     renderCredits();
@@ -1619,13 +1655,14 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       clientId: uid("stream"),
       streaming: true
     };
+    const requestedKind = window.AI2AICapabilities.generationKind(text, selectedMode, chatConfig.capabilityRules);
+    if(requestedKind) streamingMessage.toolStatus = {image: 'Création de l’image…', video: 'Création de la vidéo… Cela peut prendre quelques minutes.', audio: 'Création du son…'}[requestedKind];
     const renderStreamingMessage = createStreamingRenderer(convo, streamingMessage);
     convo.messages.push(streamingMessage);
     renderAll();
 
     try{
       let data;
-      const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
       if(localModelSelected){
         if(selectedMode !== "chat" || el("teamModeBtn").classList.contains("active") || convo.workspaceId){
           throw new Error("L’IA locale est disponible en chat simple, sans recherche web, équipe IA ni fichiers Bara.");
@@ -1634,7 +1671,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           streamingMessage.content += chunk;
           renderStreamingMessage();
         });
-      }else if(state.hasActiveModels || ["image", "video", "audio"].includes(selectedMode)){
+      }else if(state.hasActiveModels || requestedKind){
         data = await callBackend(persona, text, convo, chunk => {
           streamingMessage.content += chunk;
           renderStreamingMessage();
@@ -1647,7 +1684,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
             streamingMessage.toolEvents.push(event);
           }
           renderStreamingMessage();
-        });
+        }, selectedMode);
         if(convo.id === null && data.conversation_id){
           convo.id = data.conversation_id;
           state.activeConvoId = conversationKey(convo);
@@ -1668,10 +1705,11 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       convo.pendingImageIds = [];
       streamingMessage.mediaUrl = data.media_url || null;
       streamingMessage.mediaKind = data.media_kind || "image";
+      streamingMessage.mediaId = data.media_id || null;
       streamingMessage.sources = Array.isArray(data.sources) ? data.sources : [];
       streamingMessage.toolEvents = Array.isArray(data.tool_events) ? data.tool_events : [];
-      const inputTokens = data.prompt_tokens ?? estimateTokens(text);
-      const replyTokens = data.completion_tokens ?? estimateTokens(replyText);
+      const inputTokens = data.prompt_tokens ?? (data.media_url ? 0 : estimateTokens(text));
+      const replyTokens = data.completion_tokens ?? (data.media_url ? 0 : estimateTokens(replyText));
       userMessage.tokens = inputTokens;
       streamingMessage.content = replyText;
       if(data.assistant_message_id) streamingMessage.id = data.assistant_message_id;
@@ -1697,9 +1735,9 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       renderAll();
       if(data.billing_warning) showChatNotice(data.billing_warning);
     }catch(err){
+      if(!reuseLastUser && !editTarget && !el('composerInput').value) el('composerInput').value = text;
       if(err.preflight){
         convo.messages = messagesBeforeSend;
-        if(!reuseLastUser && !editTarget && !el('composerInput').value) el('composerInput').value = text;
         showCapabilityIssue({message: err.message, code: err.capabilityCode});
         renderAll();
         return;
@@ -1748,8 +1786,14 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const convo = activeConvo();
     const previousMessage = convo && convo.messages[messageIndex - 1];
     if(!convo || !previousMessage || previousMessage.role !== "user" || state.sending) return;
-    const problem = messageCapabilityIssue(previousMessage.content, convo, previousMessage.imageFileIds, convo.messages.slice(0, messageIndex));
+    const reply = convo.messages[messageIndex];
+    const mode = reply.mediaUrl ? reply.mediaKind : null;
+    const problem = messageCapabilityIssue(previousMessage.content, convo, previousMessage.imageFileIds, convo.messages.slice(0, messageIndex), mode);
     if(problem){ showCapabilityIssue(problem); return; }
+    if(convo.id && previousMessage.id && !convo.temporary){
+      await sendMessage(previousMessage.content, false, {messageId: previousMessage.id, messageIndex: messageIndex - 1, mode});
+      return;
+    }
     convo.messages.splice(messageIndex, 1);
     renderAll();
     await sendMessage(previousMessage.content, true);
@@ -2011,8 +2055,25 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       }
     });
   }
-  el("createWorkspaceBtn").addEventListener("click", () => {
-    window.location.href = "/dap/";
+  el("createWorkspaceBtn").addEventListener("click", async () => {
+    if(!state.isAuthenticated || isLocalModelSelected()) return;
+    const button = el('createWorkspaceBtn');
+    button.disabled = true;
+    try{
+      const response = await fetch('/chat/api/workspaces/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value},
+        body: JSON.stringify({title: activeConvo()?.title || 'Fichiers du chat'})
+      });
+      const workspace = await response.json();
+      if(!response.ok) throw new Error(workspace.error?.message || 'Impossible de créer l’espace de fichiers.');
+      state.workspaces.unshift({...workspace, disabled_tools: []});
+      renderWorkspaceSelector();
+      el('workspaceSelect').value = String(workspace.id);
+      el('workspaceSelect').dispatchEvent(new Event('change'));
+      showChatNotice('Espace créé. Tu peux joindre et créer des fichiers dans cette conversation.');
+    }catch(error){ showChatNotice(error.message); }
+    finally{ button.disabled = false; }
   });
   function togglePanel(side){
     const app = document.querySelector(".app");
@@ -2474,6 +2535,10 @@ el("syncLocalConversationBtn").addEventListener("click", () => {
       });
       button.classList.add("active");
       button.setAttribute("aria-pressed", "true");
+      const mediaMode = ['image', 'video', 'audio'].includes(button.dataset.mode);
+      el('chatCreationHint').hidden = !mediaMode;
+      el('chatCreationSettings').href = `${chatConfig.creationUrl}?kind=${button.dataset.mode}`;
+      el('composerInput').placeholder = {image: 'Décris l’image que tu veux créer…', video: 'Décris la vidéo que tu veux créer…', audio: 'Décris le son que tu veux créer…'}[button.dataset.mode] || 'Demande, crée ou partage une idée…';
       renderSendButton();
     });
   });
@@ -2673,6 +2738,7 @@ fileInput.addEventListener("change", async () => {
   input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(140, input.scrollHeight) + "px";
+    renderSendButton();
   });
   input.addEventListener("keydown", (e) => {
     if(e.key === "Enter" && !e.shiftKey){
@@ -2682,18 +2748,19 @@ fileInput.addEventListener("change", async () => {
   });
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    if(state.initializing) return;
+    if(state.initializing || state.sending || state.savingTemporary) return;
     const text = input.value.trim();
     const localModelSelected = isLocalModelSelected();
     if((localModelSelected ? !state.isAuthenticated : !ensureCreditAccess()) || !text) return;
-    if(el("teamModeBtn").classList.contains("active") && el("teamModelSelect").selectedOptions.length === 0){
+    const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
+    const mediaKind = window.AI2AICapabilities.generationKind(text, selectedMode, chatConfig.capabilityRules);
+    if(!mediaKind && el("teamModeBtn").classList.contains("active") && el("teamModelSelect").selectedOptions.length === 0){
       el("creditNotice").textContent = "Choisis au moins une IA pour former ton équipe.";
       el("creditNotice").classList.add("show");
       window.setTimeout(() => el("creditNotice").classList.remove("show"), 2800);
       el("teamModelGrid").querySelector(".team-model-option")?.focus();
       return;
     }
-    const selectedMode = document.querySelector(".tool-btn[data-mode].active")?.dataset.mode || "chat";
     const activeConversation = activeConvo();
     if((localModelSelected || activeConversation?.localOnly) && selectedMode !== "chat"){
       showChatNotice("Une conversation locale ne peut pas utiliser les outils hébergés. Reviens au mode chat simple.");

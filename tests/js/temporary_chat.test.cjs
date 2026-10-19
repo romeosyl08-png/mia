@@ -164,19 +164,19 @@ test('an existing saved conversation reports missing personas before sending', a
 
 test('an incompatible request is blocked before creating a conversation or sending anything', async () => {
   const app = harness({mode: 'chat', personas: [{id: 7}]});
-  await app.send('Peux-tu générer une image de chat ?');
+  await app.send('Crée une image puis crée une vidéo');
   assert.equal(app.requests.length, 0);
   assert.equal(app.state.conversations.length, 0);
   assert.equal(app.state.usageLog.length, 0);
   assert.equal(app.state.credits, 12345);
   assert.equal(app.state.sending, false);
-  assert.match(app.notices[0], /Générer une image/);
+  assert.match(app.notices[0], /message séparé/);
 });
 
 test('a blocked regeneration preserves the existing reply and attachments', async () => {
   const app = harness({mode: 'chat', personas: [{id: 7}]});
   const conversation = {id: 42, personaId: 7, pendingImageIds: [5], messages: [
-    {role: 'user', content: 'Crée une image'}, {role: 'bot', content: 'Réponse précédente'}
+    {role: 'user', content: 'Crée une image puis crée une vidéo'}, {role: 'bot', content: 'Réponse précédente'}
   ]};
   app.state.conversations.push(conversation);
   app.state.activeConvoId = 42;
@@ -184,6 +184,31 @@ test('a blocked regeneration preserves the existing reply and attachments', asyn
   assert.equal(app.requests.length, 0);
   assert.equal(conversation.messages[1].content, 'Réponse précédente');
   assert.deepEqual(conversation.pendingImageIds, [5]);
+});
+
+test('a natural image request reaches the server even without text models', async () => {
+  const app = harness({personas: [{id: 7}]});
+  app.state.hasActiveModels = false;
+  await app.send('Crée une image de forêt');
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0].url, '/chat/api/send/');
+  assert.equal(app.state.conversations[0].messages.at(-1).mediaUrl, '/image.png');
+  assert.equal(app.state.conversations[0].messages.at(-1).tokens, 0);
+});
+
+test('regenerating a saved media keeps its kind and replaces the original turn', async () => {
+  const app = harness({mode: 'chat', personas: [{id: 7}]});
+  const conversation = {id: 42, personaId: 7, messages: [
+    {id: 12, role: 'user', content: 'Une forêt'},
+    {id: 13, role: 'bot', content: 'Vidéo générée', mediaUrl: '/video.mp4', mediaKind: 'video'}
+  ]};
+  app.state.conversations.push(conversation);
+  app.state.activeConvoId = 42;
+  await app.regenerate(1);
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.requests[0].body.mode, 'video');
+  assert.equal(app.requests[0].body.edit_message_id, 12);
+  assert.equal(conversation.messages.length, 2);
 });
 
 test('a server capability rejection restores the draft without adding a fake reply or usage', async () => {

@@ -68,7 +68,8 @@ class Terminal:
     def setup_input(self):
         if readline is None or not sys.stdin.isatty():
             return
-        commands = ['/help', '/model', '/status', '/verbose', '/diff', '/undo', '/verify', '/review', '/clear', '/exit']
+        commands = ['/help', '/model', '/status', '/verbose', '/diff', '/undo', '/verify', '/review',
+                    '/memory', '/remember', '/clear', '/exit']
         def complete(text, state):
             options = [value for value in commands if value.startswith(text)]
             return options[state] if state < len(options) else None

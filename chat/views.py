@@ -39,7 +39,7 @@ from .sources import CITATION_INSTRUCTIONS, SourceCollector
 from .team import estimate_team_cost
 from .turns import complete_chat_turn as _complete_chat_turn
 from .temporary import persona_memory_context, selected_memory_persona
-from .capabilities import RULES as CAPABILITY_RULES, capability_issue, model_capabilities, request_requirements, requires_tools, supports_images, supports_tools
+from .capabilities import RULES as CAPABILITY_RULES, capability_issue, generation_kind, model_capabilities, request_requirements, requires_tools, supports_images, supports_tools
 from .preparation import prepare_documents, capability_notices
 
 logger = logging.getLogger(__name__)
@@ -290,13 +290,14 @@ class SendMessageView(View):
 		if not content:
 			return _chat_error('Le contenu du message est obligatoire.', 'invalid_request', 400)
 		mode = payload.get('mode', 'chat')
-		if mode not in {'chat', 'web', 'deep', 'image'}:
+		if mode not in {'chat', 'web', 'deep', 'image', 'video', 'audio'}:
 			return _chat_error('Mode de conversation invalide.', 'invalid_request', 400)
+		media_kind = generation_kind(content, mode)
+		if media_kind:
+			return ImageGenerationView().post(request, {**payload, 'kind': media_kind})
 		team_strategy = str(payload.get('team_strategy') or 'consensus')
 		if team_strategy not in {'consensus', 'plan_execute_verify'}:
 			return _chat_error('Stratégie équipe invalide.', 'invalid_request', 400)
-		if mode == 'image':
-			return _chat_error('La génération d’images n’est pas configurée sur ce serveur.', 'image_generation_unavailable', 501)
 		
 		allowed, retry_after = check_user_rate_limit(request.user.id, max_requests=10, window_seconds=60, key_prefix="chat")
 		if not allowed:
@@ -942,11 +943,12 @@ class WorkspaceListView(View):
 class ImageGenerationView(View):
 	standalone = False
 
-	def post(self, request):
-		try:
-			payload = json.loads(request.body or '{}')
-		except (TypeError, ValueError):
-			return _chat_error('JSON invalide.', 'invalid_request', 400)
+	def post(self, request, payload=None):
+		if payload is None:
+			try:
+				payload = json.loads(request.body or '{}')
+			except (TypeError, ValueError):
+				return _chat_error('JSON invalide.', 'invalid_request', 400)
 		if not isinstance(payload, dict):
 			return _chat_error('JSON invalide.', 'invalid_request', 400)
 		media_type = str(payload.get('kind') or 'image')
@@ -998,12 +1000,31 @@ class ImageGenerationView(View):
 		conversation = None
 		if payload.get('conversation_id'):
 			conversation = get_object_or_404(Conversation, id=payload['conversation_id'], user=request.user)
+		edit_message = None
+		if not self.standalone and payload.get('edit_message_id'):
+			if temporary or not conversation:
+				return _chat_error('Une conversation enregistrée est obligatoire pour modifier un message.', 'invalid_request', 400)
+			try:
+				edit_message_id = int(payload['edit_message_id'])
+			except (TypeError, ValueError):
+				return _chat_error('Identifiant de message invalide.', 'invalid_request', 400)
+			edit_message = get_object_or_404(Message, pk=edit_message_id, conversation=conversation, role='user')
 		persona = None
-		if payload.get('persona_id'):
-			persona = get_object_or_404(Persona, id=payload['persona_id'], user=request.user)
+		persona_id = payload.get('persona_id') or (conversation.persona_id if conversation else None)
+		if persona_id:
+			persona = get_object_or_404(Persona, id=persona_id, user=request.user)
 		workspace = None
-		if payload.get('workspace_id'):
-			workspace = get_workspace(request,payload['workspace_id'],write=True)
+		workspace_id = payload.get('workspace_id', conversation.workspace_id if conversation else None)
+		if workspace_id:
+			workspace = get_workspace(request, workspace_id, write=True)
+		attachment_ids = payload.get('image_file_ids', [])
+		from .attachments import image_parts
+		try:
+			references = [part['image_url']['url'] for part in image_parts(workspace, attachment_ids)]
+		except ValueError as error:
+			return _chat_error(str(error), 'invalid_request', 400)
+		if references and media_type == 'audio':
+			return _chat_error('Retire les images jointes pour créer un son à partir de ta description.', 'invalid_request', 400)
 
 		account = request.user.credit_account
 		charge = _media_generation_credits(media_type, provider_slug, prompt, generation_options)
@@ -1019,8 +1040,10 @@ class ImageGenerationView(View):
 		usage_cost_usd = None
 		try:
 			if provider_slug == 'openrouter':
+				reference_options = {'input_references': references} if references else {}
 				media_bytes, content_type, usage_cost_usd = generate_openrouter_media(
 					api_key.get_key(), media_type, prompt, model_id, generation_options,
+					**reference_options,
 				)
 			else:
 				media_bytes, content_type = generate_media(
@@ -1096,7 +1119,15 @@ class ImageGenerationView(View):
 						conversation = Conversation.objects.create(
 							user=request.user, persona=persona, workspace=workspace, title=prompt[:200],
 						)
-					user_message = Message.objects.create(conversation=conversation, role='user', content=prompt)
+					if edit_message:
+						if not conversation.messages.filter(id__lt=edit_message.id).exists():
+							conversation.title = prompt[:200]
+						conversation.messages.filter(id__gte=edit_message.id).delete()
+						conversation.summary = ''
+						conversation.summary_through_id = 0
+					conversation.persona = persona
+					conversation.workspace = workspace
+					user_message = Message.objects.create(conversation=conversation, role='user', content=prompt, image_file_ids=attachment_ids)
 					assistant_message = Message.objects.create(conversation=conversation, role='assistant', content=reply)
 				media = GeneratedMedia(
 					owner=request.user, conversation=conversation, message=assistant_message,
@@ -1107,7 +1138,7 @@ class ImageGenerationView(View):
 					extension = '.jpg'
 				media.image.save(f'{media_type}-{uuid.uuid4().hex}{extension}', ContentFile(media_bytes), save=True)
 				if conversation and not self.standalone:
-					conversation.save(update_fields=['updated_at'])
+					conversation.save(update_fields=['title', 'persona', 'workspace', 'summary', 'summary_through_id', 'updated_at'])
 		except Exception:
 			logger.exception('Could not store generated media (user_id=%s)', request.user.pk)
 			account.credit(charge, reason='adjustment', note='Remboursement stockage média échoué')
@@ -1120,6 +1151,8 @@ class ImageGenerationView(View):
 			'media_id': media.id,
 			'media_url': reverse('chat:generated-media', args=[media.id]),
 			'media_kind': media_type,
+			'prompt_tokens': 0,
+			'completion_tokens': 0,
 			'remaining_balance': account.balance,
 			'user_message_id': user_message.id if user_message else None,
 			'assistant_message_id': assistant_message.id if assistant_message else None,
@@ -1280,6 +1313,7 @@ class ConversationDetailView(View):
 			}
 			media = getattr(message, 'generated_media', None)
 			if media:
+				message_data['media_id'] = media.id
 				message_data['media_url'] = reverse('chat:generated-media', args=[media.id])
 				message_data['media_kind'] = media.kind
 			routing_observation = getattr(message, 'routing_observation', None)

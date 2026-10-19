@@ -49,8 +49,8 @@ class CapabilityPreflightTests(TestCase):
         self.assertEqual(account.transactions.count(), transactions)
         return response
 
-    def test_direct_media_requests_are_stopped_in_text_modes(self):
-        for content in ('Génère une image de chat', 'Peux-tu me créer une vidéo ?', 'Compose une chanson'):
+    def test_mixed_media_requests_are_stopped_without_silently_skipping_steps(self):
+        for content in ('Génère une image puis crée une vidéo', 'Crée une vidéo puis compose une chanson', 'Compose une chanson puis crée une image'):
             for mode in ('chat', 'deep'):
                 with self.subTest(content=content, mode=mode):
                     self.assert_blocked_without_spending(content, mode=mode, temporary=True)
@@ -82,7 +82,7 @@ class CapabilityPreflightTests(TestCase):
         conversation = Conversation.objects.create(user=self.user, persona=persona)
         message = Message.objects.create(conversation=conversation, role='user', content='Original request')
         Message.objects.create(conversation=conversation, role='assistant', content='Original reply')
-        self.assert_blocked_without_spending('Crée une image', conversation_id=conversation.pk, edit_message_id=message.pk, persona_id=other.pk)
+        self.assert_blocked_without_spending('Crée une image puis crée une vidéo', conversation_id=conversation.pk, edit_message_id=message.pk, persona_id=other.pk)
         conversation.refresh_from_db()
         self.assertEqual(conversation.persona_id, persona.pk)
         self.assertEqual(list(conversation.messages.values_list('content', flat=True)), ['Original request', 'Original reply'])

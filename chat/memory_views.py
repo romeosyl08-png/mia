@@ -30,10 +30,19 @@ def memory_settings(request, workspace_id=None):
         'import_text': '',
         'import_mode': 'append',
         'revision': memory_revision(getattr(target, content_field)),
+        'links': target,
     }
     if request.method == 'POST':
         action = request.POST.get('action', 'save')
         try:
+            if action == 'save_links':
+                fields = (['memory_in_chat', 'memory_in_barrassons'] if workspace else
+                          ['use_in_chat', 'use_in_bara', 'use_in_barrassons'])
+                for field in fields:
+                    setattr(target, field, field in request.POST)
+                target.save(update_fields=fields)
+                messages.success(request, 'Liens de mémoire enregistrés.')
+                return redirect(request.path + '#memory-links')
             if action == 'preview_import':
                 context['import_text'] = request.POST.get('import_text', '')[:IMPORT_MAX_CHARS]
                 context['import_preview'] = parse_memory_import(

@@ -22,6 +22,12 @@
     return needed;
   }
 
+  function generationKind(content, mode, rules){
+    if(['image', 'video', 'audio'].includes(mode)) return mode;
+    const needed = requirements(content, rules);
+    return needed.size === 1 ? ['image', 'video', 'audio'].find(kind => needed.has(kind)) || null : null;
+  }
+
   function check(content, options, config){
     const rules = config.capabilityRules;
     if(!rules) return null;
@@ -29,7 +35,13 @@
     const blocked = (code, message) => ({code, message: (message || rules.messages[code]) + ' ' + rules.messages.no_charge});
     const {mode = 'chat', local = false, team = false, workspace = null, hasImages = false, modelIds = []} = options;
     if(local && (mode !== 'chat' || team || workspace || hasImages || needed.size)) return blocked('local');
-    if(['image', 'video', 'audio'].includes(mode)) return null; // Dedicated generation endpoint.
+    const kind = generationKind(content, mode, rules);
+    if(kind){
+      if(options.temporary && kind !== 'image') return blocked('temporary_media');
+      const available = {image: config.imageGenerationAvailable, video: config.videoGenerationAvailable, audio: config.audioProviderAvailable};
+      if(available[kind] === false) return blocked('media_unavailable');
+      return null;
+    }
     for(const kind of ['image', 'video', 'audio']){
       if(needed.has(kind)) return blocked('media_mode_required', rules.mediaMessages[kind]);
     }
@@ -47,5 +59,5 @@
     if(needsTools && models.some(model => model.tools === false)) return blocked('tools');
     return null;
   }
-  root.AI2AICapabilities = {check, requirements};
+  root.AI2AICapabilities = {check, requirements, generationKind};
 })(typeof window === 'undefined' ? globalThis : window);

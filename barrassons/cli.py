@@ -12,6 +12,7 @@ import webbrowser
 from pathlib import Path
 from .project import load_session, save_session, record_edit, preview, undo_last, git, git_context, make_worktree
 from .terminal import terminal
+from .memory import configure_link, link_label, load_link, remember
 
 
 DEFAULT_API_BASE = "https://mia-vkl1.onrender.com/v1"
@@ -327,6 +328,7 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
         branch = ''
     terminal.setup_input()
     terminal.welcome(root, model, branch, resolve_api_base(config))
+    terminal.line('Mémoire : ' + link_label(load_link(root, config)) + ' · /memory pour choisir', 'muted')
     tokens = credits = 0
     verbose = False
     while True:
@@ -349,8 +351,22 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             terminal.panel('Commandes', ['/model    Choisir une IA', '/status   Voir le serveur et les crédits',
                 '/verbose  Afficher les résultats détaillés des outils', '/diff     Voir les changements Git',
                 '/undo     Annuler la dernière édition', '/verify   Lancer les tests configurés',
+                '/memory   Lier la mémoire personnelle ou un projet Bara',
+                '/remember texte  Enregistrer un souvenir partagé après confirmation',
                 '/review   Demander une revue du diff', '/clear    Effacer le contexte', '/exit     Quitter', '',
                 'Tab : compléter · ↑/↓ : historique · \\ puis Entrée : nouvelle ligne'])
+            continue
+        if text == '/memory' or text.startswith('/memory '):
+            try:
+                configure_link(config, root, text.removeprefix('/memory').strip(), api_request)
+            except (RuntimeError, ValueError) as error:
+                terminal.line(str(error), 'red')
+            continue
+        if text == '/remember' or text.startswith('/remember '):
+            try:
+                remember(config, root, text.removeprefix('/remember').strip(), api_request, _confirm)
+            except (RuntimeError, ValueError) as error:
+                terminal.line(str(error), 'red')
             continue
         if text == '/verbose':
             verbose = not verbose
@@ -367,7 +383,8 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
                 with terminal.busy('Actualisation des crédits…'):
                     balance = api_request(config, '/balance').get('credits')
                 terminal.panel('Session', [f'Modèle : {model}', f'Projet : {root}',
-                    f'Branche : {branch or "sans dépôt"}', f'Serveur : {resolve_api_base(config)}'])
+                    f'Branche : {branch or "sans dépôt"}', f'Serveur : {resolve_api_base(config)}',
+                    'Mémoire : ' + link_label(load_link(root, config))])
             except RuntimeError as error:
                 terminal.line(str(error), 'red')
             continue
@@ -402,12 +419,14 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
         verification_attempts = 0
         for _ in range(MAX_TOOL_ITERATIONS):
             with terminal.busy('Réflexion…'):
+                selection = load_link(root, config)
                 response = api_request(config, "/chat/completions", {
                     "model": model,
                     "messages": messages,
                     "tools": TOOLS,
                     "max_tokens": 2048,
                     "temperature": 0.2,
+                    **({'memory': selection} if selection else {}),
                 })
             usage = response.get('usage') or {}
             tokens += int(usage.get('total_tokens') or 0)
@@ -472,10 +491,16 @@ def main():
     parser.add_argument('--resume', action='store_true', help='Reprendre la session du projet')
     parser.add_argument('--worktree', action='store_true', help='Créer une branche isolée dans un worktree Git')
     parser.add_argument('--test-command', help='Commande de vérification à utiliser avec /verify')
+    parser.add_argument('--memory', choices=['off', 'chat', 'bara', 'both'], help='Mémoire partagée à lier à ce dossier')
+    parser.add_argument('--memory-workspace', type=int, metavar='ID', help='Projet Bara pour --memory bara ou both')
     parser.add_argument('--api-base', metavar='URL', help='Changer explicitement le serveur AI2AI (Render par défaut)')
     parser.add_argument('--model', metavar='ID', help='Utiliser un modèle du catalogue sans ouvrir le sélecteur')
     parser.add_argument('--no-color', action='store_true', help='Désactiver les couleurs du terminal')
     args = parser.parse_args()
+    if args.memory in {'bara', 'both'} and args.memory_workspace is None:
+        parser.error('--memory bara/both demande --memory-workspace ID')
+    if args.memory_workspace is not None and args.memory not in {'bara', 'both'}:
+        parser.error('--memory-workspace demande --memory bara ou both')
     config = load_config()
     if args.no_color:
         os.environ['NO_COLOR'] = '1'
@@ -494,6 +519,9 @@ def main():
             if not _confirm('Créer une branche et un worktree Git pour cette session ?'):
                 return 0
             root = make_worktree(root)
+        if args.memory:
+            choice = args.memory + (f' {args.memory_workspace}' if args.memory_workspace is not None else '')
+            configure_link(config, root, choice, api_request)
         model = _select_model(config, requested=args.model)
         config['model'] = model
         save_config(config)

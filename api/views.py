@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import Http404, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
@@ -28,6 +28,7 @@ from chat.billing import settle_reservation
 from chat.capabilities import supports_tools
 
 from .models import AIModel
+from .memory import selected_context
 
 logger = logging.getLogger(__name__)
 
@@ -423,6 +424,15 @@ def chat_completions(request):
     messages, problem = _clean_messages(payload.get("messages"))
     if problem:
         return _error(problem, "invalid_request_error", 400, "messages")
+    if 'memory' in payload:
+        try:
+            context = selected_context(user, payload['memory'])
+        except ValueError as error:
+            return _error(str(error), 'invalid_request_error', 400, 'memory')
+        except Http404:
+            return _error('Projet de mémoire introuvable ou inaccessible.', 'not_found', 404, 'memory')
+        if context:
+            messages.insert(0, {'role': 'system', 'content': context})
     tools, problem = _clean_tools(payload.get("tools"))
     if problem:
         return _error(problem, "invalid_request_error", 400, "tools")

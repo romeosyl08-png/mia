@@ -17,7 +17,7 @@
   <header class="guide-header">
     <p class="guide-eyebrow">AI2AI · OUTIL DE DÉVELOPPEMENT</p>
     <h1>Utiliser Barrassons</h1>
-    <p>Barrassons est un assistant en ligne de commande qui lit et recherche dans le projet courant, puis peut proposer des modifications ou exécuter des commandes avec ta confirmation.</p>
+    <p>Barrassons est un assistant de développement en ligne de commande. Il peut explorer ton projet, modifier des fichiers avec un aperçu des changements, lancer des tests, reprendre une session et travailler sur une branche Git isolée. Les écritures et les commandes demandent ta confirmation.</p>
   </header>
 
   <section class="guide-section">
@@ -62,6 +62,7 @@ barrassons</code></pre>
   <section class="guide-section">
     <h2>4. Choisir un modèle et travailler</h2>
     <p>Au premier lancement, le sélecteur affiche dix modèles par page. Choisis par numéro ou identifiant, ou saisis un nom pour rechercher. <code>/suivant</code> et <code>/précédent</code> changent de page. Ton choix est mémorisé ; <code>/model</code> permet de le changer pendant la session.</p>
+    <p>Le modèle choisi doit accepter les appels d’outils compatibles OpenAI. Les modèles Anthropic ne sont actuellement pas pris en charge par ce CLI. Pour choisir directement un modèle du catalogue, lance <code>barrassons --model identifiant-du-modele</code>.</p>
     <p>Décris une tâche précise et indique si tu veux seulement une analyse ou une modification. Par exemple :</p>
     <pre><code>Analyse le flux d’envoi des messages. Explique le problème et ne modifie aucun fichier.
 
@@ -71,18 +72,75 @@ puis propose un test manquant sans l’ajouter.</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>5. Comprendre les confirmations</h2>
+    <h2>5. Reprendre une session et contrôler les changements</h2>
+    <p>Les échanges et les sauvegardes des modifications sont conservés localement pour chaque dossier de travail. Pour retrouver la session d’un projet, relance Barrassons depuis ce même dossier :</p>
+    <pre><code>barrassons --resume</code></pre>
+    <p>Les appels d’outils interrompus sont signalés à la reprise et ne sont pas réexécutés automatiquement.</p>
+    <ul>
+      <li><code>/diff</code> affiche les changements des fichiers suivis par Git par rapport à <code>HEAD</code>. Pour les nouveaux fichiers non suivis, utilise <code>git status</code>.</li>
+      <li><code>/review</code> envoie ce diff au modèle pour rechercher les bugs, les régressions et les vérifications manquantes.</li>
+      <li><code>/undo</code> propose d’annuler la dernière édition enregistrée par Barrassons, après confirmation. L’annulation est refusée si le fichier a changé depuis, pour préserver tes modifications ultérieures.</li>
+      <li><code>/clear</code> efface le contexte de conversation de la session sans annuler les changements dans les fichiers.</li>
+    </ul>
+  </section>
+
+  <section class="guide-section">
+    <h2>6. Lancer les tests et corriger les erreurs</h2>
+    <p>Indique la commande de vérification adaptée à ton projet au démarrage. Tu peux aussi la combiner avec la reprise d’une session :</p>
+    <pre><code>barrassons --test-command "python -m pytest"
+barrassons --resume --test-command "npm test"</code></pre>
+    <p><code>/verify</code> lance la commande configurée après ta confirmation et ajoute son résultat à la conversation.</p>
+    <p>Avec <code>--test-command</code>, Barrassons lance aussi une vérification avant de conclure après des modifications. Si elle échoue, le résultat revient au modèle pour qu’il tente une correction. Cette boucle est limitée à deux vérifications automatiques par demande, chacune avec confirmation. Une commande de tests déjà réussie après la dernière modification évite une nouvelle exécution. Une vérification refusée ou toujours en échec reste signalée.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>7. Travailler sur une branche Git isolée</h2>
+    <p>Pour travailler dans un dossier séparé avec une nouvelle branche, lance :</p>
+    <pre><code>barrassons --worktree --test-command "npm test"</code></pre>
+    <p>Après confirmation, Barrassons crée un <em>worktree</em> à partir de <code>HEAD</code>. Le dépôt doit être propre : enregistre tes changements avant de lancer cette option. Le terminal affiche le nouveau dossier et sa branche ; les fichiers de ton dossier d’origine restent intacts.</p>
+    <p>Tu peux y consulter <code>/diff</code>, demander <code>/review</code>, puis préparer un commit ou une demande de fusion avec tes outils Git habituels. Pour reprendre cette session plus tard, place-toi dans le dossier du worktree et lance <code>barrassons --resume</code>.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>8. Utiliser Barrassons dans VS Code</h2>
+    <p>Le dépôt contient une extension dans <code>integrations/vscode/</code>. Elle ouvre Barrassons dans le terminal intégré du projet sélectionné et propose deux commandes dans la palette :</p>
+    <ul>
+      <li><strong>Barrassons : ouvrir dans ce projet</strong> démarre une session dans le dossier choisi.</li>
+      <li><strong>Barrassons : reprendre la session</strong> démarre avec <code>--resume</code>.</li>
+    </ul>
+    <p>Pour l’essayer, charge l’extension avec <em>Extension Development Host</em> dans VS Code. L’exécutable <code>barrassons</code> doit être installé et accessible dans le <code>PATH</code>. L’extension n’est pas encore publiée sur le Marketplace.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2 id="shared-memory">9. Lier la mémoire de Barrassons, Bara et du chat</h2>
+    <p>Dans <a href="{% url 'chat:memory' %}#memory-links">Ma mémoire → Lier la mémoire entre les assistants</a>, choisis les assistants qui peuvent utiliser tes préférences personnelles. Pour partager la mémoire d’un projet, ouvre <strong>Mémoire</strong> dans cet espace Bara et active son lien Barrassons. Le lien Chat s’applique lorsque ce projet est sélectionné dans le chat.</p>
+    <p>Dans Barrassons, <code>/memory</code> affiche les mémoires disponibles et les identifiants des projets accessibles. Choisis ensuite ce que tu veux lier au dossier local :</p>
+    <pre><code>/memory chat
+/memory bara 42
+/memory both 42
+/memory off</code></pre>
+    <p><code>chat</code> utilise la mémoire personnelle, <code>bara</code> celle du projet, <code>both</code> les deux et <code>off</code> délie ce dossier. Remplace <code>42</code> par l’identifiant affiché pour ton projet. Tu peux aussi choisir au démarrage :</p>
+    <pre><code>barrassons --memory chat
+barrassons --memory both --memory-workspace 42</code></pre>
+    <p>Le choix est conservé pour ce dossier et cette connexion. Le serveur relit la mémoire et les autorisations à chaque appel : modifier ou désactiver une mémoire dans 2AI prend effet dès l’appel suivant. Les liens Barrassons sont désactivés par défaut et la mémoire partagée n’est pas copiée dans les sauvegardes locales de session.</p>
+    <p><code>/remember Utiliser pytest pour les tests de ce projet.</code> affiche un aperçu puis demande confirmation avant d’ajouter ce souvenir à la mémoire liée. Si un projet Bara est lié, le souvenir est ajouté au projet ; sinon, il rejoint la mémoire personnelle. Seul le propriétaire peut modifier la mémoire d’un projet. Les modifications simultanées sont bloquées jusqu’à une nouvelle relecture.</p>
+    <p>Ces options partagent uniquement les souvenirs enregistrés. Elles ne transfèrent pas les historiques, le code du dossier ni les fichiers entre les assistants. Les conversations temporaires gardent leur sélection de mémoire indépendante.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>10. Comprendre les confirmations</h2>
     <ul>
       <li>La lecture, la recherche et la liste des fichiers sont disponibles directement.</li>
-      <li>Avant d’écrire ou modifier un fichier, Barrassons affiche le chemin et demande confirmation. Réponds <code>y</code> pour autoriser; la réponse par défaut est non.</li>
+      <li>Avant d’écrire ou modifier un fichier, Barrassons affiche un diff, le chemin et une demande de confirmation. Réponds <code>o</code> ou <code>oui</code> pour autoriser ; <code>y</code> est aussi accepté. La réponse par défaut est non.</li>
       <li>Avant une commande shell, il affiche la commande et le dossier d’exécution. Vérifie-la avant de répondre.</li>
-      <li>Les commandes shell sont exécutées dans le dossier courant de Barrassons. N’autorise que les commandes que tu comprends et souhaites lancer.</li>
+      <li>Les commandes shell sont exécutées avec les droits de ton terminal dans le dossier de travail de Barrassons, ou dans le worktree si tu as choisi cette option. N’autorise que les commandes que tu comprends et souhaites lancer.</li>
     </ul>
   </section>
 
   <section class="guide-section guide-last-section">
-    <h2>6. Sécurité et crédits</h2>
+    <h2>11. Sécurité et crédits</h2>
     <p>Les appels modèle débitent les crédits du compte associé à la clé. Une clé doit rester privée : ne la versionne pas et ne la colle pas dans les demandes adressées à l’assistant.</p>
+    <p>Les sessions et sauvegardes sont enregistrées dans <code>~/.config/barrassons/sessions/</code> avec des permissions privées. Elles peuvent contenir du code et des résultats d’outils ; la clé API de configuration n’y est pas ajoutée. La commande <code>barrassons logout</code> ne supprime pas ces sessions.</p>
     <p>Pour changer de clé, lance <code>barrassons login</code>. Pour changer de serveur, utilise <code>barrassons login --api-base URL</code>. <code>barrassons logout</code> efface la configuration locale, mais ne révoque pas la clé sur le serveur. Révoque-la aussi depuis la page <a href="{% url 'api-keys-page' %}">Clés API</a> si elle n’est plus utilisée.</p>
   </section>
 </main>

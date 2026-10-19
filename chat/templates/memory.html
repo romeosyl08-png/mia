@@ -12,6 +12,26 @@
   {% for message in messages %}<p class="notice-success" role="status">{{ message }}</p>{% endfor %}
   {% if error %}<p class="memory-error" role="alert">{{ error }}</p>{% endif %}
 
+  <section class="surface memory-editor" id="memory-links" aria-labelledby="memory-links-title">
+    <h2 id="memory-links-title">Lier la mémoire entre les assistants</h2>
+    <p class="memory-hint">{% if workspace %}Bara utilise la mémoire de ce projet lorsqu’elle est activée. Choisis les autres assistants qui peuvent aussi l’utiliser.{% else %}Choisis où utiliser tes préférences personnelles. Les assistants liés lisent la même mémoire : une modification est disponible dès leur prochain appel.{% endif %}</p>
+    <form method="post" class="memory-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_links">
+      {% if workspace %}
+      <label class="memory-toggle"><input type="checkbox" name="memory_in_chat" {% if links.memory_in_chat %}checked{% endif %}> Chat, lorsque ce projet est sélectionné</label>
+      <label class="memory-toggle"><input type="checkbox" name="memory_in_barrassons" {% if links.memory_in_barrassons %}checked{% endif %}> Barrassons, lorsque ce projet est lié au dossier local</label>
+      {% else %}
+      <label class="memory-toggle"><input type="checkbox" name="use_in_chat" {% if links.use_in_chat %}checked{% endif %}> Chat</label>
+      <label class="memory-toggle"><input type="checkbox" name="use_in_bara" {% if links.use_in_bara %}checked{% endif %}> Bara</label>
+      <label class="memory-toggle"><input type="checkbox" name="use_in_barrassons" {% if links.use_in_barrassons %}checked{% endif %}> Barrassons</label>
+      {% endif %}
+      <p class="memory-hint">La mémoire doit aussi être activée dans l’éditeur ci-dessous. Ces liens partagent les souvenirs enregistrés, sans transférer les conversations ni les fichiers. Les conversations temporaires conservent leurs propres réglages de mémoire.</p>
+      <button type="submit" class="memory-primary">Enregistrer les liens</button>
+    </form>
+    <p class="memory-hint">Dans le terminal, utilise <code>/memory</code> pour choisir la mémoire personnelle, un projet Bara, ou les deux. <code>/remember texte</code> ajoute un souvenir après confirmation. <a href="{% url 'barrassons-guide' %}#shared-memory">Voir les commandes Barrassons</a>.</p>
+  </section>
+
   <section class="surface memory-import" id="import-memory" aria-labelledby="import-title">
     <p class="page-eyebrow">Venir avec ses préférences</p>
     <h2 id="import-title">Importer depuis un autre assistant</h2>

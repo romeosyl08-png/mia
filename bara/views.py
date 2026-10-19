@@ -463,7 +463,7 @@ def _build_system_prompt(workspace, query="", actor=None, conversation=None):
     from chat.memory import memory_context
     from chat.continuity import related_conversation_context
     prompt = BASE_PROMPT
-    prompt += '\n\n' + memory_context(actor or workspace.user, workspace)
+    prompt += '\n\n' + memory_context(actor or workspace.user, workspace, surface='bara')
     if workspace.instructions.strip():
         prompt += (
             "\n\nInstructions de l'utilisateur pour cet espace de travail "
