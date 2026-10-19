@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import uuid
+from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
@@ -37,7 +38,7 @@ if settings.DATABASES['default']['ENGINE'].endswith('sqlite3'):
 
 @override_settings(COMPARISON_ENABLED=True, COMPARISON_AUTOMATIC_ENABLED=True,
     COMPARISON_PROVIDER_ALLOWLIST=['openrouter'], EVALUATION_MIN_READING_SECONDS=0,
-    COMPARISON_RATE_LIMIT=100, DEBUG=True)
+    COMPARISON_RATE_LIMIT=100, DEFAULT_CURRENCY='XOF', PAYDUNYA_XOF_PER_USD=Decimal('600'), DEBUG=True)
 class ComparisonBrowserTests(StaticLiveServerTestCase):
     def test_manual_surprise_refresh_mobile_theme_and_deletion(self):
         EvaluationBudget.objects.get_or_create(pk=1)
@@ -61,6 +62,7 @@ class ComparisonBrowserTests(StaticLiveServerTestCase):
                 page.on('request', lambda request: posts.append(request.url) if request.method == 'POST' and '/api/sessions/' in request.url else None)
                 page.goto(self.live_server_url + '/comparisons/')
                 expect(page.locator('#modelB option')).to_have_count(3)
+                expect(page.locator('#modelB option').nth(1)).to_contain_text('FCFA')
                 page.locator('#comparisonForm textarea').fill('Explique les nombres premiers.')
                 page.locator('#compareButton').click()
                 page.wait_for_url('**/comparisons/?session=*')
@@ -68,6 +70,8 @@ class ComparisonBrowserTests(StaticLiveServerTestCase):
                 with patch('evaluations.jobs.call_llm_provider', return_value=('Réponse avec un exemple vérifiable.', 20, 10)):
                     database.submit(lambda: jobs.execute(jobs.claim(session.pk))).result()
                 page.locator('#voteForm').wait_for(state='visible')
+                expect(page.locator('#costA')).to_contain_text('0,06 FCFA')
+                expect(page.locator('#costA')).not_to_contain_text('USD')
                 a = page.locator('.comparison-columns article').nth(0).bounding_box()
                 b = page.locator('.comparison-columns article').nth(1).bounding_box()
                 self.assertAlmostEqual(a['y'], b['y'], delta=2)

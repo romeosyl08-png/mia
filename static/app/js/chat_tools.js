@@ -23,7 +23,12 @@
   function render(container, events){
     if(!Array.isArray(events)) return;
     for(const event of events){
-      if(event.type === "visualization"){
+      if(event.type === 'notice'){
+        const notice = document.createElement('p');
+        notice.className = 'chat-tool-confirmation';
+        notice.textContent = event.message || '';
+        container.appendChild(notice);
+      }else if(event.type === "visualization"){
         const chart = AI2AICharts.createChart(event.chart);
         if(chart) container.appendChild(chart);
       }else if(event.type === 'artifact'){

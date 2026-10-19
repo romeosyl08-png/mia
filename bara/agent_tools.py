@@ -9,6 +9,7 @@ from django.utils import timezone
 from .models import ToolExecution
 from .tools.registry import get_tools
 from .tools.executor import execute_tool
+from .tool_reliability import verify_file_action
 from .tools import definitions, plugins, visualizations, documents, ocr, connectors  # noqa: F401
 from .tools.plugins import BLENDER_PLUGIN_TOOL_NAMES, EMAIL_PLUGIN_TOOL_NAMES, PLUGIN_TOOL_NAMES
 from .tools.connectors import CONNECTOR_TOOLS
@@ -142,4 +143,11 @@ def dispatch_tool(workspace, name, arguments, mcp_map, conversation_id=None):
             arguments={'server_id': server.id, 'server_name': server.name, 'tool_name': remote_name, 'tool_arguments': arguments, 'conversation_id': conversation_id},
         )
         return {'status': 'pending_confirmation', 'action_id': action.id, 'description': f'Appeler {server.name} / {remote_name}\n' + json.dumps(arguments, ensure_ascii=False), 'mcp': True}
-    return execute_tool(name, workspace, arguments)
+    before = None
+    if name == 'edit_file':
+        file_id = arguments.get('file_id')
+        if not workspace or not isinstance(file_id, int) or isinstance(file_id, bool):
+            return {'error': 'Identifiant de fichier invalide.'}
+        before = workspace.files.filter(pk=file_id).values_list('extracted_text', flat=True).first()
+    result = execute_tool(name, workspace, arguments)
+    return verify_file_action(workspace, name, arguments, result, before)

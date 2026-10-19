@@ -30,7 +30,7 @@
     if (mode !== 'manual') return;
     selectors.forEach((select, i) => {
       select.replaceChildren(new Option('Choisir un modèle', ''));
-      data.models.forEach(m => select.add(new Option(`${m.name} · ${m.provider} · ~${m.estimated_credits} jetons + question`, String(m.id))));
+      data.models.forEach(m => select.add(new Option(`${m.name} · ${m.provider} · ~${m.estimated_amount_display} (${m.estimated_credits} jetons) + question`, String(m.id))));
       if (data.models[i]) select.value = String(data.models[i].id);
     });
     distinct();
@@ -58,7 +58,7 @@
       document.getElementById(`title${r.slot}`).textContent = r.model ? `${r.slot} · ${r.model.name} (${r.model.provider})` : `Modèle ${r.slot}`;
       document.getElementById(`response${r.slot}`).textContent = r.response_text || r.error_message || 'La réponse apparaîtra ici.';
       document.getElementById(`status${r.slot}`).textContent = `${labels[r.status] || r.status}${r.latency_ms ? ` · ${(r.latency_ms / 1000).toFixed(1)} s` : ''}`;
-      document.getElementById(`cost${r.slot}`).textContent = r.model ? `${r.credits_charged} jeton${r.credits_charged === 1 ? '' : 's'} · coût fournisseur estimé ${r.provider_cost} USD${r.usage_reliable ? '' : ' (consommation non vérifiée)'}` : '';
+      document.getElementById(`cost${r.slot}`).textContent = r.model ? `Débit 2AI : ${r.credits_charged} jeton${r.credits_charged === 1 ? '' : 's'} · équivalent ${r.charged_amount_display}${r.usage_reliable ? '' : ' (consommation non vérifiée)'}` : '';
     });
     voteForm.hidden = !data.can_vote;
     inputs.disabled = !terminal.has(data.status);

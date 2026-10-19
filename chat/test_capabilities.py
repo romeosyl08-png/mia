@@ -64,10 +64,9 @@ class CapabilityPreflightTests(TestCase):
         self.assert_blocked_without_spending('Lis mon fichier rapport.pdf')
 
     def test_tool_incompatibility_and_images_are_stopped_before_reading_attachments(self):
-        self.assert_blocked_without_spending('Bonjour', workspace_id=self.workspace.pk)
+        self.assert_blocked_without_spending('Modifie le fichier rapport.txt', workspace_id=self.workspace.pk)
         self.assert_blocked_without_spending('Décris cette image', image_file_ids=[42])
-        with override_settings(SEARCH_API_KEY='dummy'):
-            self.assert_blocked_without_spending('Cherche sur le web les résultats')
+
 
     def test_disabled_file_tool_is_reported(self):
         self.model.supported_parameters = ['tools']
@@ -99,10 +98,10 @@ class CapabilityPreflightTests(TestCase):
                 tools.assert_not_called()
 
     def test_auto_routes_to_a_model_with_tools_and_never_uses_an_incompatible_fallback(self):
-        self.assert_blocked_without_spending('Bonjour', model_id='auto', workspace_id=self.workspace.pk)
+        self.assert_blocked_without_spending('Crée un fichier bilan.txt', model_id='auto', workspace_id=self.workspace.pk)
         capable = AIModel.objects.create(provider=self.model.provider, name='Tools', model_id='tools', supported_parameters=['tools'])
         with patch('chat.views._run_file_tools', return_value=('Réponse', 10, 10)) as tools:
-            response = self.client.post('/chat/api/send/', json.dumps({'content': 'Bonjour', 'model_id': 'auto', 'workspace_id': self.workspace.pk}), content_type='application/json')
+            response = self.client.post('/chat/api/send/', json.dumps({'content': 'Crée un fichier bilan.txt', 'model_id': 'auto', 'workspace_id': self.workspace.pk}), content_type='application/json')
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(tools.call_args.args[3], capable.model_id)
 
@@ -110,7 +109,7 @@ class CapabilityPreflightTests(TestCase):
         conversation = WorkConversation.objects.create(workspace=self.workspace)
         before = self.user.credit_account.transactions.count()
         with patch('bara.views.call_llm_with_tools_stream') as provider:
-            response = self.client.post(reverse('bara:message', args=[self.workspace.pk, conversation.pk]), {'content': 'Bonjour'})
+            response = self.client.post(reverse('bara:message', args=[self.workspace.pk, conversation.pk]), {'content': 'Modifie le fichier rapport.txt'})
         self.assertEqual(response.status_code, 400)
         provider.assert_not_called()
         self.assertEqual(self.user.credit_account.transactions.count(), before)

@@ -50,9 +50,9 @@ def eligible_models(surface="chat", workspace=False, streamed=False, tools=False
 		if not is_local_provider(provider) and provider.id not in providers_with_keys:
 			continue
 		provider_name = f"{provider.slug} {provider.name}".lower()
-		if workspace and "anthropic" in provider_name:
+		if tools and "anthropic" in provider_name:
 			continue
-		if (workspace or tools) and supports_tools(model) is False:
+		if tools and supports_tools(model) is False:
 			continue
 		if streamed and surface == "api" and "anthropic" in provider_name:
 			continue

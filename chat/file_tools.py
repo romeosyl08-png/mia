@@ -3,6 +3,7 @@ import json
 
 from bara.agent_tools import _tools_schema, _log_tool, dispatch_tool
 from bara.services import call_llm_with_tools, call_llm_with_tools_stream
+from bara.tool_reliability import EVIDENCE, ToolRun
 
 from .prompt_payloads import compact_json
 from .sources import CITATION_INSTRUCTIONS, SourceCollector
@@ -45,6 +46,11 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
     allowed = {tool['function']['name'] for tool in schemas}
     system_prompt += TOOL_INSTRUCTIONS + '\nOutils disponibles : ' + ', '.join(sorted(allowed))
     tool_messages = list(messages)
+    request = next((message.get('content', '') for message in reversed(messages) if message.get('role') == 'user'), '')
+    if isinstance(request, list):
+        request = ' '.join(part.get('text', '') for part in request if part.get('type') == 'text')
+    prepared = {kind for kind, names in EVIDENCE.items() if names & set(tools_used or ())}
+    run = ToolRun(request, prepared)
     input_tokens = output_tokens = 0
     pending_results = {}
     for iteration in range(MAX_FILE_TOOL_ITERATIONS + 1):
@@ -56,7 +62,8 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
             for event in call_llm_with_tools_stream(provider, api_key, model_id, tool_messages, prompt, temperature, max_tokens, tools=turn_tools, top_p=top_p):
                 if event['type'] == 'delta':
                     turn_parts.append(event['content'])
-                    yield event
+                    if not run.required:
+                        yield event
                 elif event['type'] == 'tool_call_delta':
                     call = calls.setdefault(event['index'], {'id': None, 'type': 'function', 'function': {'name': '', 'arguments': ''}})
                     if event.get('id'):
@@ -76,13 +83,16 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
             assistant = {'role': 'assistant', **assistant}
             input_tokens += used_input or 0
             output_tokens += used_output or 0
-            if assistant.get('content'):
+            if assistant.get('content') and not run.required:
                 yield {'type': 'delta', 'content': assistant['content']}
         tool_calls = assistant.get('tool_calls') or []
         if tool_calls:
             tool_calls = tool_calls[:16]
             assistant['tool_calls'] = tool_calls
         if not tool_calls:
+            if run.required:
+                tool_events.append(run.verification())
+                yield {'type': 'delta', 'content': run.finish(assistant.get('content') or '')}
             yield {'type': 'usage', 'input_tokens': input_tokens, 'output_tokens': output_tokens}
             return
         tool_messages.append(assistant)
@@ -95,7 +105,9 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
             except (TypeError, ValueError):
                 arguments = None
             cache_key = (name, json.dumps(arguments, sort_keys=True))
-            if cache_key in pending_results:
+            if run.key(name, arguments) in run.cached:
+                result = run.cached[run.key(name, arguments)]
+            elif cache_key in pending_results:
                 result = pending_results[cache_key]
             else:
                 result = _tool_result(workspace, name, arguments, allowed if turn_tools else set(), mcp_map)
@@ -105,6 +117,7 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
                 if isinstance(result, dict) and result.get('status') == 'pending_confirmation':
                     pending_results[cache_key] = result
                 _log_tool(workspace, name, arguments, result)
+            run.record(name, arguments, result)
             if name in {'web_search', 'fetch_url'}:
                 yield {'type': 'sources', 'sources': list(sources)}
             if isinstance(result, dict) and result.get('status') == 'pending_confirmation' and workspace:
@@ -116,14 +129,17 @@ def stream_chat_tools(workspace, provider, api_key, model_id, messages, system_p
                 chart_event = {'type': 'visualization', 'chart': result['chart']}
                 tool_events.append(chart_event)
                 yield chart_event
-            if name == 'create_document' and isinstance(result,dict) and result.get('preview_url'):
-                artifact = {'type':'artifact','name':result['filename'],'url':result['preview_url'],'download_url':result['download_url']}
+            if isinstance(result,dict) and result.get('verified') and result.get('download_url'):
+                artifact = {'type':'artifact','name':result['filename'],'url':result.get('preview_url') or result['download_url'],'download_url':result['download_url']}
                 tool_events.append(artifact)
                 yield artifact
             yield {'type': 'tool_status', 'tool': name, 'status': 'error' if isinstance(result, dict) and result.get('error') else 'done'}
             tool_messages.append({'role': 'tool', 'tool_call_id': call.get('id') or f'chat-tool-{iteration}-{index}', 'name': name, 'content': compact_json(result)[:24_000]})
-        if assistant.get('content'):
+        if assistant.get('content') and not run.required:
             yield {'type': 'delta', 'content': '\n\n'}
+    if run.required:
+        tool_events.append(run.verification())
+        yield {'type': 'delta', 'content': run.finish('Limite d’étapes atteinte. Consulte le résultat dans les fichiers de l’espace.')}
     yield {'type': 'usage', 'input_tokens': input_tokens, 'output_tokens': output_tokens}
 
 

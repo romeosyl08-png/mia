@@ -2,6 +2,7 @@ import json
 import threading
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -137,6 +138,26 @@ class ComparisonTests(TestCase):
         jobs.finish(session.pk); jobs.finish(session.pk)
         self.assertEqual(self.user.credit_account.transactions.count(), count)
         self.assertIsNone(jobs.claim(session.pk))
+
+    @override_settings(PAYDUNYA_XOF_PER_USD=Decimal('600'), EUR_PER_USD=Decimal('0.92'))
+    def test_displayed_cost_is_the_actual_debit_in_the_selected_currency(self):
+        session = self.completed()
+        # A provider estimate is deliberately different from the one-credit debit.
+        session.responses.update(provider_cost=Decimal('10'))
+        before = self.balance()
+        for currency, expected in (('XOF', '0,06 FCFA'), ('EUR', '0,000092 €'), ('USD', '0,0001 $')):
+            with self.subTest(currency=currency):
+                saved = self.client.session
+                saved['display_currency'] = currency
+                saved.save()
+                data = self.client.get(reverse('evaluations:detail', args=[session.pk])).json()
+                for row in data['responses']:
+                    self.assertEqual(row['credits_charged'], 1)
+                    self.assertEqual(row['charged_amount_display'], expected)
+                models = self.client.get(reverse('evaluations:models')).json()['models']
+                symbol = {'XOF': 'FCFA', 'EUR': '€', 'USD': '$'}[currency]
+                self.assertTrue(all(row['estimated_amount_display'].endswith(symbol) for row in models))
+        self.assertEqual(self.balance(), before)
 
     def test_single_failure_refunds_only_failed_response_and_cannot_vote(self):
         def upstream(*args, **kwargs):
@@ -281,7 +302,7 @@ class ComparisonTests(TestCase):
             self.assertNotIn(model.model.name, text)
             self.assertNotIn(model.model.model_id, text)
         self.assertNotIn('OpenRouter', text)
-        for field in ('selection_metadata', 'provider_cost', 'credits_charged', 'input_tokens'):
+        for field in ('selection_metadata', 'provider_cost', 'credits_charged', 'charged_amount_display', 'input_tokens'):
             self.assertNotIn(field, text)
         after = self.client.post(reverse('evaluations:vote', args=[session.pk]), data=json.dumps(self.vote_payload(session)), content_type='application/json')
         self.assertEqual(after.status_code, 200)

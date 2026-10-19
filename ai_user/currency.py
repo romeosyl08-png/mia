@@ -175,6 +175,20 @@ def format_amount(amount, decimals=None):
     return rendered.replace(",", "\u00a0").replace(".", ",")
 
 
+def format_usd_price(currency, usd_amount):
+    """Convert a reference price without checkout rounding or lost fractions."""
+    try:
+        amount = Decimal(str(usd_amount))
+        if not amount.is_finite() or amount < 0:
+            return '—'
+        amount *= currency.rate_per_usd
+    except (ArithmeticError, TypeError, ValueError):
+        return '—'
+    fraction = format(amount, 'f').partition('.')[2].rstrip('0')
+    decimals = max(currency.decimals, len(fraction))
+    return f'{format_amount(amount, decimals)} {currency.symbol}'
+
+
 def currency_context(request):
     currency = selected_currency(request)
     reference_amount = amount_for_usd(currency, 1)

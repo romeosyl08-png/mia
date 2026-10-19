@@ -223,6 +223,19 @@ body:has(.tariffs-page) {
   font-variant-numeric: tabular-nums;
 }
 
+.tariffs-table td > span,
+.tariffs-table td > small {
+  display: block;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tariffs-table td > small {
+  margin-top: 4px;
+  color: var(--tariffs-muted);
+  font-size: 11px;
+}
+
 .tariffs-empty,
 .tariffs-no-results {
   padding: 24px;

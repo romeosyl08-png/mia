@@ -343,6 +343,8 @@ def tariffs_page(request):
         {
             "name": model.name,
             "model_id": model.model_id,
+            "input_price": model.input_price_per_million,
+            "output_price": model.output_price_per_million,
             "input_credits": f"{credits_per_million_tokens(model.input_price_per_million):,}".replace(",", " "),
             "output_credits": f"{credits_per_million_tokens(model.output_price_per_million):,}".replace(",", " "),
         }

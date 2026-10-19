@@ -53,12 +53,15 @@ from .plugin_services import (
     email_oauth_is_configured,
     send_email,
 )
-from chat.services import is_local_provider
+from chat.services import is_local_provider, stream_llm_provider
 from chat.context import conversation_history
 from chat.prompt_payloads import compact_json
 from chat.billing import settle_reservation
 from chat.routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
-from chat.capabilities import capability_issue
+from chat.capabilities import capability_issue, request_requirements, requires_tools, supports_tools
+from chat.preparation import prepare_documents, capability_notices
+from chat.sources import SourceCollector, CITATION_INSTRUCTIONS
+from .tool_reliability import ToolRun
 
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 
@@ -467,7 +470,7 @@ def _build_system_prompt(workspace, query="", actor=None, conversation=None):
             "(à suivre tant qu'elles ne contredisent pas les règles ci-dessus) :\n"
             + workspace.instructions.strip()
         )
-    context = get_workspace_context(workspace, query)
+    context = get_workspace_context(workspace, query) if 'read_file' not in (workspace.disabled_tools or []) else ''
     if context:
         prompt += "\n\n" + context
     continuity = related_conversation_context(
@@ -666,9 +669,10 @@ def send_message(request, workspace_id, conversation_id):
             status=429,
         )
 
+    needs_tools = requires_tools(content)
     active_model = workspace.active_model
     if active_model is None and workspace.auto_route:
-        candidates = eligible_models(surface="bara", workspace=True, tools=bool(_tools_schema(workspace)[0]))
+        candidates = eligible_models(surface="bara", workspace=True, tools=needs_tools)
         active_model = candidates[0] if candidates else None
     if not active_model:
         if workspace.auto_route:
@@ -678,6 +682,14 @@ def send_message(request, workspace_id, conversation_id):
             status=400,
         )
 
+    problem = capability_issue(content, 'chat', [active_model], workspace, auto=workspace.auto_route)
+    document_context = ''
+    if not problem:
+        document_context, problem = prepare_documents(content, workspace, active_model, allow_ocr=workspace.auto_route)
+    if problem:
+        return JsonResponse({'error': {'message': problem['message'], 'type': 'capability_unavailable'}, 'charged_credits': 0}, status=400)
+    needs_tools = needs_tools or ('file_read' in request_requirements(content) and not document_context)
+
     past_messages = conversation_history(conversation.messages, content)
     messages_payload = list(past_messages) + [{"role": "user", "content": content}]
     system_prompt = _build_system_prompt(workspace, content, actor=request.user, conversation=conversation)
@@ -686,7 +698,9 @@ def send_message(request, workspace_id, conversation_id):
     system_prompt += "\n\nOutils réellement activés pour cette demande : " + ", ".join(active_tool_names)
 
     if workspace.auto_route:
-        candidates = eligible_models(surface="bara", workspace=True, tools=bool(tool_schemas))
+        candidates = eligible_models(surface="bara", workspace=True, tools=needs_tools)
+        if not candidates:
+            return JsonResponse({"error": {"message": "Aucun modèle compatible n’est disponible. Aucun jeton débité.", "type": "capability_unavailable"}, "charged_credits": 0}, status=400)
         fallback_model = active_model if active_model in candidates else candidates[0] if candidates else active_model
         costs = {
             model_key(candidate): estimate_cost(content, candidate, system_prompt, past_messages)[0] * MAX_AGENT_ITERATIONS
@@ -711,13 +725,33 @@ def send_message(request, workspace_id, conversation_id):
     if problem:
         return JsonResponse({'error': {'message': problem['message'], 'type': 'capability_unavailable'}, 'charged_credits': 0}, status=400)
 
+    prepared_context, preparation_problem = prepare_documents(content, workspace, active_model)
+    if preparation_problem:
+        return JsonResponse({'error': {'message': preparation_problem['message'], 'type': 'capability_unavailable'}, 'charged_credits': 0}, status=400)
+    system_prompt += prepared_context
+    use_tools = supports_tools(active_model) is not False
+    if not use_tools:
+        tool_schemas, active_tool_names = [], []
+        system_prompt += '\n\nAucun outil n’est disponible pour cette réponse. Réponds uniquement avec les informations fournies et ne prétends pas avoir effectué une action.'
+    prepared = {'file_read'} if prepared_context else set()
+    if 'web' in request_requirements(content):
+        result = definitions.web_search(workspace, content[:500])
+        if result.get('error'):
+            return JsonResponse({'error': {'message': result['error'], 'type': 'web_search_unavailable'}, 'charged_credits': 0}, status=503)
+        collector = SourceCollector([])
+        collector.collect('web_search', result)
+        system_prompt += CITATION_INSTRUCTIONS + collector.prompt(include_instructions=False)
+        prepared.add('web')
+    notices = capability_notices(active_model, workspace, prepared=bool(prepared_context), web='web' in prepared and not use_tools, user=request.user, category=task_category('bara', workspace=True))
+    run = ToolRun(content, prepared)
+
     api_key_obj = active_model.provider.keys.filter(is_active=True).order_by("id").first()
     if not api_key_obj and not is_local_provider(active_model.provider):
         return JsonResponse({"error": "Aucune configuration active pour ce modèle."}, status=503)
     api_key = api_key_obj.get_key() if api_key_obj else ""
 
     reserve, estimated_input = estimate_cost(content, active_model, system_prompt, past_messages)
-    reserve *= MAX_AGENT_ITERATIONS
+    reserve *= MAX_AGENT_ITERATIONS if use_tools else 1
     account = request.user.credit_account
     shadow_category = task_category("bara", workspace=True, tools=bool(tool_schemas))
     shadow_run = safe_shadow_run(
@@ -746,7 +780,7 @@ def send_message(request, workspace_id, conversation_id):
 
     usage = {"prompt": 0, "completion": 0, "chars": 0, "calls": 0}
     text_parts = []
-    tools_used = set()
+    tools_used = ({'read_file'} if prepared_context else set()) | ({'web_search'} if 'web' in prepared else set())
     settled = {"done": False, "charged_credits": 0, "shortfall": 0}
 
     def settle(outcome):
@@ -769,7 +803,7 @@ def send_message(request, workspace_id, conversation_id):
             text += "\n\n*(réponse interrompue)*"
         if text:
             WorkMessage.objects.create(workspace=workspace, conversation=conversation, role="assistant", content=text)
-        route_outcome = "success" if outcome == "ok" and usage["calls"] else "error" if outcome == "error" else "interrupted"
+        route_outcome = "success" if outcome == "ok" and usage["calls"] and not (run.required - run.completed) else "error" if outcome in {"error", "ok"} else "interrupted"
         record_shadow_run(
             request.user,
             shadow_run,
@@ -785,29 +819,31 @@ def send_message(request, workspace_id, conversation_id):
         error_message = ""
         iteration = 0
         try:
-            while iteration < MAX_AGENT_ITERATIONS:
+            for notice in notices:
+                yield _sse("token", {"text": notice['message'] + '\n\n'})
+                text_parts.append(notice['message'] + '\n\n')
+            while iteration < (MAX_AGENT_ITERATIONS if use_tools else 1):
                 iteration += 1
                 pending_tool_calls = {}
                 turn_text = []
                 turn_started = False
 
-                for event in call_llm_with_tools_stream(
-                    provider=active_model.provider,
-                    api_key=api_key,
-                    model_id=active_model.model_id,
-                    messages=messages_payload,
-                    system_prompt=system_prompt,
-                    tools=tool_schemas,
-                ):
+                provider_args = dict(provider=active_model.provider, api_key=api_key,
+                                     model_id=active_model.model_id, messages=messages_payload,
+                                     system_prompt=system_prompt)
+                provider_events = (call_llm_with_tools_stream(**provider_args, tools=tool_schemas)
+                                   if use_tools else stream_llm_provider(**provider_args))
+                for event in provider_events:
                     if not turn_started:
                         turn_started = True
                         usage["calls"] += 1  # on ne facture un appel que s'il a commencé à répondre
 
                     if event["type"] == "delta":
                         turn_text.append(event["content"])
-                        text_parts.append(event["content"])
                         usage["chars"] += len(event["content"])
-                        yield _sse("token", {"text": event["content"]})
+                        if not run.required:
+                            text_parts.append(event["content"])
+                            yield _sse("token", {"text": event["content"]})
 
                     elif event["type"] == "tool_call_delta":
                         entry = pending_tool_calls.setdefault(event["index"], {"id": None, "name": "", "arguments": ""})
@@ -817,14 +853,14 @@ def send_message(request, workspace_id, conversation_id):
                             entry["name"] = event["name"]
                         entry["arguments"] += event.get("arguments_delta") or ""
 
-                    elif event["type"] == "done":
-                        reported = event.get("usage") or {}
-                        usage["prompt"] += reported.get("prompt_tokens", 0)
-                        usage["completion"] += reported.get("completion_tokens", 0)
+                    elif event["type"] in {"done", "usage"}:
+                        reported = event.get("usage") or event
+                        usage["prompt"] += reported.get("prompt_tokens", reported.get("input_tokens", 0))
+                        usage["completion"] += reported.get("completion_tokens", reported.get("output_tokens", 0))
 
                 tool_calls_list = [
                     {"id": v["id"], "type": "function", "function": {"name": v["name"], "arguments": v["arguments"]}}
-                    for v in pending_tool_calls.values()
+                    for v in list(pending_tool_calls.values())[:16]
                 ]
                 assistant_msg = {"role": "assistant", "content": "".join(turn_text) or None}
                 if tool_calls_list:
@@ -832,6 +868,10 @@ def send_message(request, workspace_id, conversation_id):
                 messages_payload.append(assistant_msg)
 
                 if not tool_calls_list:
+                    if run.required:
+                        final = run.finish(''.join(turn_text))
+                        text_parts.append(final)
+                        yield _sse("token", {"text": final})
                     break
 
                 for tc in tool_calls_list:
@@ -848,10 +888,14 @@ def send_message(request, workspace_id, conversation_id):
                     yield _sse("step", {"status": "calling_tool", "tool": tool_name})
                     if tool_name.startswith("blender_"):
                         yield _sse("step", {"status": "waiting_plugin", "tool": tool_name})
-                    if tool_blocked:
+                    cached = run.key(tool_name, tool_args)
+                    if cached in run.cached:
+                        tool_result = run.cached[cached]
+                    elif tool_blocked:
                         tool_result = {"error": "Cet outil n'est pas activé pour cet espace de travail."}
                     else:
                         tool_result = dispatch_tool(workspace, tool_name, tool_args, mcp_tool_map, conversation_id=conversation.id)
+                    run.record(tool_name, tool_args, tool_result)
                     _log_tool(workspace, tool_name, tool_args, tool_result)
                     if (
                         isinstance(tool_result, dict)
@@ -876,10 +920,10 @@ def send_message(request, workspace_id, conversation_id):
                         "role": "tool",
                         "tool_call_id": tc["id"],
                         "name": tool_name,
-                        "content": compact_json(tool_result),
+                        "content": compact_json(tool_result)[:24_000],
                     })
             else:
-                note = "\n\n(Limite d'étapes atteinte.)"
+                note = '\n\n' + run.finish("Limite d'étapes atteinte.")
                 text_parts.append(note)
                 yield _sse("token", {"text": note})
 

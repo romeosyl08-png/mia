@@ -22,6 +22,7 @@ from .persona_context import ensure_big_persona, persona_settings, shared_person
 from .media_generation import generate_media, generate_openrouter_media, normalize_generation_options
 from .routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 from ai_user.models import InsufficientCreditsError
+from ai_user.currency import currency_context
 from api.constants import OPENROUTER_RANKING_OPTIONS
 
 from .services import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, ProviderError, call_llm_provider, call_llm_team, estimate_cost, generate_openai_image, is_local_provider, stream_llm_provider, stream_llm_team
@@ -38,7 +39,8 @@ from .sources import CITATION_INSTRUCTIONS, SourceCollector
 from .team import estimate_team_cost
 from .turns import complete_chat_turn as _complete_chat_turn
 from .temporary import persona_memory_context, selected_memory_persona
-from .capabilities import RULES as CAPABILITY_RULES, capability_issue, model_capabilities, request_requirements, supports_images, supports_tools
+from .capabilities import RULES as CAPABILITY_RULES, capability_issue, model_capabilities, request_requirements, requires_tools, supports_images, supports_tools
+from .preparation import prepare_documents, capability_notices
 
 logger = logging.getLogger(__name__)
 IMAGE_GENERATION_COST_USD = 0.042
@@ -214,6 +216,7 @@ def chat_home(request):
 	}
 
 	return render(request, 'chat.html', {
+		**currency_context(request),
 		'ai_models': models,
 		'model_ranking_options': model_ranking_options,
 		'model_rankings_by_id': model_rankings_by_id,
@@ -384,6 +387,10 @@ class SendMessageView(View):
 		if problem:
 			return _chat_error(problem['message'], 'capability_unavailable', 400, required_capability=problem['code'], charged_credits=0)
 		requirements = request_requirements(content)
+		document_context, preparation_problem = prepare_documents(content, workspace, model, allow_ocr=auto_requested)
+		if preparation_problem:
+			return _chat_error(preparation_problem['message'], 'capability_unavailable', 400, required_capability=preparation_problem['code'], charged_credits=0)
+		document_tools_required = bool(workspace and 'file_read' in requirements and not document_context)
 
 		system_prompt = str(payload.get('system_prompt', persona.prompt if persona else ''))
 		messages = []
@@ -412,7 +419,7 @@ class SendMessageView(View):
 		from .memory import memory_context
 		if not temporary:
 			system_prompt += '\n\n' + memory_context(request.user, workspace)
-		workspace_context = get_workspace_context(workspace, content)
+		workspace_context = get_workspace_context(workspace, content) if not workspace or 'read_file' not in (workspace.disabled_tools or []) else ''
 		full_system_prompt = (system_prompt + "\n\n" + workspace_context).strip() if workspace_context else system_prompt
 		full_system_prompt += (
 			"\n\nAccès aux fichiers : un fichier est accessible uniquement si son contenu est fourni dans la conversation "
@@ -500,7 +507,7 @@ class SendMessageView(View):
 					surface='chat',
 					workspace=bool(workspace),
 					streamed='text/event-stream' in request.headers.get('Accept', ''),
-					tools=bool(workspace) or ('web' in requirements and mode != 'web') or 'execute' in requirements,
+					tools=requires_tools(content, mode) or document_tools_required,
 				)
 				if has_images:
 					candidates = [candidate for candidate in candidates if supports_images(candidate)]
@@ -531,7 +538,14 @@ class SendMessageView(View):
 		problem = capability_issue(content, mode, [model], workspace, has_images=has_images, team=team_mode)
 		if problem:
 			return _chat_error(problem['message'], 'capability_unavailable', 400, required_capability=problem['code'], charged_credits=0)
+		prepared_context, preparation_problem = prepare_documents(content, workspace, model)
+		if preparation_problem:
+			return _chat_error(preparation_problem['message'], 'capability_unavailable', 400, required_capability=preparation_problem['code'], charged_credits=0)
+		full_system_prompt += prepared_context
+		prefetch_web = mode == 'web' or 'web' in requirements
 		use_tools = tools_requested and not team_mode and supports_tools(model) is not False
+		if not use_tools:
+			full_system_prompt += '\n\nAucun appel d’outil n’est disponible pour cette réponse. Utilise uniquement les informations fournies. Ne prétends pas avoir exécuté une action sur un fichier.'
 		if attachment_ids:
 			if team_mode or 'image' not in model.input_modalities or 'anthropic' in f'{model.provider.slug} {model.provider.name}'.lower():
 				return _chat_error('Choisis un modèle compatible avec les images en mode simple.', 'vision_unavailable', 400)
@@ -551,7 +565,8 @@ class SendMessageView(View):
 						previous['content'] = [{'type':'text','text':matching.content}, *image_parts(workspace, matching.image_file_ids)]
 					except ValueError:
 						pass  # Deleted or moved images are never read across a workspace boundary.
-		if mode == 'web':
+		if prefetch_web:
+			search_query = search_query or _web_search_query(content, messages)
 			if not search_query:
 				return _chat_error('Précise le sujet à rechercher sur le Web.', 'web_search_query_missing', 400)
 			search_data = bara_tool_definitions.web_search(None, search_query)
@@ -580,9 +595,11 @@ class SendMessageView(View):
 			reserve = estimate_team_cost(team_models, content, full_system_prompt, messages, max_tokens, team_strategy)
 		account = request.user.credit_account
 		shadow_run = None
-		file_tools_used = {'web_search'} if mode == 'web' else set()
+		file_tools_used = {'web_search'} if prefetch_web else set()
+		if prepared_context:
+			file_tools_used.add('read_file')
 		team_usage = []
-		tool_events = []
+		tool_events = capability_notices(model, workspace, prepared=bool(prepared_context), web=prefetch_web and not use_tools, user=request.user, category=task_category('chat', mode, workspace=bool(workspace), tools=use_tools))
 		if not temporary:
 			category = task_category('chat', mode, workspace=bool(workspace), tools=use_tools)
 			shadow_run = safe_shadow_run(
@@ -613,7 +630,7 @@ class SendMessageView(View):
 					request, conversation, persona, content, model, team_models, team_mode,
 					messages, full_system_prompt, temperature, top_p, max_tokens,
 					reserve, estimated_input, account, edit_message, temporary, sources,
-					shadow_run, balance_before, team_strategy, mode == 'web',
+					shadow_run, balance_before, team_strategy, prefetch_web,
 					workspace, file_tools_used, team_usage, use_tools, tool_events, attachment_ids,
 				),
 				content_type='text/event-stream',
@@ -661,7 +678,7 @@ class SendMessageView(View):
 					max_tokens,
 					top_p,
 				)
-			if mode == 'web':
+			if prefetch_web:
 				_validate_web_reply(reply)
 			if not reply.strip():
 				raise ProviderError('Le modèle n’a renvoyé aucun texte.')
@@ -695,7 +712,7 @@ class SendMessageView(View):
 			record_shadow_run(request.user, shadow_run, 'error')
 			return _chat_error('Impossible d’enregistrer la réponse. Les crédits ont été remboursés.', 'storage_error', 500)
 		observation = record_shadow_run(
-			request.user, shadow_run, 'success',
+			request.user, shadow_run, 'error' if any(event.get('type') == 'verification' and event.get('status') == 'incomplete' for event in tool_events) else 'success',
 			charged_credits=result['charged_credits'],
 			prompt_tokens=result['prompt_tokens'],
 			completion_tokens=result['completion_tokens'],
@@ -725,6 +742,9 @@ class SendMessageView(View):
 					return None
 			try:
 				yield _sse_event({'type':'turn_started','recovery_token':recovery_token})
+				for notice in tool_events or []:
+					if notice.get('type') == 'notice':
+						yield _sse_event(notice)
 				if use_tools:
 					api_key = model.provider.keys.filter(is_active=True).order_by('id').first()
 					if (not api_key and not is_local_provider(model.provider)) or not model.provider.base_url:
@@ -779,7 +799,7 @@ class SendMessageView(View):
 				)
 				settled = True
 				observation = record_shadow_run(
-					request.user, shadow_run, 'success',
+					request.user, shadow_run, 'error' if any(event.get('type') == 'verification' and event.get('status') == 'incomplete' for event in tool_events) else 'success',
 					charged_credits=result['charged_credits'],
 					prompt_tokens=result['prompt_tokens'],
 					completion_tokens=result['completion_tokens'],
@@ -1529,7 +1549,6 @@ class PersonaMemorySuggestionView(View):
 
 
 def about_page(request):
-	from ai_user.currency import currency_context
 	context = {
 		'is_authenticated': request.user.is_authenticated,
 	}

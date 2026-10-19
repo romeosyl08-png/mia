@@ -16,6 +16,22 @@ const chatConfig = JSON.parse(chatConfigElement.textContent);
     showChatNotice.timer = window.setTimeout(() => notice.classList.remove("show"), 5000);
   }
 
+  function showCapabilityIssue(problem){
+    showChatNotice(problem.message);
+    if(!['tools', 'vision', 'vision_unknown'].includes(problem.code) || state.modelId === 'auto') return;
+    const notice = document.getElementById('creditNotice');
+    if(!notice) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Choisir Auto 2AI';
+    button.addEventListener('click', async () => {
+      await switchModel('auto');
+      showChatNotice('Auto 2AI sélectionné. Ta demande est conservée ; tu peux l’envoyer.');
+    });
+    notice.appendChild(button);
+    window.clearTimeout(showChatNotice.timer);
+  }
+
   function renderImageAttachments(){
     const bar = document.getElementById('imageAttachmentBar');
     const convo = activeConvo();
@@ -1424,6 +1440,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       const remainingBalance = Number(data.remaining_balance);
       if(Number.isFinite(remainingBalance)) state.credits = remainingBalance;
       const error = new Error((data.error && data.error.message) || "Erreur serveur " + res.status);
+      error.capabilityCode = data.required_capability;
       error.preflight = ['capability_unavailable', 'unsupported_tools', 'vision_unavailable'].includes(data.error?.type);
       throw error;
     }
@@ -1554,7 +1571,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const targetMessage = editTarget ? current?.messages[editTarget.messageIndex] : reuseLastUser ? current?.messages.at(-1) : null;
     const problem = messageCapabilityIssue(text, current, targetMessage?.imageFileIds,
       editTarget ? current?.messages.slice(0, editTarget.messageIndex) : null);
-    if(problem){ showChatNotice(problem.message); return; }
+    if(problem){ showCapabilityIssue(problem); return; }
     state.sending = true;
     renderCredits();
     let convo = activeConvo();
@@ -1625,6 +1642,10 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
           if(event.type === 'turn_started') streamingMessage.recoveryToken = event.recovery_token;
           if(event.type === 'sources') streamingMessage.sources = event.sources || [];
           if(event.type === 'tool_status') streamingMessage.toolStatus = AI2AIChatTools.statusLabel(event);
+          if(event.type === 'notice'){
+            streamingMessage.toolEvents ||= [];
+            streamingMessage.toolEvents.push(event);
+          }
           renderStreamingMessage();
         });
         if(convo.id === null && data.conversation_id){
@@ -1679,7 +1700,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
       if(err.preflight){
         convo.messages = messagesBeforeSend;
         if(!reuseLastUser && !editTarget && !el('composerInput').value) el('composerInput').value = text;
-        showChatNotice(err.message);
+        showCapabilityIssue({message: err.message, code: err.capabilityCode});
         renderAll();
         return;
       }
@@ -1728,7 +1749,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     const previousMessage = convo && convo.messages[messageIndex - 1];
     if(!convo || !previousMessage || previousMessage.role !== "user" || state.sending) return;
     const problem = messageCapabilityIssue(previousMessage.content, convo, previousMessage.imageFileIds, convo.messages.slice(0, messageIndex));
-    if(problem){ showChatNotice(problem.message); return; }
+    if(problem){ showCapabilityIssue(problem); return; }
     convo.messages.splice(messageIndex, 1);
     renderAll();
     await sendMessage(previousMessage.content, true);
@@ -2679,7 +2700,7 @@ fileInput.addEventListener("change", async () => {
       return;
     }
     const problem = messageCapabilityIssue(text);
-    if(problem){ showChatNotice(problem.message); return; }
+    if(problem){ showCapabilityIssue(problem); return; }
     input.value = "";
     input.style.height = "auto";
     sendMessage(text);

@@ -68,6 +68,18 @@ class ChatCompletionsTests(TestCase):
     def test_invalid_key_is_rejected(self):
         self.assertEqual(self.call(token="sk-ai2ai-wrong").status_code, 401)
 
+    def test_known_tool_incompatibility_is_rejected_before_charge_or_upstream(self):
+        AIModel.objects.filter(model_id='fake-model').update(supported_parameters=[])
+        before = self.balance()
+        with patch('api.views.urlopen') as upstream:
+            response = self.call({'tools': [{'type': 'function', 'function': {
+                'name': 'read_file', 'parameters': {'type': 'object', 'properties': {}},
+            }}]})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error']['type'], 'capability_unavailable')
+        self.assertEqual(self.balance(), before)
+        upstream.assert_not_called()
+
     def test_openrouter_provider_uses_its_chat_completions_endpoint(self):
         provider = APIProvider.objects.create(
             name="OpenRouter", slug="openrouter", base_url="https://openrouter.ai/api", is_active=True

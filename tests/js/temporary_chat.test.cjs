@@ -48,7 +48,8 @@ function harness({personas = [], temporaryChat = false, initializing = false, re
     createStreamingRenderer: () => () => {},
     renderCredits() {}, renderHeader() {},
     estimateTokens: text => Math.max(1, Math.round(text.length / 4)),
-    showChatNotice: message => notices.push(message)
+    showChatNotice: message => notices.push(message),
+    showCapabilityIssue: problem => notices.push(problem.message)
   };
   vm.runInNewContext(
     section('  function conversationKey(', '  async function loadConversations(')

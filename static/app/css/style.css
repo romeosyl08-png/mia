@@ -28,6 +28,8 @@
     transition:opacity .2s ease,transform .2s ease;
   }
   .credit-notice.show{transform:translate(-50%,0);opacity:1;}
+  .credit-notice button{display:block;margin:8px auto 0;padding:7px 12px;border:1px solid currentColor;border-radius:7px;background:transparent;color:inherit;font:inherit;cursor:pointer;}
+  .credit-notice.show button{pointer-events:auto;}
   .app.left-collapsed .sidebar,
   .app.right-collapsed .panel{visibility:hidden;}
   .panel-toggle{
@@ -463,7 +465,7 @@
   .citation-snippet{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:11.5px;opacity:.7;}
   .chat-tool-status{margin:8px 0;color:var(--accent);font-size:12px;}
   .chat-tool-confirmation{margin-top:12px;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;}
-  .chat-tool-confirmation>strong{font-size:13px;}
+  .chat-tool-confirmation>strong{display:block;margin-bottom:6px;font-size:13px;}
   .chat-tool-confirmation>p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:220px;overflow:auto;}
   .chat-action-status{display:block;font-size:11px;opacity:.7;}
   .chat-action-controls{display:flex;gap:8px;margin-top:10px;}

@@ -29,7 +29,7 @@ class ChatWorkspaceToolTests(TestCase):
         self.client.force_login(self.user)
         provider = APIProvider.objects.create(name='OpenRouter tool fixture', slug='openrouter', base_url='https://example.test/api')
         provider.keys.create(name='dummy', key='not-a-real-key')
-        self.model = AIModel.objects.create(provider=provider, name='Tool model', model_id='tools', input_price_per_million=1, output_price_per_million=1)
+        self.model = AIModel.objects.create(provider=provider, name='Tool model', model_id='tools', supported_parameters=['tools'], input_price_per_million=1, output_price_per_million=1)
         self.workspace = Workspace.objects.create(user=self.user, title='Tools workspace', instructions='Compare les données avant de modifier les fichiers.')
 
     def send(self, responses, workspace=False, streamed=False, **extra):

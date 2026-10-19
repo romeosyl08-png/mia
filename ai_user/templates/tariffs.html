@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static model_prices %}
 
 {% block title %}Tarifs des IA — 2AI{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/tariffs.css' %}?v=frontend-1">
+<link rel="stylesheet" href="{% static 'app/css/tariffs.css' %}?v=currency-1">
 {% endblock %}
 
 {% block body %}
@@ -28,7 +28,7 @@
     <div class="tariffs-panel-heading">
       <div>
         <p class="tariffs-eyebrow">Catalogue cloud</p>
-        <h2 id="modelTariffsHeading">Tarif en jetons par million de tokens</h2>
+        <h2 id="modelTariffsHeading">Tarifs 2AI en {{ currency.code }} par million de tokens</h2>
       </div>
       <label class="tariffs-search">
         <span>Rechercher une IA</span>
@@ -37,9 +37,10 @@
     </div>
 
     <p class="tariffs-explanation">
-      Le tarif inclut le multiplicateur actuel de {{ margin_multiplier }}×. Les tokens du message et de l’historique
+      Les tarifs incluent la marge du service ({{ margin_multiplier }}×). Les tokens du message et de l’historique
       sont facturés au tarif « entrée » ; la réponse est facturée au tarif « sortie ».
-      Les montants sont arrondis au jeton le plus proche.
+      Le débit s’effectue en jetons 2AI, arrondis au jeton le plus proche, avec un minimum d’un jeton par appel facturé.
+      <a href="{% url 'recharge-page' %}">Changer de monnaie</a>.
     </p>
 
     <div class="tariffs-table-wrap" role="region" aria-label="Tarifs des modèles IA" tabindex="0">
@@ -47,8 +48,8 @@
         <thead>
           <tr>
             <th scope="col">IA / modèle</th>
-            <th scope="col">Entrée<br><span>jetons / 1M tokens</span></th>
-            <th scope="col">Sortie<br><span>jetons / 1M tokens</span></th>
+            <th scope="col">Entrée<br><span>{{ currency.code }} / 1M tokens · marge incluse</span></th>
+            <th scope="col">Sortie<br><span>{{ currency.code }} / 1M tokens · marge incluse</span></th>
           </tr>
         </thead>
         <tbody id="tariffsTableBody">
@@ -58,8 +59,8 @@
               <span class="tariffs-model-name">{{ tariff.name }}</span>
               <code>{{ tariff.model_id }}</code>
             </th>
-            <td>{{ tariff.input_credits }}</td>
-            <td>{{ tariff.output_credits }}</td>
+            <td><span>{{ tariff.input_price|model_price:currency }}</span><small>{{ tariff.input_credits }} jetons / 1M tokens</small></td>
+            <td><span>{{ tariff.output_price|model_price:currency }}</span><small>{{ tariff.output_credits }} jetons / 1M tokens</small></td>
           </tr>
           {% empty %}
           <tr><td colspan="3" class="tariffs-empty">Aucun modèle cloud actif n’est disponible pour le moment.</td></tr>

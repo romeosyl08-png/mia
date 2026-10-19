@@ -2,10 +2,24 @@
 (function(root){
   function requirements(content, rules){
     let text = content.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/’/g, "'");
-    text = text.split('\n', 1)[0].slice(0, 600).replace(new RegExp(rules.prefix), '');
-    return new Set(Object.entries(rules.rules)
-      .filter(([name, pattern]) => new RegExp(pattern).test(text) && !(name.startsWith('file_') && content.trim().includes('\n')))
-      .map(([name]) => name));
+    text = text.slice(0, 4000);
+    const needed = new Set();
+    for(let line of text.split('\n').slice(0, 16)){
+      line = line.trim().replace(new RegExp(rules.listPrefix), '');
+      line = line.replace(new RegExp(rules.prefix), '').trim();
+      if(!line) continue;
+      if(new RegExp(rules.dataStart).test(line)) break;
+      let found = [];
+      for(let clause of line.split(new RegExp(rules.clauseSeparator))){
+        clause = clause.trim().replace(new RegExp(rules.prefix), '');
+        found = Object.entries(rules.rules).filter(([name, pattern]) =>
+          new RegExp(pattern).test(clause) && !(name.startsWith('file_') && new RegExp(rules.inlineData).test(clause) && (text.includes('\n') || clause.slice(clause.indexOf(':') + 1).trim()))
+        ).map(([name]) => name);
+        found.forEach(name => needed.add(name));
+      }
+      if(line.includes(':') || !found.length) break;
+    }
+    return needed;
   }
 
   function check(content, options, config){
@@ -25,10 +39,11 @@
     const fileRequests = Array.from(needed).filter(name => name.startsWith('file_'));
     if(fileRequests.length && !workspace) return blocked('workspace');
     if(fileRequests.some(name => rules.toolRequirements[name].every(tool => disabled.has(tool)))) return blocked('file_tool');
-    const needsTools = Boolean(workspace) || needed.has('execute') || (needed.has('web') && mode !== 'web');
-    if(team && (needsTools || hasImages)) return blocked('team');
+    const needsTools = Array.from(needed).some(name => !['file_read', 'web'].includes(name));
+    if(team && (workspace || needsTools || hasImages)) return blocked('team');
     const models = modelIds.filter(id => id !== 'auto').map(id => config.modelCapabilities?.[id]).filter(Boolean);
     if(hasImages && models.some(model => model.images === false)) return blocked('vision');
+    if(hasImages && models.some(model => model.images == null)) return blocked('vision_unknown');
     if(needsTools && models.some(model => model.tools === false)) return blocked('tools');
     return null;
   }

@@ -75,11 +75,11 @@ class ProductTests(TestCase):
         with patch('chat.file_tools.call_llm_with_tools',side_effect=[({'tool_calls':[call]},10,10),({'content':'Document terminé'},10,10)]):
             response = self.client.post('/chat/api/send/',json.dumps({'content':'Crée un Word','model_id':self.model.model_id,'workspace_id':self.workspace.pk}),content_type='application/json')
         self.assertEqual(response.status_code,200)
-        artifact = response.json()['tool_events'][0]
+        artifact = next(event for event in response.json()['tool_events'] if event['type'] == 'artifact')
         self.assertEqual(artifact['type'],'artifact')
         self.assertEqual(self.client.get(artifact['url']).status_code,200)
         saved = self.client.get('/chat/api/conversations/'+str(response.json()['conversation_id'])+'/').json()
-        self.assertEqual(saved['messages'][-1]['tool_events'][0],artifact)
+        self.assertIn(artifact,saved['messages'][-1]['tool_events'])
 
     def test_attachments_cannot_read_another_workspace(self):
         self.client.force_login(self.other)

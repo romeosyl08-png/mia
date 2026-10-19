@@ -5,7 +5,7 @@
 {% block body_attributes %}{% endblock %}
 {% block install_controls %}{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=creation-1">
+<link rel="stylesheet" href="{% static 'app/css/style.css' %}?v=capabilities-2">
 <link rel="stylesheet" href="{% static 'app/css/charts.css' %}?v=frontend-1">
 <link rel="stylesheet" href="{% static 'app/css/idea_previews.css' %}?v=ideas-1">
 {% endblock %}
@@ -213,6 +213,7 @@
           <option value="plan_execute_verify">Planifier, réaliser, vérifier</option>
         </select>
         <p class="team-exchange-hint">Les IA échangent des notes courtes et des corrections. Une seule réponse finale est rédigée.</p>
+        <p class="team-exchange-hint">Tarifs 2AI en {{ currency.code }}, marge incluse, par million de tokens. Chaque appel de l’équipe est facturé. <a href="{% url 'recharge-page' %}">Changer de monnaie</a>.</p>
         <div class="team-model-grid" id="teamModelGrid">
   {% for ai_model in ai_models %}
         <div class="team-model-row">
@@ -220,7 +221,8 @@
           <span class="team-model-check">✓</span>
           <span class="team-model-copy">
             <strong>{{ ai_model.name }}</strong>
-            <span>{{ ai_model.output_price_per_million|usd_price }} / 1M tokens de sortie</span>
+            <span>Entrée : {{ ai_model.input_price_per_million|model_price:currency }}</span>
+            <span>Sortie : {{ ai_model.output_price_per_million|model_price:currency }}</span>
           </span>
         </button>
         <button type="button" class="model-favorite-btn" data-model-favorite="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" aria-pressed="false" aria-label="Ajouter {{ ai_model.name }} aux favoris" title="Ajouter aux favoris">
@@ -284,7 +286,7 @@
       <input class="model-picker-search" id="modelPickerSearch" type="search" placeholder="Rechercher un modèle">
       <button type="button" class="model-favorites-filter" id="modelFavoritesOnlyBtn" aria-pressed="false">☆ Favoris</button>
     </div>
-    <p class="model-picker-pricing-note">Prix fournisseur par million de tokens : entrée = messages et contexte, sortie = réponse. La facturation 2AI ajoute la marge du service.</p>
+    <p class="model-picker-pricing-note">Tarifs 2AI en {{ currency.code }}, marge du service incluse, par million de tokens : entrée = messages et contexte, sortie = réponse. <a href="{% url 'recharge-page' %}">Changer de monnaie</a>.</p>
     <div class="model-picker-list" id="modelPickerList">
       {% for ai_model in ai_models %}
       <div class="model-picker-row">
@@ -293,7 +295,7 @@
           <strong>{{ ai_model.name }}</strong>
           <span class="model-picker-ranking" hidden></span>
         </span>
-        <span class="model-picker-price"><span>Entrée : {{ ai_model.input_price_per_million|usd_price }}</span><span>Sortie : {{ ai_model.output_price_per_million|usd_price }}</span><small>/ 1M tokens</small></span>
+        <span class="model-picker-price"><span>Entrée : {{ ai_model.input_price_per_million|model_price:currency }}</span><span>Sortie : {{ ai_model.output_price_per_million|model_price:currency }}</span><small>/ 1M tokens · marge incluse</small></span>
       </button>
       <button type="button" class="model-favorite-btn" data-model-favorite="{{ ai_model.model_id|escape }}" data-model-name="{{ ai_model.name|escape }}" aria-pressed="false" aria-label="Ajouter {{ ai_model.name }} aux favoris" title="Ajouter aux favoris">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3L12 17.4l-5.6 2.9 1.1-6.3-4.6-4.4 6.3-.9Z"></path></svg>
@@ -358,12 +360,12 @@
 <script defer src="{% static 'app/js/chat_transport.js' %}?v=recovery-1"></script>
 <script defer src="{% static 'app/js/message_sources.js' %}?v=citations-1"></script>
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
-<script defer src="{% static 'app/js/chat_tools.js' %}?v=documents-1"></script>
+<script defer src="{% static 'app/js/chat_tools.js' %}?v=capabilities-2"></script>
 <script defer src="{% static 'app/js/idea_previews.js' %}?v=ideas-1"></script>
 <script defer src="{% static 'app/js/shared_links.js' %}?v=ideas-1"></script>
 <script defer src="{% static 'app/js/conversation_context.js' %}?v=continuity-1"></script>
 <script defer src="{% static 'app/js/persona_context.js' %}?v=temporary-actions-2"></script>
-<script defer src="{% static 'app/js/capabilities.js' %}?v=preflight-1"></script>
+<script defer src="{% static 'app/js/capabilities.js' %}?v=capabilities-2"></script>
 <script defer src="{% static 'app/js/model_favorites.js' %}?v=favorites-1"></script>
-<script defer src="{% static 'app/js/script.js' %}?v=continuity-1"></script>
+<script defer src="{% static 'app/js/script.js' %}?v=capabilities-2"></script>
 {% endblock %}

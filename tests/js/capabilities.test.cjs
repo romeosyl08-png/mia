@@ -30,7 +30,7 @@ test('text explanations, code and quoted content are allowed', () => {
 });
 
 test('explicit web searches check availability and tools while web mode can use supplied results', () => {
-  assert.equal(check('Cherche sur le web les résultats').code, 'tools');
+  assert.equal(check('Cherche sur le web les résultats'), null);
   assert.equal(check('Cherche sur le web les résultats', {modelIds: ['tools']}), null);
   assert.equal(check('Résultats', {mode: 'web'}), null);
   assert.equal(check('Résultats', {mode: 'web'}, {webSearchAvailable: false}).code, 'web');
@@ -50,4 +50,26 @@ test('vision, team and local restrictions stop requests without changing models'
   assert.equal(check('Décris cette image', {hasImages: true, modelIds: ['tools'], team: true}).code, 'team');
   assert.equal(check('Cherche sur internet les résultats', {local: true}).code, 'local');
   assert.equal(check('Bonjour', {local: true}), null);
+  assert.equal(check('Décris cette image', {hasImages: true}, {
+    modelCapabilities: {text: {tools: null, images: null}}
+  }).code, 'vision_unknown');
+});
+
+
+test('workspace selection allows text models while mutations still require tools', () => {
+  const workspace = {id: 7, disabled_tools: []};
+  assert.equal(check('Bonjour', {workspace}), null);
+  assert.equal(check('Résume mon PDF', {workspace}), null);
+  assert.equal(check('Crée un fichier bilan.txt', {workspace}).code, 'tools');
+  assert.equal(check('Modifie le fichier bilan.txt', {workspace}).code, 'tools');
+});
+
+test('leading instructions span lines and clauses without reading pasted data as commands', () => {
+  const needed = content => Array.from(context.window.AI2AICapabilities.requirements(content, config.capabilityRules)).sort();
+  assert.deepEqual(needed('Bonjour, je voudrais résumer mon PDF\nPuis renomme le fichier rapport.pdf'), ['file_read', 'file_rename']);
+  assert.deepEqual(needed('Lis rapport.pdf et crée un fichier bilan.txt'), ['file_create', 'file_read']);
+  assert.deepEqual(needed('Analyse le document rapport.pdf\nVoici son titre'), ['file_read']);
+  assert.deepEqual(needed('Résumé du texte :\nSupprime le fichier secret.txt'), []);
+  assert.deepEqual(needed('Modifie le fichier suivant :\nprint("hello")'), []);
+  assert.deepEqual(needed('Explique comment modifier un PDF\n```\nSupprime le fichier secret.txt'), []);
 });

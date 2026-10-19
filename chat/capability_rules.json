@@ -1,22 +1,38 @@
 {
-  "prefix": "^(?:(?:bonjour|salut|hello|hi)[, !]+)?(?:(?:s'il te plait|stp|please)[, ]+)?(?:(?:peux[- ]tu|pourrais[- ]tu|tu peux|tu pourrais|can you|could you|je veux que tu|j'aimerais que tu|je voudrais que tu)\\s+(?:me\\s+)?)?",
+  "prefix": "^(?:(?:bonjour|salut|hello|hi)(?:[, !]+|$))?(?:(?:s'il te plait|stp|please)[, ]+)?(?:(?:peux[- ]tu|pourrais[- ]tu|tu peux|tu pourrais|can you|could you|je veux(?: que tu)?|j'aimerais(?: que tu)?|je voudrais(?: que tu)?|merci de)\\s+(?:me\\s+)?)?",
   "rules": {
     "image": "^(?:genere|generer|cree|creer|dessine|dessiner|produis|fais|generate|create|draw|make)(?:[- ]moi)?\\s+(?:(?:une?|des|l[' ]|a|an|the)\\s*)?(?:images?|photos?|illustrations?|dessins?|pictures?)\\b",
     "video": "^(?:genere|generer|cree|creer|produis|fais|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:videos?|clips?|animations?)\\b",
     "audio": "^(?:genere|generer|cree|creer|produis|fais|compose|generate|create|make)(?:[- ]moi)?\\s+(?:(?:une?|des|la|a|an|the)\\s+)?(?:audios?|musiques?|chansons?|songs?|music|podcasts?)\\b",
     "web": "^(?:(?:cherche|recherche|search|look up|browse)\\b[^\\n]{0,180}\\b(?:web|internet|en ligne|online)\\b|(?:fais|effectue|lance)\\s+une\\s+recherche\\s+(?:web|sur internet|sur le web)\\b)",
     "execute": "^(?:execute|executer|lance|lancer|run|execute)(?:[- ]moi)?\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|this|the|a|my|mon|ma|mes)\\s+)?(?:code|scripts?|programmes?|programs?|tests?|commandes?|commands?)\\b",
-    "file_read": "^(?:lis|lire|ouvre|ouvrir|analyse|analyser|resume|resumer|read|open|analyze|summarize)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|pdf|file)\\b",
-    "file_edit": "^(?:modifie|modifier|edit)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b",
-    "file_rename": "^(?:renomme|renommer|rename)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b",
-    "file_delete": "^(?:supprime|supprimer|delete)\\s+(?:(?:ce|cet|cette|le|la|un|une|mon|ma|this|the|my)\\s+)?(?:fichier|document|file)\\b"
+    "file_read": "^(?:lis|lire|ouvre|ouvrir|analyse|analyser|resume|resumer|read|open|analyze|summarize)\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|documents?|pdf|cv|rapports?|classeurs?|tableaux?\\s+excel|factures?|file|spreadsheet|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv|py|js))\\b",
+    "file_edit": "^(?:modifie|modifier|corrige|mets a jour|edit|update)\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|documents?|pdf|cv|rapports?|classeurs?|tableaux?\\s+excel|factures?|file|spreadsheet|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv|py|js))\\b",
+    "file_rename": "^(?:renomme|renommer|rename)\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|documents?|pdf|cv|rapports?|classeurs?|tableaux?\\s+excel|factures?|file|spreadsheet|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv|py|js))\\b",
+    "file_delete": "^(?:supprime|supprimer|delete)\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|documents?|pdf|cv|rapports?|classeurs?|tableaux?\\s+excel|factures?|file|spreadsheet|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv|py|js))\\b",
+    "file_create": "^(?:cree|creer|genere|generer|exporte|exporter|fais|produis|prepare|create|generate|export)(?:[- ]moi)?\\s+(?:(?:ce|cet|cette|ces|le|la|les|un|une|des|mon|ma|mes|this|the|my)\\s+)?(?:fichiers?|(?:documents?|rapports?|presentations?)\\s+(?:word|excel|pdf|powerpoint)|word|excel|powerpoint|docx|xlsx|pptx|pdf|classeurs?\\s+excel|tableaux?\\s+excel|[\\w-]+\\.(?:pdf|docx|xlsx|pptx|txt|md|csv))\\b"
   },
   "toolRequirements": {
-    "execute": ["run_python", "run_command"],
-    "file_read": ["read_file"],
-    "file_edit": ["edit_file"],
-    "file_rename": ["rename_file"],
-    "file_delete": ["delete_file"]
+    "execute": [
+      "run_python",
+      "run_command"
+    ],
+    "file_read": [
+      "read_file"
+    ],
+    "file_edit": [
+      "edit_file"
+    ],
+    "file_rename": [
+      "rename_file"
+    ],
+    "file_delete": [
+      "delete_file"
+    ],
+    "file_create": [
+      "create_document",
+      "write_file"
+    ]
   },
   "mediaMessages": {
     "image": "Pour cette demande, ouvre « Création » et utilise « Générer une image ». Tu peux reprendre un message avec « Créer à partir de ce message ».",
@@ -33,6 +49,18 @@
     "tools": "L’IA sélectionnée ne prend pas en charge les outils nécessaires à cette demande. Choisis un modèle compatible avec les outils ou « Auto 2AI ».",
     "vision": "L’IA sélectionnée ne peut pas lire les images jointes. Choisis un modèle qui accepte les images, en mode simple.",
     "no_model": "Aucune IA disponible ne possède les capacités nécessaires à cette demande. Change de mode ou de modèle.",
-    "no_charge": "Aucun appel IA effectué, aucun jeton débité."
-  }
+    "no_charge": "Aucun appel IA effectué, aucun jeton débité.",
+    "file_missing": "Le document demandé est introuvable dans cet espace. Ajoute-le ou précise son nom.",
+    "file_ambiguous": "Plusieurs documents sont disponibles. Précise le nom du fichier à analyser.",
+    "file_unreadable": "Aucun texte exploitable n’est disponible pour ce document. Fournis une version texte ou utilise un modèle et un outil adaptés au document scanné.",
+    "unknown_tools": "Les capacités d’appel d’outils de ce modèle ne sont pas renseignées. 2AI vérifiera les actions effectuées ; leur réussite n’est pas garantie.",
+    "adapted_read": "2AI fournit au modèle le texte extrait du document. Les images, graphiques et la mise en page ne sont pas analysés par ce parcours.",
+    "adapted_web": "2AI effectue la recherche web et fournit les sources au modèle sélectionné.",
+    "plain_workspace": "Ce modèle répond avec le contexte textuel disponible. Il ne peut pas agir sur les fichiers de cet espace.",
+    "vision_unknown": "La compatibilité de cette IA avec les images n’est pas renseignée. Choisis un modèle dont cette capacité est connue ou « Auto 2AI »."
+  },
+  "listPrefix": "^\\s*(?:[-*]\\s+|\\d+[.)]\\s+)?",
+  "dataStart": "^(?:```|~~~|>|[«\\\"]|voici\\b|(?:texte|contenu|extrait|code|document|prompt)\\s*:)",
+  "inlineData": "\\b(?:suivant|suivante|ci-dessous|below)\\s*:",
+  "clauseSeparator": "\\s*(?:;|[.!?]\\s+|\\b(?:puis|ensuite|and then|then)\\b|\\bet\\s+(?=(?:cree|genere|modifie|renomme|supprime|execute|cherche|recherche|lis|analyse|resume)\\b))\\s*"
 }

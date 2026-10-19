@@ -25,6 +25,7 @@ from chat.routing import record_shadow_run, safe_shadow_run, task_category
 from chat.routing import eligible_models, model_key, recommend_model
 from chat.models import ChatPreferences
 from chat.billing import settle_reservation
+from chat.capabilities import supports_tools
 
 from .models import AIModel
 
@@ -460,6 +461,8 @@ def chat_completions(request):
         if model is None:
             return _error(f"Model {requested_model_id!r} was not found or is inactive.", "model_not_found", 404, "model")
     is_anthropic = _is_anthropic(model.provider)
+    if tools and supports_tools(model) is False:
+        return _error("This model does not support function tools. Choose a compatible model or 'auto'. No credits charged.", "capability_unavailable", 400, "tools")
     if tools and is_anthropic:
         return _error("Function tools are not supported for this provider yet.", "invalid_request_error", 400, "tools")
     if tools and stream:

@@ -58,4 +58,4 @@
   <details><summary>Mes récompenses</summary><p>Bonus utilisables uniquement sur 2AI, sans retrait en argent.</p><ul>{% for reward in rewards %}<li>{{ reward.created_at|date:"d/m/Y" }} · {{ reward.credits }} jetons · {{ reward.get_status_display }}</li>{% empty %}<li>Aucune récompense.</li>{% endfor %}</ul></details>
 </main>
 {% endblock %}
-{% block extra_js %}<script defer src="{% static 'app/js/comparisons.js' %}"></script>{% endblock %}
+{% block extra_js %}<script defer src="{% static 'app/js/comparisons.js' %}?v=currency-1"></script>{% endblock %}
