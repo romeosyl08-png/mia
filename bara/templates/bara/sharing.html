@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% block body %}<main class="work-page">
 <a href="{% url 'bara:detail' workspace.id %}">← {{ workspace.title }}</a><h1>Partager cet espace</h1>
-<p>Un membre peut accéder aux conversations et aux fichiers de cet espace. Le rôle Modification permet de modifier les fichiers et de lancer des tâches avec ses propres crédits. Les connexions sont administrées par le propriétaire.</p>
+<p>Un membre peut accéder aux conversations et aux fichiers de cet espace. Le rôle Modification permet de modifier les fichiers et de lancer des tâches avec ses propres jetons. Les connexions sont administrées par le propriétaire.</p>
 <p role="alert">{{ error }}</p><form method="post">{% csrf_token %}
 <label>Compte <input name="username" required></label><label>Rôle <select name="role"><option value="viewer">Lecture</option><option value="editor">Modification</option><option value="remove">Retirer l’accès</option></select></label><button>Enregistrer</button></form>
 <ul>{% for member in members %}<li>{{ member.user.username }} — {{ member.get_role_display }}</li>{% empty %}<li>Aucun membre ajouté.</li>{% endfor %}</ul>

@@ -1,7 +1,6 @@
 import json
 import re
 from functools import wraps
-from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -11,8 +10,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from ai_user.models import InsufficientCreditsError
-from ai_user.currency import format_usd_price, selected_currency
-from chat.billing import CREDITS_PER_DOLLAR, credits_per_million_tokens
+from chat.billing import credits_per_million_tokens
 
 from . import jobs, services
 from .models import CATEGORIES, ComparisonSession
@@ -58,7 +56,7 @@ def owned(request, pk):
     return get_object_or_404(ComparisonSession, pk=pk, user=request.user)
 
 
-def serialize(session, currency):
+def serialize(session):
     evaluation = getattr(session, 'vote', None)
     reveal = session.selection_mode == 'manual' or evaluation is not None
     responses = list(session.responses.select_related('model__provider'))
@@ -79,7 +77,7 @@ def serialize(session, currency):
         if reveal:
             row.update(model={'id': response.model_id, 'name': response.model.name, 'provider': response.model.provider.name},
                 credits_charged=response.credits_charged, provider_cost=str(response.provider_cost),
-                charged_amount_display=format_usd_price(currency, Decimal(response.credits_charged) / CREDITS_PER_DOLLAR),
+                charged_amount_display=f'{response.credits_charged:,} jeton{"s" if response.credits_charged != 1 else ""}'.replace(',', ' '),
                 usage_reliable=response.usage_reliable, input_tokens=response.input_tokens, output_tokens=response.output_tokens)
         data.append(row)
     reward = getattr(evaluation, 'reward', None) if evaluation else None
@@ -116,14 +114,13 @@ def index(request):
 def models(request):
     if not settings.COMPARISON_ENABLED:
         raise Http404
-    currency = selected_currency(request)
     rows = []
     for model in available_models():
         estimated_credits = quote('', model, settings.COMPARISON_MAX_OUTPUT_TOKENS)[0]
         rows.append({
             'id': model.pk, 'name': model.name, 'provider': model.provider.name,
             'estimated_credits': estimated_credits,
-            'estimated_amount_display': format_usd_price(currency, Decimal(estimated_credits) / CREDITS_PER_DOLLAR),
+            'estimated_amount_display': f'{estimated_credits:,} jeton{"s" if estimated_credits != 1 else ""}'.replace(',', ' '),
             'input_credits_per_million': credits_per_million_tokens(model.input_price_per_million),
             'output_credits_per_million': credits_per_million_tokens(model.output_price_per_million),
         })
@@ -139,7 +136,7 @@ def sessions(request):
     if not settings.COMPARISON_ENABLED:
         raise Http404
     session, created = services.create_comparison(request.user, body(request))
-    return JsonResponse(serialize(session, selected_currency(request)), status=201 if created else 200)
+    return JsonResponse(serialize(session), status=201 if created else 200)
 
 
 @endpoint
@@ -151,7 +148,7 @@ def detail(request, pk):
         return JsonResponse({'deleted': True})
     jobs.finish(session.pk, stale=True)
     session.refresh_from_db()
-    return JsonResponse(serialize(session, selected_currency(request)))
+    return JsonResponse(serialize(session))
 
 
 @endpoint
@@ -160,4 +157,4 @@ def cast_vote(request, pk):
     session = owned(request, pk)
     services.vote(request.user, session.pk, body(request))
     session.refresh_from_db()
-    return JsonResponse(serialize(session, selected_currency(request)))
+    return JsonResponse(serialize(session))

@@ -327,7 +327,7 @@
           assistantDiv.remove();
         }
       } else {
-        appendMessage('error', 'Connexion interrompue. Si des crédits ont été débités, ils sont ajustés automatiquement. Réessaie ton message.');
+        appendMessage('error', 'Connexion interrompue. Si des jetons ont été débités, ils sont ajustés automatiquement. Réessaie ton message.');
       }
     } finally {
       currentController = null;

@@ -4,7 +4,7 @@
 {% block title %}Guide Barrassons{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'app/css/barrassons.css' %}?v=frontend-1">
+<link rel="stylesheet" href="{% static 'app/css/barrassons.css' %}?v=simple-themes-1">
 {% endblock %}
 
 {% block body %}
@@ -16,8 +16,8 @@
 
   <header class="guide-header">
     <p class="guide-eyebrow">AI2AI · OUTIL DE DÉVELOPPEMENT</p>
-    <h1>Utiliser Barrassons</h1>
-    <p>Barrassons est un assistant de développement en ligne de commande. Il peut explorer ton projet, modifier des fichiers avec un aperçu des changements, lancer des tests, reprendre une session et travailler sur une branche Git isolée. Les écritures et les commandes demandent ta confirmation.</p>
+    <h1>Ton projet, une demande.</h1>
+    <p>Lance Barrassons dans ton projet et décris ce que tu veux faire. Il lit le code, propose les changements et te demande confirmation avant de modifier un fichier ou de lancer une commande.</p>
   </header>
 
   <section class="guide-section">
@@ -29,21 +29,43 @@ pipx install .</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>2. Créer une clé API</h2>
-    <ol>
-      <li>Reste sur cette page avec ta session AI2AI connectée, puis ouvre <a href="{% url 'api-keys-page' %}">Clés API</a>.</li>
-      <li>Donne un nom reconnaissable, par exemple <strong>Barrassons local</strong>, et clique sur <strong>Créer</strong>.</li>
-      <li>La clé complète n’est affichée qu’une seule fois. Copie-la directement dans l’invite Barrassons du terminal; ne la colle pas dans une conversation, un fichier du dépôt ou une capture d’écran.</li>
-    </ol>
-    <p>Si une clé a déjà été partagée par erreur, révoque-la ici et crée-en une nouvelle.</p>
+    <h2>2. Lancer</h2>
+    <pre><code>cd /chemin/vers/ton-projet
+barrassons</code></pre>
+    <p>Au premier lancement, colle ta clé API dans la saisie masquée. Si tu n’en as pas, appuie sur Entrée pour ouvrir <a href="{% url 'api-keys-page' %}">Clés API</a> et en créer une. La connexion est enregistrée pour les prochains lancements.</p>
+    <p>Un modèle compatible est choisi automatiquement. Tu peux commencer à écrire tout de suite.</p>
   </section>
 
   <section class="guide-section">
-    <h2>3. Se connecter à la bonne API</h2>
-    <p>Lance Barrassons depuis le dossier que tu veux lui faire analyser :</p>
-    <pre><code>cd /chemin/vers/ai_2ai
-barrassons</code></pre>
-    <p>Au premier lancement, choisis <strong>1</strong> pour ouvrir la page des clés API, ou <strong>2</strong> si tu as déjà une clé. Le serveur enregistré est réutilisé ; Render est le choix par défaut. Aucune URL n’est demandée dans le terminal.</p>
+    <h2>3. Demander</h2>
+    <pre><code>Explique comment fonctionne ce projet.
+
+Corrige le bug de connexion et vérifie les tests.</code></pre>
+    <p>Écris ta demande après <strong>❯</strong>. Relis les changements proposés, puis réponds <code>o</code> pour les autoriser. <code>/undo</code> annule la dernière modification après confirmation et <code>/exit</code> quitte.</p>
+    <p><code>/help</code> rappelle l’essentiel. <code>/model</code> permet de changer d’IA.</p>
+  </section>
+
+  <section class="guide-section">
+    <h2>Les thèmes de Big Persona</h2>
+    <p>Barrassons reprend le thème clair ou sombre et la couleur de ton Big Persona à chaque lancement. Modifie son apparence dans <a href="{% url 'chat:customize' %}">Paramètres</a>, ou choisis directement dans le terminal avec <code>/theme</code>.</p>
+    <ul class="guide-themes" aria-label="Couleurs disponibles">
+      <li><span class="guide-swatch guide-swatch-violet" aria-hidden="true"></span>Violet</li>
+      <li><span class="guide-swatch guide-swatch-amber" aria-hidden="true"></span>Ambre</li>
+      <li><span class="guide-swatch guide-swatch-teal" aria-hidden="true"></span>Sarcelle</li>
+      <li><span class="guide-swatch guide-swatch-brick" aria-hidden="true"></span>Brique</li>
+      <li><span class="guide-swatch guide-swatch-green" aria-hidden="true"></span>Vert</li>
+    </ul>
+    <pre><code>/theme sombre
+/theme sarcelle
+/theme persona</code></pre>
+    <p>Un choix local est mémorisé. <code>/theme persona</code> récupère l’apparence actuelle de Big Persona et réactive sa synchronisation au lancement. Cette synchronisation concerne uniquement le thème et la couleur. <code>--no-color</code> désactive les couleurs.</p>
+  </section>
+
+  <details class="guide-advanced">
+    <summary>Aller plus loin : connexion, modèles, mémoire et outils</summary>
+  <section class="guide-section">
+    <h2>Changer de serveur</h2>
+    <p>Le serveur enregistré est réutilisé ; Render est le choix par défaut.</p>
     <dl class="guide-endpoints">
       <div>
         <dt>Serveur local</dt>
@@ -60,19 +82,19 @@ barrassons</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>4. Choisir un modèle et travailler</h2>
-    <p>Au premier lancement, le sélecteur affiche dix modèles par page. Choisis par numéro ou identifiant, ou saisis un nom pour rechercher. <code>/suivant</code> et <code>/précédent</code> changent de page. Ton choix est mémorisé ; <code>/model</code> permet de le changer pendant la session.</p>
+    <h2>Choisir un modèle</h2>
+    <p><code>/model</code> ouvre le catalogue, avec dix modèles par page. Choisis par numéro ou identifiant, ou saisis un nom pour rechercher. <code>/suivant</code> et <code>/précédent</code> changent de page. Ton choix est mémorisé.</p>
     <p>Le modèle choisi doit accepter les appels d’outils compatibles OpenAI. Les modèles Anthropic ne sont actuellement pas pris en charge par ce CLI. Pour choisir directement un modèle du catalogue, lance <code>barrassons --model identifiant-du-modele</code>.</p>
     <p>Décris une tâche précise et indique si tu veux seulement une analyse ou une modification. Par exemple :</p>
     <pre><code>Analyse le flux d’envoi des messages. Explique le problème et ne modifie aucun fichier.
 
 Lis les tests de l’application, identifie ceux qui couvrent les personas,
 puis propose un test manquant sans l’ajouter.</code></pre>
-    <p>Écris ta demande après l’invite <strong>❯</strong>. Tab complète les commandes et les flèches parcourent l’historique. Termine une ligne par <code>\</code> puis Entrée pour continuer sur la ligne suivante. <code>/status</code> affiche la connexion et les crédits, <code>/verbose</code> développe les résultats des outils, <code>/exit</code> quitte et <code>/help</code> rappelle les commandes.</p>
+    <p>Tab complète les commandes et les flèches parcourent l’historique. Termine une ligne par <code>\</code> puis Entrée pour continuer sur la ligne suivante. <code>/status</code> affiche la connexion et les jetons, <code>/verbose</code> développe les résultats des outils et <code>/help tout</code> rappelle toutes les commandes.</p>
   </section>
 
   <section class="guide-section">
-    <h2>5. Reprendre une session et contrôler les changements</h2>
+    <h2>Reprendre une session et contrôler les changements</h2>
     <p>Les échanges et les sauvegardes des modifications sont conservés localement pour chaque dossier de travail. Pour retrouver la session d’un projet, relance Barrassons depuis ce même dossier :</p>
     <pre><code>barrassons --resume</code></pre>
     <p>Les appels d’outils interrompus sont signalés à la reprise et ne sont pas réexécutés automatiquement.</p>
@@ -85,7 +107,7 @@ puis propose un test manquant sans l’ajouter.</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>6. Lancer les tests et corriger les erreurs</h2>
+    <h2>Lancer les tests et corriger les erreurs</h2>
     <p>Indique la commande de vérification adaptée à ton projet au démarrage. Tu peux aussi la combiner avec la reprise d’une session :</p>
     <pre><code>barrassons --test-command "python -m pytest"
 barrassons --resume --test-command "npm test"</code></pre>
@@ -94,7 +116,7 @@ barrassons --resume --test-command "npm test"</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>7. Travailler sur une branche Git isolée</h2>
+    <h2>Travailler sur une branche Git isolée</h2>
     <p>Pour travailler dans un dossier séparé avec une nouvelle branche, lance :</p>
     <pre><code>barrassons --worktree --test-command "npm test"</code></pre>
     <p>Après confirmation, Barrassons crée un <em>worktree</em> à partir de <code>HEAD</code>. Le dépôt doit être propre : enregistre tes changements avant de lancer cette option. Le terminal affiche le nouveau dossier et sa branche ; les fichiers de ton dossier d’origine restent intacts.</p>
@@ -102,7 +124,7 @@ barrassons --resume --test-command "npm test"</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>8. Utiliser Barrassons dans VS Code</h2>
+    <h2>Utiliser Barrassons dans VS Code</h2>
     <p>Le dépôt contient une extension dans <code>integrations/vscode/</code>. Elle ouvre Barrassons dans le terminal intégré du projet sélectionné et propose deux commandes dans la palette :</p>
     <ul>
       <li><strong>Barrassons : ouvrir dans ce projet</strong> démarre une session dans le dossier choisi.</li>
@@ -112,7 +134,7 @@ barrassons --resume --test-command "npm test"</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2 id="shared-memory">9. Lier la mémoire de Barrassons, Bara et du chat</h2>
+    <h2 id="shared-memory">Lier la mémoire de Barrassons, Bara et du chat</h2>
     <p>Dans <a href="{% url 'chat:memory' %}#memory-links">Ma mémoire → Lier la mémoire entre les assistants</a>, choisis les assistants qui peuvent utiliser tes préférences personnelles. Pour partager la mémoire d’un projet, ouvre <strong>Mémoire</strong> dans cet espace Bara et active son lien Barrassons. Le lien Chat s’applique lorsque ce projet est sélectionné dans le chat.</p>
     <p>Dans Barrassons, <code>/memory</code> affiche les mémoires disponibles et les identifiants des projets accessibles. Choisis ensuite ce que tu veux lier au dossier local :</p>
     <pre><code>/memory chat
@@ -128,7 +150,7 @@ barrassons --memory both --memory-workspace 42</code></pre>
   </section>
 
   <section class="guide-section">
-    <h2>10. Comprendre les confirmations</h2>
+    <h2>Comprendre les confirmations</h2>
     <ul>
       <li>La lecture, la recherche et la liste des fichiers sont disponibles directement.</li>
       <li>Avant d’écrire ou modifier un fichier, Barrassons affiche un diff, le chemin et une demande de confirmation. Réponds <code>o</code> ou <code>oui</code> pour autoriser ; <code>y</code> est aussi accepté. La réponse par défaut est non.</li>
@@ -138,10 +160,11 @@ barrassons --memory both --memory-workspace 42</code></pre>
   </section>
 
   <section class="guide-section guide-last-section">
-    <h2>11. Sécurité et crédits</h2>
-    <p>Les appels modèle débitent les crédits du compte associé à la clé. Une clé doit rester privée : ne la versionne pas et ne la colle pas dans les demandes adressées à l’assistant.</p>
+    <h2>Sécurité et jetons</h2>
+    <p>Les appels modèle débitent le même solde de jetons que Chat et Bara, sur le compte associé à la clé. Une clé doit rester privée : ne la versionne pas et ne la colle pas dans les demandes adressées à l’assistant.</p>
     <p>Les sessions et sauvegardes sont enregistrées dans <code>~/.config/barrassons/sessions/</code> avec des permissions privées. Elles peuvent contenir du code et des résultats d’outils ; la clé API de configuration n’y est pas ajoutée. La commande <code>barrassons logout</code> ne supprime pas ces sessions.</p>
     <p>Pour changer de clé, lance <code>barrassons login</code>. Pour changer de serveur, utilise <code>barrassons login --api-base URL</code>. <code>barrassons logout</code> efface la configuration locale, mais ne révoque pas la clé sur le serveur. Révoque-la aussi depuis la page <a href="{% url 'api-keys-page' %}">Clés API</a> si elle n’est plus utilisée.</p>
   </section>
+  </details>
 </main>
 {% endblock %}

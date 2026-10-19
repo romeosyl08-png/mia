@@ -207,7 +207,7 @@ class ChatCompletionsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         auto_model = next(item for item in response.json()["data"] if item["id"] == "auto")
         self.assertEqual(auto_model["owned_by"], "ai2ai-router")
-        self.assertEqual(auto_model["pricing"]["unit"], "dynamic credits per request")
+        self.assertEqual(auto_model["pricing"]["unit"], "dynamic jetons per request")
 
     def test_real_usage_is_charged_not_the_reserve(self):
         before = self.balance()

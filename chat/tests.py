@@ -1837,7 +1837,8 @@ class ChatHomeTests(TestCase):
 		self.assertContains(response, 'Choisir ton IA')
 		self.assertContains(response, 'IA locale')
 		self.assertContains(response, 'PDF, Word, Excel ou PowerPoint')
-		self.assertContains(response, '600 XOF pour 10&nbsp;000 jetons')
+		self.assertContains(response, 'Les jetons sont la seule monnaie de 2AI')
+		self.assertContains(response, 'Chat, Bara et Barrassons utilisent le même solde')
 		self.assertContains(response, 'href="/tarifs/"')
 
 	def test_anonymous_user_is_sent_to_authentication(self):

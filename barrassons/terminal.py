@@ -23,7 +23,26 @@ def clean(value):
 
 
 class Terminal:
-    colors = {'accent': '38;5;173', 'muted': '90', 'green': '32', 'red': '31', 'code': '36', 'bold': '1'}
+    def __init__(self):
+        self.set_theme('light', '#6C6FCB')
+
+    def set_theme(self, theme, accent):
+        from .themes import ACCENTS
+        self.theme = theme if theme in {'light', 'dark'} else 'light'
+        self.accent = accent if accent in ACCENTS.values() else '#6C6FCB'
+        dark = self.theme == 'dark'
+        self.background = '#191c28' if dark else '#ffffff'
+        self.colors = {
+            'text': '#eeeff7' if dark else '#202332',
+            'muted': '#a5abc0' if dark else '#656b7e',
+            'accent': self.accent, 'green': '#79c96b' if dark else '#33782b',
+            'red': '#f08b7c' if dark else '#B4483A',
+            'code': '#79ceca' if dark else '#31736f',
+        }
+
+    @staticmethod
+    def rgb(hex_color):
+        return ';'.join(str(int(hex_color[index:index + 2], 16)) for index in (1, 3, 5))
 
     @property
     def colored(self):
@@ -35,10 +54,14 @@ class Terminal:
 
     def style(self, value, color):
         value = clean(value)
-        return f'\033[{self.colors[color]}m{value}\033[0m' if self.colored else value
+        if not self.colored:
+            return value
+        foreground = self.colors.get(color, self.colors['text'])
+        bold = '1;' if color == 'bold' else ''
+        return f'\033[{bold}38;2;{self.rgb(foreground)};48;2;{self.rgb(self.background)}m{value}\033[0m'
 
     def line(self, value='', color=None):
-        print(self.style(value, color) if color else clean(value))
+        print(self.style(value, color or 'text'))
 
     def clip(self, value, width=None):
         value = clean(value).replace('\n', ' ').replace('\t', ' ')
@@ -57,18 +80,15 @@ class Terminal:
 
     def welcome(self, root, model, branch, endpoint):
         self.line()
-        self.panel('✦ Barrassons · AI2AI', [
-            'Assistant de développement', '',
-            f'Modèle  {model}', f'Projet  {root}',
-            f'Git     {branch or "sans dépôt"}', f'Serveur {endpoint}',
-        ])
-        self.line('  Écris une demande pour commencer. /help affiche les commandes.', 'muted')
+        self.line('✦ Barrassons', 'accent')
+        self.line(self.clip(f'{root} · {model}'), 'muted')
+        self.line('Décris ce que tu veux faire. /help pour les commandes.', 'muted')
         self.line()
 
     def setup_input(self):
         if readline is None or not sys.stdin.isatty():
             return
-        commands = ['/help', '/model', '/status', '/verbose', '/diff', '/undo', '/verify', '/review',
+        commands = ['/help', '/model', '/theme', '/status', '/verbose', '/diff', '/undo', '/verify', '/review',
                     '/memory', '/remember', '/clear', '/exit']
         def complete(text, state):
             options = [value for value in commands if value.startswith(text)]

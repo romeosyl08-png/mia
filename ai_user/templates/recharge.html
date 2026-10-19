@@ -11,9 +11,9 @@
     <span class="recharge-brand">{% include "includes/app_logo.html" with logo_class="app-logo--compact" %} <span aria-hidden="true">/</span> MON COMPTE</span>
   </nav>
   <header class="recharge-hero">
-    <p class="recharge-eyebrow">Crédits 2AI</p>
+    <p class="recharge-eyebrow">Jetons 2AI</p>
     <h1>Recharge ton solde</h1>
-    <p>Choisis un montant et un moyen de paiement. Tes jetons seront ajoutés après confirmation.</p>
+    <p>Un seul solde de jetons pour Chat, Bara et Barrassons. Choisis un montant et un moyen de paiement ; tes jetons seront ajoutés après confirmation.</p>
     <div class="recharge-equivalence">
       <strong>{{ reference_amount_display }} {{ currency.code }} = {{ credits_per_dollar_display }} jetons</strong>
       <a href="{% url 'tariffs-page' %}">Voir les tarifs de toutes les IA <span aria-hidden="true">→</span></a>
@@ -35,19 +35,19 @@
   <section class="payment-section" aria-labelledby="paymentHeading">
     <div class="payment-section-heading">
       <div><p class="recharge-eyebrow">Paiement</p><h2 id="paymentHeading">Choisis ton montant</h2></div>
-      <span class="payment-security"><span aria-hidden="true">✓</span> Paiement confirmé avant crédit</span>
+      <span class="payment-security"><span aria-hidden="true">✓</span> Paiement confirmé avant ajout des jetons</span>
     </div>
     <form class="currency-selector" method="post" action="{% url 'set-currency' %}">
       {% csrf_token %}
       <input type="hidden" name="next" value="{% url 'recharge-page' %}">
-      <label for="currencySelect">Monnaie</label>
+      <label for="currencySelect">Devise de paiement</label>
       <select id="currencySelect" name="currency" aria-describedby="currencyHelp">
         {% for option in currency_options %}
         <option value="{{ option.code }}"{% if option.code == currency.code %} selected{% endif %}>{{ option.name }}</option>
         {% endfor %}
       </select>
       <button type="submit">Appliquer</button>
-      <span id="currencyHelp">Détectée selon ton pays, modifiable ici.</span>
+      <span id="currencyHelp">Pour l’achat de jetons uniquement. Détectée selon ton pays, modifiable ici.</span>
     </form>
     <div class="payment-grid">
       <form class="payment-card active {% if currency.provider == 'paydunya' %}paydunya-card{% else %}stripe-card{% endif %}" id="paymentForm" method="post" action="{% if currency.provider == 'paydunya' %}{% url 'create-paydunya-checkout' %}{% else %}{% url 'create-recharge-checkout' %}{% endif %}">

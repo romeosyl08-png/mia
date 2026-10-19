@@ -13,7 +13,7 @@
       const t = await r.json();
       card.dataset.status = t.status;
       if(t.events.length) card.dataset.cursor = t.events.at(-1).id;
-      card.querySelector('.task-status').textContent = `${labels[t.status] || t.status} · ${t.steps}/${t.max_steps} étapes · ${t.credits}/${t.credit_limit} crédits`;
+      card.querySelector('.task-status').textContent = `${labels[t.status] || t.status} · ${t.steps}/${t.max_steps} étapes · ${t.credits}/${t.credit_limit} jetons`;
       card.querySelector('.task-result').textContent = t.result;
       card.querySelector('.task-error').textContent = t.error;
       for (const ev of t.events) {

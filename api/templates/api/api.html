@@ -28,7 +28,7 @@ reponse = client.chat.completions.create(
     messages=[{"role": "user", "content": "Explique le CSRF en une phrase."}],
 )
 print(reponse.choices[0].message.content)
-print(reponse.usage.credits_charged, "crédits débités")</code></pre>
+print(reponse.usage.credits_charged, "jetons débités")</code></pre>
 
   <h2>Streaming</h2>
 <pre><code>flux = client.chat.completions.create(
@@ -40,11 +40,11 @@ for morceau in flux:
     if morceau.choices:
         print(morceau.choices[0].delta.content or "", end="")
     else:
-        print("\n", morceau.usage)  # dernier morceau : crédits débités et solde restant</code></pre>
+        print("\n", morceau.usage)  # dernier morceau : jetons débités et solde restant</code></pre>
   <p>Le streaming n'est pas encore disponible pour tous les modèles.</p>
 
   <h2>Modèles et prix</h2>
-  <p>Prix en crédits pour un million de jetons. Le coût réel d'un appel est calculé sur les jetons réellement consommés.</p>
+  <p>Prix en jetons 2AI pour un million de tokens. Les tokens mesurent le texte traité ; les jetons sont la monnaie commune à Chat, Bara et Barrassons. Le débit dépend des tokens réellement utilisés en entrée et en sortie, marge du service incluse.</p>
   <table>
     <thead><tr><th>Modèle</th><th>Entrée</th><th>Sortie</th></tr></thead>
     <tbody>
@@ -60,7 +60,7 @@ for morceau in flux:
   <ul>
     <li><code>POST /v1/chat/completions</code> : conversation.</li>
     <li><code>GET /v1/models</code> : modèles et prix.</li>
-    <li><code>GET /v1/balance</code> : ton solde de crédits.</li>
+    <li><code>GET /v1/balance</code> : ton solde de jetons.</li>
   </ul>
 
   <h2>Limites</h2>
@@ -74,10 +74,10 @@ for morceau in flux:
   <table>
     <tbody>
       <tr><td><code>401</code></td><td>Clé absente ou invalide.</td></tr>
-      <tr><td><code>402</code></td><td>Crédits insuffisants pour le pire cas de la requête : baisse <code>max_tokens</code> ou recharge.</td></tr>
+      <tr><td><code>402</code></td><td>Jetons insuffisants pour le pire cas de la requête : baisse <code>max_tokens</code> ou recharge.</td></tr>
       <tr><td><code>404</code></td><td>Modèle inconnu.</td></tr>
       <tr><td><code>429</code></td><td>Trop de requêtes : attends le délai indiqué dans <code>Retry-After</code>.</td></tr>
-      <tr><td><code>502</code></td><td>La génération a échoué. Tes crédits sont remboursés automatiquement.</td></tr>
+      <tr><td><code>502</code></td><td>La génération a échoué. Tes jetons sont remboursés automatiquement.</td></tr>
     </tbody>
   </table>
 </div>

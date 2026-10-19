@@ -99,9 +99,9 @@ Le bouton ninja ouvre une **conversation temporaire**, sans mémoire enregistré
 
 ## Recharges et paiements
 
-Les étoiles dans **Choisir une IA** et **Équipe IA** enregistrent les modèles favoris du compte, sans changer le modèle actif ni lancer de génération. Les favoris passent en tête des deux listes ; le filtre **Favoris** du sélecteur peut les afficher seuls. Les numéros de classement d’usage gardent leur signification. La migration `chat.0025_chatpreferences_favorite_model_ids` ajoute leur stockage ; les préférences et les étoiles restent distinctes entre les comptes. Les sélecteurs, les équipes IA et la page `/tarifs/` affichent les prix d’entrée et de sortie 2AI dans la monnaie choisie, marge du service incluse une seule fois. Les petites fractions restent visibles, même en FCFA. La page des tarifs conserve aussi les équivalents en jetons ; le débit final s’effectue en jetons selon la consommation réelle et les arrondis habituels. Les comparaisons affichent l’équivalent du débit effectif, tandis que les coûts fournisseur en USD restent des données internes et d’API.
+Les étoiles dans **Choisir une IA** et **Équipe IA** enregistrent les modèles favoris du compte, sans changer le modèle actif ni lancer de génération. Les favoris passent en tête des deux listes ; le filtre **Favoris** du sélecteur peut les afficher seuls. Les numéros de classement d’usage gardent leur signification. La migration `chat.0025_chatpreferences_favorite_model_ids` ajoute leur stockage ; les préférences et les étoiles restent distinctes entre les comptes. Les jetons sont la seule monnaie interne : Chat, Bara et Barrassons débitent le même portefeuille. Les sélecteurs, les équipes IA, l’API et la page `/tarifs/` affichent les prix d’entrée et de sortie en jetons par million de tokens, avec la même conversion et la marge du service incluse une seule fois. Les tokens mesurent le texte traité ; les jetons mesurent le coût pour le compte. Les comparaisons affichent le débit effectif uniquement en jetons. Les coûts fournisseur en USD restent des données internes et d’API. Les champs techniques `credits`, `credits_charged` et `credit_limit` restent compatibles et désignent tous des jetons ; les soldes et transactions existants sont conservés.
 
-La monnaie est détectée au premier accès à partir du pays transmis par le proxy ou, à défaut, de l’adresse IP. La zone UEMOA utilise XOF avec PayDunya, la zone euro utilise EUR avec Stripe et les autres pays utilisent USD avec Stripe. L’utilisateur peut remplacer ce choix sur `/recharge/`; la préférence reste dans sa session et s’applique aussi au chat, aux comparaisons et aux pages `/tarifs/` et `/nous/`. Stripe nécessite `STRIPE_SECRET_KEY`.
+La devise de paiement est détectée uniquement lors de l’achat de jetons, à partir du pays transmis par le proxy ou, à défaut, de l’adresse IP. La zone UEMOA utilise XOF avec PayDunya, la zone euro utilise EUR avec Stripe et les autres pays utilisent USD avec Stripe. L’utilisateur peut remplacer ce choix sur `/recharge/` ; cette préférence reste dans sa session pour les paiements, sans modifier les tarifs ni le solde en jetons. Stripe nécessite `STRIPE_SECRET_KEY`.
 
 Les taux de référence sont des paramètres de facturation 2AI, pas des taux de change en temps réel :
 
@@ -320,8 +320,8 @@ pipx install .
 barrassons
 ```
 
-On first launch, choose browser login to open the AI2AI API-key page, or paste an
-existing AI2AI API key. Barrassons stores the key in
+On first launch, paste an AI2AI API key into the hidden prompt, or press Enter to
+open the API-key page and create one. Barrassons stores the key in
 `~/.config/barrassons/config.json` with owner-only permissions. To use another
 AI2AI deployment, use `barrassons login --api-base URL` or set
 `BARRASSONS_API_BASE`. Run `barrassons login` to change credentials and `barrassons logout` to
@@ -335,13 +335,22 @@ a key created on that local instance. The option accepts a site URL and adds
 replacing the saved configuration. `barrassons login` returns to the shell
 after successful login; launch `barrassons` to begin working.
 
-The terminal has a compact welcome panel, colored diffs, an activity indicator,
-and a status line showing the model and reported usage. The model picker supports
-search and pagination, then remembers the choice. `/model` changes it during a
-session, `/status` refreshes credits, and `/verbose` expands tool results. Use
+The first launch selects a compatible default model automatically; saved choices
+are reused. `/model` opens the searchable, paginated picker when you want to change
+it. Known models without function tools are excluded. `/help` shows the essentials;
+`/help tout` lists advanced commands. `/status` shows connection details and jetons,
+and `/verbose` expands tool results. Use
 Tab for command completion, arrow keys for prompt history, and a trailing
 backslash followed by Enter for multiline input. `--model ID` selects a model
 directly; `--no-color` or `NO_COLOR=1` disables color. Redirected output stays plain.
+
+Barrassons follows Big Persona's light/dark appearance and accent at startup via
+the authenticated, uncached `GET /v1/appearance` endpoint, which returns only the
+theme and accent. `/theme` opens a short picker; `/theme clair`, `/theme sombre`,
+and `/theme violet|ambre|sarcelle|brique|vert` save a local choice. `/theme persona`
+refreshes Big Persona's appearance and restores startup synchronization.
+`--theme persona|light|dark` also selects the mode. An older or unreachable
+appearance endpoint falls back to light/violet without preventing a session.
 
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed

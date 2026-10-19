@@ -195,7 +195,7 @@ def execute_task(task):
             return
         reserve, estimated_input = estimate_cost(task.objective, task.model, prompt, messages, max_output_tokens=2000)
         if task.spent_credits + reserve > task.credit_limit:
-            finish(task, 'paused', 'Budget de crédits atteint.')
+            finish(task, 'paused', 'Budget de jetons atteint.')
             return
         with transaction.atomic():
             task.creator.credit_account.debit(reserve, reason='usage', note=f'Tâche {task.pk}, étape {task.steps + 1}')
@@ -267,7 +267,7 @@ def execute_task(task):
         else:
             finish(task, 'completed')
     except InsufficientCreditsError:
-        finish(task,'paused','Crédits insuffisants. Recharge le compte puis reprends la tâche.')
+        finish(task,'paused','Jetons insuffisants. Recharge le compte puis reprends la tâche.')
     except Exception:
         logger.exception('Agent task %s failed', task.pk)
         finish(task, 'failed', 'La tâche a échoué. Consulte le journal ; les actions effectuées sont conservées.')

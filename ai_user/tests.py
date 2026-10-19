@@ -119,15 +119,18 @@ class RechargeTests(TestCase):
 		self.assertEqual(price_data["unit_amount"], 460)
 		self.assertEqual(create.call_args.kwargs["metadata"]["credits"], "50000")
 
-	def test_tariffs_use_the_currency_saved_by_the_user(self):
+	def test_tariffs_use_jetons_and_preserve_payment_currency(self):
 		session = self.client.session
 		session["display_currency"] = "EUR"
 		session.save()
 
 		response = self.client.get("/tarifs/", HTTP_CF_IPCOUNTRY="CI")
 
-		self.assertContains(response, "0,92 EUR = 10 000 jetons")
-		self.assertNotContains(response, "600 FCFA")
+		self.assertContains(response, "Tarifs 2AI en jetons par million de tokens")
+		self.assertContains(response, "Un seul solde de jetons pour Chat, Bara et Barrassons")
+		for fiat in ('FCFA', 'EUR', 'USD', 'XOF', '€'):
+			self.assertNotContains(response, fiat)
+		self.assertEqual(self.client.session['display_currency'], 'EUR')
 
 	def test_tariffs_page_lists_active_models_with_their_token_prices(self):
 		provider = APIProvider.objects.create(name="OpenRouter")

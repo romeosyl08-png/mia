@@ -16,6 +16,8 @@ class TerminalTests(unittest.TestCase):
             ui.status('test-model', tokens=10, credits=2, balance=100)
         self.assertNotIn('\x1b', output.getvalue())
         self.assertIn('100 jetons disponibles', output.getvalue())
+        self.assertIn('2 jetons utilisés', output.getvalue())
+        self.assertIn('10 tokens', output.getvalue())
 
     def test_untrusted_text_cannot_inject_terminal_controls(self):
         self.assertEqual(clean('hello\x1b[31mworld\x1b[0m\x1b]0;title\x07\x00'), 'helloworld')

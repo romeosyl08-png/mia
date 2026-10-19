@@ -140,12 +140,12 @@ class ComparisonTests(TestCase):
         self.assertIsNone(jobs.claim(session.pk))
 
     @override_settings(PAYDUNYA_XOF_PER_USD=Decimal('600'), EUR_PER_USD=Decimal('0.92'))
-    def test_displayed_cost_is_the_actual_debit_in_the_selected_currency(self):
+    def test_displayed_cost_is_the_actual_debit_in_jetons_for_every_payment_currency(self):
         session = self.completed()
         # A provider estimate is deliberately different from the one-credit debit.
         session.responses.update(provider_cost=Decimal('10'))
         before = self.balance()
-        for currency, expected in (('XOF', '0,06 FCFA'), ('EUR', '0,000092 €'), ('USD', '0,0001 $')):
+        for currency in ('XOF', 'EUR', 'USD'):
             with self.subTest(currency=currency):
                 saved = self.client.session
                 saved['display_currency'] = currency
@@ -153,10 +153,12 @@ class ComparisonTests(TestCase):
                 data = self.client.get(reverse('evaluations:detail', args=[session.pk])).json()
                 for row in data['responses']:
                     self.assertEqual(row['credits_charged'], 1)
-                    self.assertEqual(row['charged_amount_display'], expected)
+                    self.assertEqual(row['charged_amount_display'], '1 jeton')
                 models = self.client.get(reverse('evaluations:models')).json()['models']
-                symbol = {'XOF': 'FCFA', 'EUR': '€', 'USD': '$'}[currency]
-                self.assertTrue(all(row['estimated_amount_display'].endswith(symbol) for row in models))
+                for row in models:
+                    credits = row['estimated_credits']
+                    self.assertEqual(row['estimated_amount_display'], f'{credits:,} jeton{"s" if credits != 1 else ""}'.replace(',', ' '))
+                self.assertEqual(self.client.session['display_currency'], currency)
         self.assertEqual(self.balance(), before)
 
     def test_single_failure_refunds_only_failed_response_and_cannot_vote(self):

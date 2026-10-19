@@ -13,6 +13,7 @@ from pathlib import Path
 from .project import load_session, save_session, record_edit, preview, undo_last, git, git_context, make_worktree
 from .terminal import terminal
 from .memory import configure_link, link_label, load_link, remember
+from .themes import apply_theme, configure_theme
 
 
 DEFAULT_API_BASE = "https://mia-vkl1.onrender.com/v1"
@@ -110,26 +111,27 @@ def resolve_api_base(config, override=None):
 def connect(config, api_base=None):
     api_base = resolve_api_base(config, api_base)
     terminal.line()
-    terminal.panel('✦ Barrassons · Connexion', [f'Serveur : {api_base}', '',
-        '1. Ouvrir la page des clés API', '2. Utiliser une clé existante'])
-    choice = terminal.prompt('Choix [1/2] : ').strip() or "1"
-    if choice not in {"1", "2"}:
-        raise ValueError("Choisis 1 ou 2 pour te connecter.")
-    if choice == "1":
-        webbrowser.open(api_base.removesuffix("/v1") + "/api-keys/")
-        terminal.line("Crée une clé sur la page ouverte, puis saisis-la ci-dessous.", 'muted')
+    terminal.line('✦ Bienvenue dans Barrassons', 'accent')
+    terminal.line(f'Serveur : {api_base}', 'muted')
+    terminal.line('Colle ta clé API, ou appuie sur Entrée pour en créer une.')
     api_key = getpass.getpass("Clé API AI2AI (saisie masquée) : ").strip()
+    if not api_key:
+        keys_url = api_base.removesuffix('/v1') + '/api-keys/'
+        terminal.line(keys_url, 'muted')
+        webbrowser.open(keys_url)
+        terminal.line("Crée une clé sur la page ouverte, puis saisis-la ci-dessous.", 'muted')
+        api_key = getpass.getpass("Clé API AI2AI (saisie masquée) : ").strip()
     if not api_key:
         raise ValueError("Aucune clé API fournie.")
     connected = {**config, "api_base": api_base, "api_key": api_key}
     with terminal.busy('Vérification de la connexion…'):
         api_request(connected, '/models')
     save_config(connected)
-    terminal.line('✓ Connexion enregistrée. Lance `barrassons` pour commencer.', 'green')
+    terminal.line('✓ Connexion enregistrée.', 'green')
     return connected
 
 
-def api_request(config, path, payload=None):
+def api_request(config, path, payload=None, *, timeout=120):
     url = normalize_api_base(config.get("api_base")) + path
     headers = {"Authorization": "Bearer " + config["api_key"], "Accept": "application/json"}
     data = None
@@ -138,7 +140,7 @@ def api_request(config, path, payload=None):
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method="POST" if data else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         try:
@@ -262,7 +264,8 @@ def execute_tool(name, args, root):
 def _select_model(config, choose=False, requested=None):
     with terminal.busy('Chargement des modèles…'):
         response = api_request(config, "/models")
-    models = [model for model in response.get("data", []) if "anthropic" not in model.get("owned_by", "").lower()]
+    models = [model for model in response.get("data", [])
+              if "anthropic" not in model.get("owned_by", "").lower() and model.get('supports_tools') is not False]
     if not models:
         raise RuntimeError("Aucun modèle compatible avec les outils n'est disponible sur ce compte.")
     available = {row['id'] for row in models}
@@ -272,7 +275,10 @@ def _select_model(config, choose=False, requested=None):
         return requested
     if not choose and config.get('model') in available:
         return config['model']
-    default = config.get('model') if config.get('model') in available else models[0]['id']
+    default = next((value for value in (config.get('model'), response.get('default_model'), 'auto')
+                    if value in available), models[0]['id'])
+    if not choose:
+        return default
     choices = list(enumerate(models, 1)); page = 0; per_page = 10
     while True:
         pages = max(1, (len(choices) + per_page - 1) // per_page)
@@ -328,7 +334,9 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
         branch = ''
     terminal.setup_input()
     terminal.welcome(root, model, branch, resolve_api_base(config))
-    terminal.line('Mémoire : ' + link_label(load_link(root, config)) + ' · /memory pour choisir', 'muted')
+    linked_memory = load_link(root, config)
+    if linked_memory:
+        terminal.line('Mémoire : ' + link_label(linked_memory), 'muted')
     tokens = credits = 0
     verbose = False
     while True:
@@ -347,14 +355,27 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             persist()
             terminal.line("Contexte effacé.", 'muted')
             continue
-        if text == "/help":
-            terminal.panel('Commandes', ['/model    Choisir une IA', '/status   Voir le serveur et les crédits',
+        if text == '/help':
+            terminal.panel('L’essentiel', ['Écris ta demande en français pour travailler.', '',
+                '/model    Changer d’IA', '/theme    Changer l’apparence',
+                '/undo     Annuler la dernière modification', '/exit     Quitter', '',
+                '/help tout    Toutes les commandes'], wrap=True)
+            continue
+        if text in {'/help tout', '/help all'}:
+            terminal.panel('Toutes les commandes', ['/model    Choisir une IA', '/theme    Apparence de Big Persona, thème et couleur',
+                '/status   Voir le serveur et les jetons',
                 '/verbose  Afficher les résultats détaillés des outils', '/diff     Voir les changements Git',
                 '/undo     Annuler la dernière édition', '/verify   Lancer les tests configurés',
                 '/memory   Lier la mémoire personnelle ou un projet Bara',
                 '/remember texte  Enregistrer un souvenir partagé après confirmation',
                 '/review   Demander une revue du diff', '/clear    Effacer le contexte', '/exit     Quitter', '',
-                'Tab : compléter · ↑/↓ : historique · \\ puis Entrée : nouvelle ligne'])
+                'Tab : compléter · ↑/↓ : historique · \\ puis Entrée : nouvelle ligne'], wrap=True)
+            continue
+        if text == '/theme' or text.startswith('/theme '):
+            try:
+                configure_theme(config, text.removeprefix('/theme').strip(), api_request, save_config)
+            except (RuntimeError, ValueError) as error:
+                terminal.line(str(error), 'red')
             continue
         if text == '/memory' or text.startswith('/memory '):
             try:
@@ -380,7 +401,7 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             continue
         if text == '/status':
             try:
-                with terminal.busy('Actualisation des crédits…'):
+                with terminal.busy('Actualisation des jetons…'):
                     balance = api_request(config, '/balance').get('credits')
                 terminal.panel('Session', [f'Modèle : {model}', f'Projet : {root}',
                     f'Branche : {branch or "sans dépôt"}', f'Serveur : {resolve_api_base(config)}',
@@ -412,6 +433,9 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             except ValueError as error:
                 terminal.line(str(error), 'red')
                 continue
+        elif text.startswith('/'):
+            terminal.line('Commande inconnue. /help affiche les commandes.', 'muted')
+            continue
         messages[0] = {'role':'system','content':system + f'\nDossier: {root}\n' + git_context(root) + ('\nCommande de tests configurée : '+test_command if test_command else '')}
         messages.append({"role": "user", "content": text})
         persist()
@@ -495,6 +519,8 @@ def main():
     parser.add_argument('--memory-workspace', type=int, metavar='ID', help='Projet Bara pour --memory bara ou both')
     parser.add_argument('--api-base', metavar='URL', help='Changer explicitement le serveur AI2AI (Render par défaut)')
     parser.add_argument('--model', metavar='ID', help='Utiliser un modèle du catalogue sans ouvrir le sélecteur')
+    parser.add_argument('--theme', choices=['persona', 'light', 'dark', 'clair', 'sombre'],
+                        help='Apparence : Big Persona par défaut, clair ou sombre')
     parser.add_argument('--no-color', action='store_true', help='Désactiver les couleurs du terminal')
     args = parser.parse_args()
     if args.memory in {'bara', 'both'} and args.memory_workspace is None:
@@ -513,7 +539,12 @@ def main():
         if args.command == "login" or not config.get("api_key"):
             config = connect(config, config['api_base'])
             if args.command == 'login':
+                terminal.line('Lance `barrassons` pour commencer.', 'muted')
                 return 0
+        if args.theme:
+            config['theme'] = {'clair': 'light', 'sombre': 'dark'}.get(args.theme, args.theme)
+        if not apply_theme(config, api_request):
+            terminal.line('Apparence Big Persona indisponible ; thème clair violet utilisé. /theme pour choisir.', 'muted')
         root = Path.cwd().resolve()
         if args.worktree:
             if not _confirm('Créer une branche et un worktree Git pour cette session ?'):
@@ -527,7 +558,7 @@ def main():
         save_config(config)
         balance = None
         try:
-            with terminal.busy('Chargement des crédits…'):
+            with terminal.busy('Chargement des jetons…'):
                 balance = api_request(config, '/balance').get('credits')
         except RuntimeError:
             pass

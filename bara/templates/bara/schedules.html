@@ -1,11 +1,11 @@
 {% extends 'base.html' %}{% block body %}<main class="work-page">
 <a href="{% url 'bara:detail' workspace.id %}">← {{ workspace.title }}</a><h1>Tâches programmées</h1>
-<p>Les horaires sont affichés en UTC. Chaque exécution utilise le modèle de l’espace et les crédits de ton compte.</p>
+<p>Les horaires sont affichés en UTC. Chaque exécution utilise le modèle de l’espace et les jetons de ton compte.</p>
 <p role="alert">{{ error }}</p><form method="post">{% csrf_token %}
 <textarea name="objective" required maxlength="16000" rows="3" placeholder="Travail à effectuer" style="width:100%"></textarea>
 <label>Première exécution UTC <input type="datetime-local" name="next_run" required></label>
 <label>Récurrence en minutes (0 = une fois) <input type="number" name="interval_minutes" min="0" value="0"></label>
-<label>Crédits par exécution <input type="number" name="credit_limit" min="1" max="100000" value="1000"></label><button>Programmer</button></form>
+<label>Jetons par exécution <input type="number" name="credit_limit" min="1" max="100000" value="1000"></label><button>Programmer</button></form>
 {% for schedule in schedules %}<article><h2>{{ schedule.objective|truncatechars:120 }}</h2><p>{{ schedule.next_run }} · {% if schedule.enabled %}Active{% else %}Terminée ou désactivée{% endif %}</p>
 <form method="post">{% csrf_token %}<button name="delete" value="{{ schedule.id }}">Supprimer la programmation</button></form></article>{% endfor %}
 </main>{% endblock %}

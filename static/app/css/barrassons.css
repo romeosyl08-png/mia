@@ -142,6 +142,47 @@
   border-bottom: 0;
 }
 
+.guide-themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 0 !important;
+  list-style: none;
+}
+
+.guide-themes li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+}
+
+.guide-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.guide-swatch-violet { background: #6C6FCB; }
+.guide-swatch-amber { background: #E8A33D; }
+.guide-swatch-teal { background: #3F8E8A; }
+.guide-swatch-brick { background: #B4483A; }
+.guide-swatch-green { background: #4E9F3D; }
+
+.guide-advanced {
+  margin-top: 24px;
+}
+
+.guide-advanced > summary {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 @media (max-width: 620px) {
   .barrassons-guide {
     width: min(100% - 32px, 860px);

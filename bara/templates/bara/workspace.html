@@ -78,7 +78,7 @@
     </div>
     <div class="header-tools">
       {% include "includes/pwa_controls.html" with pwa_inline=True %}
-      <div class="credit-pill" id="creditPill"><span id="creditPillText">{{ credits|floatformat:0 }} jetons</span></div>
+      <div class="credit-pill" id="creditPill" title="Solde de jetons commun à Chat, Bara et Barrassons"><span id="creditPillText">{{ credits|floatformat:0 }} jetons</span></div>
       <a class="tool-link" href="{% url 'bara:tool-journal' workspace.id %}">Journal</a>
       <a class="tool-link" href="{% url 'bara:tasks' workspace.id %}">Tâches</a>
       <a class="tool-link" href="{% url 'studio:index' %}?workspace_id={{ workspace.id }}">Studio</a>
@@ -94,7 +94,7 @@
 
   {% if not workspace.auto_route and not workspace.active_model_id %}
     <div class="workspace-notice" role="status">
-      Choisis une IA dans le menu avant d'envoyer un message. Aucun modèle ne sera sélectionné en secret et aucun crédit ne sera débité.
+      Choisis une IA dans le menu avant d'envoyer un message. Aucun modèle ne sera sélectionné en secret et aucun jeton ne sera débité.
     </div>
   {% endif %}
 
@@ -419,7 +419,7 @@
 <script defer src="{% static 'app/vendor/highlight.min.js' %}?v=11.9.0"
         integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp"
         crossorigin="anonymous"></script>
-<script defer src="{% static 'app/js/workspace.js' %}?v=conversation-tabs-2"></script>
+<script defer src="{% static 'app/js/workspace.js' %}?v=jetons-1"></script>
 <script defer src="{% static 'app/js/workspace_conversations.js' %}?v=conversation-tabs-2"></script>
 {% endif %}
 {% endblock %}

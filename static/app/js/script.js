@@ -1313,7 +1313,7 @@ async function saveRoutingFeedback(message, rating, selectedButton, otherButton)
     }
     if(state.credits <= 0){
       const notice = el("creditNotice");
-      notice.textContent = "Crédits insuffisants — recharge ton solde pour continuer.";
+      notice.textContent = "Jetons insuffisants — recharge ton solde pour continuer.";
       notice.classList.add("show");
       window.clearTimeout(state.creditNoticeTimer);
       state.creditNoticeTimer = window.setTimeout(() => notice.classList.remove("show"), 4200);
@@ -2711,7 +2711,7 @@ fileInput.addEventListener("change", async () => {
     el('voiceStopBtn').hidden = false;
     voiceSpeaking = false;
     conversationVoiceBtn.setAttribute('aria-pressed','true');
-    showChatNotice('Mode vocal actif. Chaque phrase déclenche un message et utilise les crédits habituels. Arrête-le avec le même bouton.');
+    showChatNotice('Mode vocal actif. Chaque phrase déclenche un message et utilise les jetons habituels. Arrête-le avec le même bouton.');
     listenConversation();
   });
   window.addEventListener('pagehide',stopConversationVoice);

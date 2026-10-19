@@ -50,12 +50,12 @@ let browser;
 
   await page.goto(`${origin}/tarifs/`, {waitUntil: 'domcontentloaded'});
   const tariffReference = await page.locator('.tariffs-equivalence strong').innerText();
-  assert.match(tariffReference, /EUR/);
-  assert.doesNotMatch(tariffReference, /XOF|USD|FCFA/);
+  assert.match(tariffReference, /solde de jetons pour Chat, Bara et Barrassons/);
+  assert.doesNotMatch(await page.locator('main').innerText(), /EUR|XOF|USD|FCFA|€/);
   await page.goto(`${origin}/nous/`, {waitUntil: 'domcontentloaded'});
   const aboutReference = await page.locator('.about-capability').filter({hasText: 'Comprendre les tarifs'}).innerText();
-  assert.match(aboutReference, /0,92 EUR/);
-  assert.doesNotMatch(aboutReference, /XOF|USD|FCFA/);
+  assert.match(aboutReference, /jetons sont la seule monnaie de 2AI/);
+  assert.doesNotMatch(aboutReference, /EUR|XOF|USD|FCFA|€/);
 
   await page.goto(`${origin}/recharge/`, {waitUntil: 'domcontentloaded'});
   await chooseCurrency('XOF');

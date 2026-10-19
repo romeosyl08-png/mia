@@ -27,7 +27,6 @@ from api.models import AIModel
 from chat.services import (
     CREDITS_PER_DOLLAR,
     MARGIN_MULTIPLIER,
-    credits_per_million_tokens,
     is_local_provider,
 )
 from .currency import (
@@ -333,7 +332,6 @@ def set_currency(request):
 
 
 def tariffs_page(request):
-    display_currency = currency_context(request)
     models = (
         AIModel.objects.filter(is_active=True, provider__is_active=True)
         .select_related("provider")
@@ -345,8 +343,6 @@ def tariffs_page(request):
             "model_id": model.model_id,
             "input_price": model.input_price_per_million,
             "output_price": model.output_price_per_million,
-            "input_credits": f"{credits_per_million_tokens(model.input_price_per_million):,}".replace(",", " "),
-            "output_credits": f"{credits_per_million_tokens(model.output_price_per_million):,}".replace(",", " "),
         }
         for model in models
         if not is_local_provider(model.provider)
@@ -354,11 +350,8 @@ def tariffs_page(request):
     context = {
         "tariffs": tariffs,
         "model_count": len(tariffs),
-        "credits_per_dollar": CREDITS_PER_DOLLAR,
-        "credits_per_dollar_display": f"{CREDITS_PER_DOLLAR:,}".replace(",", " "),
         "margin_multiplier": MARGIN_MULTIPLIER,
     }
-    context.update(display_currency)
     return render(request, "tariffs.html", context)
 
 

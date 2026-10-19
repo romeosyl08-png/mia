@@ -39,7 +39,7 @@ class ConnectionTests(unittest.TestCase):
 
     def test_login_reads_the_key_without_echo_and_saves_the_correct_fields(self):
         output = io.StringIO()
-        with patch('builtins.input', side_effect=['2']) as ask, \
+        with patch('builtins.input') as ask, \
                 patch('barrassons.cli.getpass.getpass', return_value='synthetic-private-key') as read_key, \
                 patch('barrassons.cli.api_request', return_value={'data': []}) as request, \
                 patch('barrassons.cli.save_config') as save, redirect_stdout(output), \
@@ -49,9 +49,17 @@ class ConnectionTests(unittest.TestCase):
         self.assertEqual(value['api_key'], 'synthetic-private-key')
         read_key.assert_called_once()
         save.assert_called_once_with(value)
-        ask.assert_called_once()
+        ask.assert_not_called()
         request.assert_called_once_with(value, '/models')
         self.assertNotIn('synthetic-private-key', output.getvalue())
+
+    def test_empty_key_opens_the_browser_then_accepts_a_hidden_key(self):
+        with patch('barrassons.cli.getpass.getpass', side_effect=['', 'synthetic-key']), \
+                patch('barrassons.cli.webbrowser.open') as browser, \
+                patch('barrassons.cli.api_request'), patch('barrassons.cli.save_config'), \
+                redirect_stdout(io.StringIO()), patch.dict('os.environ', {}, clear=True):
+            self.assertEqual(connect({})['api_key'], 'synthetic-key')
+        browser.assert_called_once_with(DEFAULT_API_BASE.removesuffix('/v1') + '/api-keys/')
 
     def test_failed_login_preserves_the_existing_connection(self):
         config = {'api_base': DEFAULT_API_BASE, 'api_key': 'previous-key'}
@@ -87,7 +95,7 @@ class ModelPickerTests(unittest.TestCase):
         output = io.StringIO()
         with patch('barrassons.cli.api_request', return_value={'data': self.models}), \
                 patch('builtins.input', side_effect=['/suivant', 'model-2', '28']), redirect_stdout(output):
-            self.assertEqual(_select_model({}), 'model-27')
+            self.assertEqual(_select_model({}, choose=True), 'model-27')
         self.assertIn('Page 1/3', output.getvalue())
         self.assertIn('Page 2/3', output.getvalue())
         self.assertIn('Page 1/1', output.getvalue())
@@ -98,6 +106,22 @@ class ModelPickerTests(unittest.TestCase):
             self.assertEqual(_select_model({}, requested='model-22'), 'model-22')
             with self.assertRaises(ValueError):
                 _select_model({}, requested='missing')
+        ask.assert_not_called()
+
+    def test_first_launch_uses_the_server_default_without_a_picker(self):
+        with patch('barrassons.cli.api_request', return_value={
+                'data': self.models, 'default_model': 'model-12'}), \
+                patch('builtins.input') as ask, redirect_stdout(io.StringIO()):
+            self.assertEqual(_select_model({}), 'model-12')
+        ask.assert_not_called()
+
+    def test_known_incompatible_models_cannot_be_used_or_kept_as_default(self):
+        models = [{'id': 'no-tools', 'supports_tools': False}, {'id': 'compatible', 'supports_tools': True}]
+        with patch('barrassons.cli.api_request', return_value={'data': models, 'default_model': 'no-tools'}), \
+                patch('builtins.input') as ask, redirect_stdout(io.StringIO()):
+            self.assertEqual(_select_model({'model': 'no-tools'}), 'compatible')
+            with self.assertRaises(ValueError):
+                _select_model({}, requested='no-tools')
         ask.assert_not_called()
 
 

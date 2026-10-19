@@ -380,8 +380,9 @@ def models_view(request):
             "object": "model",
             "created": int(m.created_at.timestamp()) if m.created_at else now,
             "owned_by": m.provider.slug,
+            "supports_tools": False if _is_anthropic(m.provider) else supports_tools(m),
             "pricing": {
-                "unit": "credits per million tokens",
+                "unit": "jetons per million tokens",
                 "input": credits_per_million_tokens(m.input_price_per_million),
                 "output": credits_per_million_tokens(m.output_price_per_million),
             },
@@ -394,11 +395,17 @@ def models_view(request):
             "object": "model",
             "created": now,
             "owned_by": "ai2ai-router",
-            "pricing": {"unit": "dynamic credits per request", "input": None, "output": None},
+            "supports_tools": bool(eligible_models(surface="api", tools=True)),
+            "pricing": {"unit": "dynamic jetons per request", "input": None, "output": None},
         })
+    compatible = [row['id'] for row in data if row.get('supports_tools') is not False]
+    preferences = ChatPreferences.objects.filter(user=user).first()
+    default_model = next((value for value in (getattr(preferences, 'default_model_id', ''), 'auto')
+                          if value in compatible), compatible[0] if compatible else None)
     return JsonResponse({
         "object": "list",
         "data": data,
+        "default_model": default_model,
     })
 
 
@@ -472,7 +479,7 @@ def chat_completions(request):
             return _error(f"Model {requested_model_id!r} was not found or is inactive.", "model_not_found", 404, "model")
     is_anthropic = _is_anthropic(model.provider)
     if tools and supports_tools(model) is False:
-        return _error("This model does not support function tools. Choose a compatible model or 'auto'. No credits charged.", "capability_unavailable", 400, "tools")
+        return _error("Ce modèle ne prend pas en charge les outils. Choisis un modèle compatible ou 'auto'. Aucun jeton débité.", "capability_unavailable", 400, "tools")
     if tools and is_anthropic:
         return _error("Function tools are not supported for this provider yet.", "invalid_request_error", 400, "tools")
     if tools and stream:
@@ -482,7 +489,7 @@ def chat_completions(request):
 
     account = getattr(user, "credit_account", None)
     if account is None:
-        return _error("This account has no credit balance.", "insufficient_quota", 402)
+        return _error("Ce compte ne dispose pas de portefeuille de jetons.", "insufficient_quota", 402)
 
     # Réserve du pire cas (tout max_tokens consommé), ajustée au coût réel après l'appel.
     est_input = _estimate_input_tokens(messages, tools)
@@ -504,7 +511,7 @@ def chat_completions(request):
         account.debit(reserve, reason="usage", note=f"API — {model.model_id}")
     except InsufficientCreditsError:
         return _error(
-            f"Insufficient credits: this request may cost up to {reserve} credits (lower max_tokens to reduce it).",
+            f"Jetons insuffisants : cette requête peut coûter jusqu’à {reserve} jetons (diminue max_tokens pour réduire la réserve).",
             "insufficient_quota",
             402,
         )

@@ -63,7 +63,7 @@ class ModelFavoriteTests(TestCase):
         self.assertEqual(response.json()['favorite_model_ids'], [self.model.model_id])
         self.assertEqual(response.json()['max_tokens'], 1200)
 
-    def test_stars_are_separate_buttons_and_prices_use_readable_decimal_amounts(self):
+    def test_stars_are_separate_buttons_and_prices_use_jetons(self):
         page = BeautifulSoup(self.client.get('/').content, 'html.parser')
         for selector in ('.model-picker-row', '.team-model-row'):
             row = page.select_one(selector)
@@ -72,54 +72,62 @@ class ModelFavoriteTests(TestCase):
             self.assertEqual(star['aria-pressed'], 'false')
             self.assertEqual(star['data-model-favorite'], self.model.model_id)
             self.assertIsNone(star.find_parent('button'))
-            self.assertIn('2\u00a0250 FCFA', row.get_text())
+            self.assertIn('37 500 jetons', row.get_text())
             self.assertNotIn('2.5000', row.get_text())
         self.assertEqual(page.select_one('.model-picker-item')['data-output-price'], '2.5000')
-        self.assertIn('270 FCFA', page.select_one('.model-picker-price').get_text())
+        self.assertIn('4 500 jetons', page.select_one('.model-picker-price').get_text())
 
-    def test_chat_team_and_tariffs_use_the_saved_currency_and_include_the_margin_once(self):
+    def test_chat_team_and_tariffs_use_jetons_regardless_of_payment_currency(self):
         transactions = self.user.credit_account.transactions.count()
-        for currency, input_price, output_price in (
-            ('XOF', '270 FCFA', '2\u00a0250 FCFA'),
-            ('EUR', '0,414 €', '3,45 €'),
-            ('USD', '0,45 $', '3,75 $'),
-        ):
+        for currency in ('XOF', 'EUR', 'USD'):
             with self.subTest(currency=currency):
                 session = self.client.session
                 session['display_currency'] = currency
                 session.save()
                 page = BeautifulSoup(self.client.get('/', HTTP_CF_IPCOUNTRY='CI').content, 'html.parser')
                 for selector in ('.model-picker-price', '.team-model-copy'):
-                    self.assertIn(input_price, page.select_one(selector).get_text())
-                    self.assertIn(output_price, page.select_one(selector).get_text())
+                    self.assertIn('4 500 jetons', page.select_one(selector).get_text())
+                    self.assertIn('37 500 jetons', page.select_one(selector).get_text())
                 tariffs = BeautifulSoup(self.client.get('/tarifs/').content, 'html.parser')
                 cells = tariffs.select('tbody td')
-                self.assertIn(input_price, cells[0].get_text())
-                self.assertIn(output_price, cells[1].get_text())
                 self.assertIn('4 500 jetons', cells[0].get_text())
                 self.assertIn('37 500 jetons', cells[1].get_text())
+                for text in (page.get_text(), tariffs.get_text()):
+                    for fiat in ('FCFA', 'EUR', 'USD', 'XOF', '€', '$', 'Changer de monnaie'):
+                        self.assertNotIn(fiat, text)
+                self.assertEqual(self.client.session['display_currency'], currency)
         self.assertEqual(self.user.credit_account.transactions.count(), transactions)
         self.model.refresh_from_db()
         self.assertEqual(self.model.output_price_per_million, Decimal('2.5'))
 
-    def test_small_prices_are_not_rounded_to_zero_in_any_currency(self):
+    def test_small_prices_use_the_same_rounding_as_the_api(self):
+        from chat.billing import credits_per_million_tokens
+
         self.model.input_price_per_million = self.model.output_price_per_million = Decimal('0.0001')
         self.model.save(update_fields=['input_price_per_million', 'output_price_per_million'])
-        for currency, expected in (('XOF', '0,09 FCFA'), ('EUR', '0,000138 €'), ('USD', '0,00015 $')):
+        for currency in ('XOF', 'EUR', 'USD'):
             with self.subTest(currency=currency):
                 session = self.client.session
                 session['display_currency'] = currency
                 session.save()
                 page = BeautifulSoup(self.client.get('/').content, 'html.parser')
-                self.assertIn(expected, page.select_one('.model-picker-price').get_text())
+                expected = credits_per_million_tokens(self.model.input_price_per_million)
+                self.assertEqual(expected, 2)
+                self.assertIn(f'{expected} jetons', page.select_one('.model-picker-price').get_text())
 
     @override_settings(PAYDUNYA_XOF_PER_USD=Decimal('700'))
-    def test_display_uses_the_configured_conversion_rate(self):
+    def test_payment_conversion_rate_does_not_change_model_prices(self):
         page = BeautifulSoup(self.client.get('/').content, 'html.parser')
-        self.assertIn('315 FCFA', page.select_one('.model-picker-price').get_text())
-        self.assertIn('2\u00a0625 FCFA', page.select_one('.model-picker-price').get_text())
+        self.assertIn('4 500 jetons', page.select_one('.model-picker-price').get_text())
+        self.assertIn('37 500 jetons', page.select_one('.model-picker-price').get_text())
 
-    def test_country_detection_applies_to_chat_before_visiting_recharge(self):
-        page = BeautifulSoup(self.client.get('/', HTTP_CF_IPCOUNTRY='FR').content, 'html.parser')
-        self.assertIn('3,45 €', page.select_one('.model-picker-price').get_text())
-        self.assertEqual(self.client.session['display_currency'], 'EUR')
+    @override_settings(IP_CURRENCY_LOOKUP_ENABLED=True)
+    def test_chat_tariffs_and_about_do_not_detect_payment_currency(self):
+        from unittest.mock import patch
+
+        with patch('ai_user.currency.requests.get') as lookup:
+            for url in ('/', '/tarifs/', '/nous/'):
+                response = self.client.get(url, REMOTE_ADDR='8.8.8.8')
+                self.assertEqual(response.status_code, 200)
+            lookup.assert_not_called()
+        self.assertNotIn('display_currency', self.client.session)

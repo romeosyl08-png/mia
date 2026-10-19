@@ -8,25 +8,25 @@
 <main class="work-page" data-tasks-root="{% url 'bara:tasks' workspace.id %}">
   <a href="{% url 'bara:detail' workspace.id %}">← {{ workspace.title }}</a>
   <h1>Tâches</h1>
-  <p>Les tâches continuent en arrière-plan. Les budgets limitent les étapes et les crédits.</p>
+  <p>Les tâches continuent en arrière-plan. Les budgets limitent les étapes et les jetons.</p>
   <form method="post" action="{% url 'bara:task-create' workspace.id %}">
     <fieldset {% if not workspace.can_write %}disabled{% endif %}>
     {% csrf_token %}
     <textarea name="objective" required maxlength="16000" rows="3" placeholder="Quel résultat veux-tu obtenir ?" style="width:100%"></textarea>
     <label>Étapes <input type="number" name="max_steps" min="1" max="100" value="12"></label>
-    <label>Crédits maximum <input type="number" name="credit_limit" min="1" max="100000" value="1000"></label>
+    <label>Jetons maximum <input type="number" name="credit_limit" min="1" max="100000" value="1000"></label>
     <button>Lancer</button>
     </fieldset>
   </form>
   {% for task in tasks %}
   <article data-task="{{ task.id }}" data-status="{{ task.status }}">
     <h2>{{ task.objective|truncatechars:120 }}</h2>
-    <p class="task-status" aria-live="polite">{{ task.status }} · {{ task.spent_credits }} crédits</p>
+    <p class="task-status" aria-live="polite">{{ task.status }} · {{ task.spent_credits }} jetons</p>
     <pre class="task-result" style="white-space:pre-wrap">{{ task.result }}</pre>
     <p class="task-error">{{ task.error }}</p>
     <div class="task-actions"></div>
     <label>Étapes maximum <input class="task-steps" type="number" min="1" max="100" value="{{ task.max_steps }}"></label>
-    <label>Budget <input class="task-budget" type="number" min="1" max="100000" value="{{ task.credit_limit }}"></label>
+    <label>Budget en jetons <input class="task-budget" type="number" min="1" max="100000" value="{{ task.credit_limit }}"></label>
     <button data-action="pause">Pause</button><button data-action="resume">Reprendre</button><button data-action="cancel">Annuler</button>
   </article>
   {% empty %}<p>Aucune tâche.</p>{% endfor %}
@@ -36,5 +36,5 @@
 
 {% block extra_js %}
 <script defer src="{% static 'app/js/charts.js' %}?v=charts-1"></script>
-<script defer src="{% static 'app/js/tasks.js' %}?v=frontend-1"></script>
+<script defer src="{% static 'app/js/tasks.js' %}?v=jetons-1"></script>
 {% endblock %}

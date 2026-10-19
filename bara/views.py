@@ -770,7 +770,7 @@ def send_message(request, workspace_id, conversation_id):
         account.debit(reserve, reason="usage", note=f"Bara agent — {active_model.model_id}")
     except InsufficientCreditsError:
         return JsonResponse(
-            {"error": {"message": "Crédits insuffisants pour ce message.", "type": "insufficient_credits"}}, status=402
+            {"error": {"message": "Jetons insuffisants pour ce message.", "type": "insufficient_credits"}}, status=402
         )
 
     WorkMessage.objects.create(workspace=workspace, conversation=conversation, role="user", content=content)
@@ -784,7 +784,7 @@ def send_message(request, workspace_id, conversation_id):
     settled = {"done": False, "charged_credits": 0, "shortfall": 0}
 
     def settle(outcome):
-        """Ajuste les crédits et sauvegarde la réponse, une seule fois, quelle que soit la fin du flux."""
+        """Ajuste les jetons et sauvegarde la réponse, une seule fois, quelle que soit la fin du flux."""
         if settled["done"]:
             return
         settled["done"] = True

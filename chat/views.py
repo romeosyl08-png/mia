@@ -22,7 +22,6 @@ from .persona_context import ensure_big_persona, persona_settings, shared_person
 from .media_generation import generate_media, generate_openrouter_media, normalize_generation_options
 from .routing import eligible_models, model_key, recommend_model, record_shadow_run, safe_shadow_run, task_category
 from ai_user.models import InsufficientCreditsError
-from ai_user.currency import currency_context
 from api.constants import OPENROUTER_RANKING_OPTIONS
 
 from .services import CREDITS_PER_DOLLAR, MARGIN_MULTIPLIER, ProviderError, call_llm_provider, call_llm_team, estimate_cost, generate_openai_image, is_local_provider, stream_llm_provider, stream_llm_team
@@ -216,7 +215,6 @@ def chat_home(request):
 	}
 
 	return render(request, 'chat.html', {
-		**currency_context(request),
 		'ai_models': models,
 		'model_ranking_options': model_ranking_options,
 		'model_rankings_by_id': model_rankings_by_id,
@@ -623,7 +621,7 @@ class SendMessageView(View):
 		try:
 			account.debit(reserve, reason='usage', note=f'Reservation {model.model_id}')
 		except InsufficientCreditsError:
-			return _chat_error('Crédits insuffisants pour ce message.', 'insufficient_credits', 402)
+			return _chat_error('Jetons insuffisants pour ce message.', 'insufficient_credits', 402)
 
 		if 'text/event-stream' in request.headers.get('Accept', ''):
 			return StreamingHttpResponse(
@@ -711,7 +709,7 @@ class SendMessageView(View):
 			logger.exception('Could not save chat turn (user_id=%s)', request.user.pk)
 			account.credit(reserve, reason='adjustment', note='Remboursement stockage conversation échoué')
 			record_shadow_run(request.user, shadow_run, 'error')
-			return _chat_error('Impossible d’enregistrer la réponse. Les crédits ont été remboursés.', 'storage_error', 500)
+			return _chat_error('Impossible d’enregistrer la réponse. Les jetons ont été remboursés.', 'storage_error', 500)
 		observation = record_shadow_run(
 			request.user, shadow_run, 'error' if any(event.get('type') == 'verification' and event.get('status') == 'incomplete' for event in tool_events) else 'success',
 			charged_credits=result['charged_credits'],
@@ -789,7 +787,7 @@ class SendMessageView(View):
 
 				reply = ''.join(reply_parts)
 				if not reply.strip():
-					raise ProviderError("Le modèle n’a renvoyé aucun texte. Aucun crédit n’a été débité.")
+					raise ProviderError("Le modèle n’a renvoyé aucun texte. Aucun jeton n’a été débité.")
 				if web_search:
 					_validate_web_reply(reply)
 					yield _sse_event({'type': 'delta', 'content': reply})
@@ -1032,7 +1030,7 @@ class ImageGenerationView(View):
 			account.debit(charge, reason='usage', note=f'Génération {media_type} {provider_slug}')
 		except InsufficientCreditsError:
 			return _chat_error(
-				'Crédits insuffisants pour générer ce média.',
+				'Jetons insuffisants pour générer ce média.',
 				'insufficient_credits', 402,
 				remaining_balance=account.balance,
 			)
@@ -1059,7 +1057,7 @@ class ImageGenerationView(View):
 			logger.exception('Unexpected media generation failure (user_id=%s)', request.user.pk)
 			account.credit(charge, reason='adjustment', note='Remboursement génération média échouée')
 			return _chat_error(
-				'La génération du média a échoué. Aucun crédit n’a été conservé.',
+				'La génération du média a échoué. Aucun jeton n’a été conservé.',
 				'media_generation_failed', 502,
 				remaining_balance=account.balance,
 			)
@@ -1083,7 +1081,7 @@ class ImageGenerationView(View):
 						note='Remboursement génération au coût réel inaccessible',
 					)
 					return _chat_error(
-						'Le coût réel dépasse le solde disponible. Les crédits réservés ont été remboursés.',
+						'Le coût réel dépasse le solde disponible. Les jetons réservés ont été remboursés.',
 						'insufficient_credits',
 						402,
 					)
@@ -1142,7 +1140,7 @@ class ImageGenerationView(View):
 		except Exception:
 			logger.exception('Could not store generated media (user_id=%s)', request.user.pk)
 			account.credit(charge, reason='adjustment', note='Remboursement stockage média échoué')
-			return _chat_error('Impossible d’enregistrer le média. Les crédits ont été remboursés.', 'media_storage_failed', 500)
+			return _chat_error('Impossible d’enregistrer le média. Les jetons ont été remboursés.', 'media_storage_failed', 500)
 
 		return JsonResponse({
 			'conversation_id': conversation.id if conversation else None,
@@ -1544,7 +1542,7 @@ class PersonaMemorySuggestionView(View):
 		try:
 			account.debit(reserve, reason='usage', note=f'Mémoire persona — {model.model_id}')
 		except InsufficientCreditsError:
-			return _chat_error('Crédits insuffisants pour analyser cette conversation.', 'insufficient_credits', 402)
+			return _chat_error('Jetons insuffisants pour analyser cette conversation.', 'insufficient_credits', 402)
 
 		try:
 			suggestion, input_tokens, output_tokens = call_llm_provider(
@@ -1586,7 +1584,6 @@ def about_page(request):
 	context = {
 		'is_authenticated': request.user.is_authenticated,
 	}
-	context.update(currency_context(request))
 	return render(request, 'about.html', context)
 
 
