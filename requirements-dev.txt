@@ -3,3 +3,5 @@
 ruff==0.17.0
 # Permet au lanceur de tests parallèle (--parallel) de transmettre les erreurs.
 tblib==3.2.2
+# Mesure de couverture : python -m coverage run manage.py test && python -m coverage report
+coverage==7.17.0
