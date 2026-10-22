@@ -9,6 +9,7 @@ from django.utils import timezone
 from chat.capabilities import RULES, normalize_request, request_requirements
 from chat.sources import MAX_SOURCES, safe_source_url
 from .base import BaseHarness, REQUIREMENT_LABELS, successful
+from .documents import FILE_REFERENCE
 
 
 URL_PATTERN = re.compile(r'https?://[^\s<>"\[\]]+', re.IGNORECASE)
@@ -96,7 +97,8 @@ class ResearchHarness(BaseHarness):
         if LOCAL_SEARCH.search(text):
             return False
         return bool(RESEARCH_ACTION.search(text) or (ANALYSIS_ACTION.search(text) and (
-            requested_urls(objective) or WEB_SIGNAL.search(URL_PATTERN.sub('', text)))))
+            # A file name such as « source.docx » is not a request for web sources.
+            requested_urls(objective) or WEB_SIGNAL.search(FILE_REFERENCE.sub('', URL_PATTERN.sub('', text))))))
 
     def category(self, objective):
         return 'research'

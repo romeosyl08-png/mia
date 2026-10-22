@@ -264,6 +264,9 @@ class HarnessSelectionTests(TestCase):
     def test_auto_selection_and_check_detection_are_conservative(self):
         self.assertEqual(select_harness('Ajoute des notifications à mon application Django').id, 'code')
         self.assertEqual(select_harness('Crée bilan.xlsx').id, 'documents')
+        # « source » dans un nom de fichier n'est pas une demande de sources web.
+        self.assertEqual(select_harness('Analyse source.docx').id, 'documents')
+        self.assertEqual(select_harness('Analyse ce sujet avec des sources web').id, 'research')
         self.assertEqual(select_harness('Résume ce texte :\n```python\nprint(1)').id, 'general')
         for command in (['python', 'test_numbers.py'], ['npm', 'run', 'build'], ['node', '--test']):
             self.assertTrue(check_command(command))
