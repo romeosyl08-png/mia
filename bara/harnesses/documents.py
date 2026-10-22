@@ -104,7 +104,7 @@ class DocumentsHarness(BaseHarness):
         state = task.state.setdefault('harness', {'id': self.id})
         if 'plan' not in state:
             _, refs, read_required = requirements(task.objective)
-            candidates = {str(file.pk): file.original_name for file in task.workspace.files.all()
+            candidates = {str(file.pk): file.original_name for file in task.workspace.files.only('pk', 'original_name')
                           if not file.original_name.endswith('/.keep')}
             selected = {}
             if read_required and refs:

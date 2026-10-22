@@ -187,7 +187,7 @@ def delete_file(request, workspace_id, file_id):
 @require_POST
 def delete_workspace(request, workspace_id):
     workspace = get_workspace(request, workspace_id, admin=True)
-    for f in workspace.files.all():
+    for f in workspace.files.only('pk', 'file'):
         f.file.delete(save=False)
     workspace.delete()  # CASCADE supprime aussi WorkMessage, WorkFile (lignes DB), ToolExecution
     return redirect("bara:home")
@@ -493,7 +493,10 @@ def workspace_detail(request, workspace_id, conversation_id=None):
         "conversation": conversation,
         "conversations": workspace.conversations.all(),
         "messages": conversation.messages.all() if conversation else [],
-        "tree": build_tree(list(workspace.files.all())),
+        # Une seule requête : l'artefact est joint, et le texte extrait et l'index
+        # de recherche (souvent volumineux) ne sont pas chargés pour la liste.
+        "tree": build_tree(list(workspace.files.select_related('artifact').defer(
+            'extracted_text', 'retrieval_index', 'artifact__specification'))),
         "builtin_tools": [tool for tool in get_tools() if tool["name"] not in PLUGIN_TOOL_NAMES],
         "disabled_tools": workspace.disabled_tools or [],
         "disabled_execution_tools": (

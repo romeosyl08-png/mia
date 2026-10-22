@@ -159,6 +159,7 @@ class Conversation(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["user", "is_archived", "-updated_at"], name="chat_conv_user_recent")]
 
     def __str__(self):
         return f"{self.title} ({self.user})"
@@ -181,6 +182,7 @@ class Message(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [models.Index(fields=["conversation", "created_at"], name="chat_msg_conv_created")]
 
     def __str__(self):
         return f"{self.role}: {self.content[:40]}"

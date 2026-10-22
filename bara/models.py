@@ -216,6 +216,7 @@ class WorkMessage(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+        indexes = [models.Index(fields=["conversation", "created_at"], name="bara_msg_conv_created")]
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}"
