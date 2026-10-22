@@ -9,6 +9,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
+from ai_2ai.outbound import public_async_transport
+
 
 MAX_TOOL_RESULT_CHARS = 20_000
 MAX_MCP_TOOLS = 50
@@ -47,6 +49,8 @@ def _http_client_factory(headers=None, timeout=None, auth=None):
         auth=auth,
         follow_redirects=False,
         trust_env=False,
+        # Revérifie l'adresse à chaque connexion (protection contre le DNS rebinding).
+        transport=public_async_transport(),
     )
 
 

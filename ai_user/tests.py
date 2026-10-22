@@ -20,6 +20,16 @@ PAYMENT_CUSTOMER = {
 }
 
 
+PAYDUNYA_API_KEYS = {"PAYDUNYA_PRIVATE_KEY": "test_private_key", "PAYDUNYA_TOKEN": "token", "PAYDUNYA_CHECKOUT_URL": ""}
+
+
+def _paydunya_confirmation(data):
+	"""Réponse de l'API de confirmation PayDunya pour une facture."""
+	response = MagicMock()
+	response.json.return_value = {"response_code": "00", **data}
+	return response
+
+
 class RechargeTests(TestCase):
 	def setUp(self):
 		self.user = User.objects.create_user(
@@ -306,7 +316,10 @@ class RechargeTests(TestCase):
 			},
 		}
 
-		with override_settings(PAYDUNYA_MASTER_KEY=master_key):
+		with (
+			override_settings(PAYDUNYA_MASTER_KEY=master_key, **PAYDUNYA_API_KEYS),
+			patch("ai_user.paydunya.requests.get", return_value=_paydunya_confirmation(payload["data"])) as get,
+		):
 			response = self.client.post(
 				"/recharge/paydunya-webhook/",
 				data=payload,
@@ -317,6 +330,8 @@ class RechargeTests(TestCase):
 				data=payload,
 				content_type="application/json",
 			)
+		# Le doublon ne redemande pas confirmation : l'achat est déjà payé.
+		get.assert_called_once()
 
 		purchase.refresh_from_db()
 		self.user.credit_account.refresh_from_db()
@@ -356,6 +371,59 @@ class RechargeTests(TestCase):
 		self.assertEqual(response.status_code, 403)
 		self.assertEqual(self.user.credit_account.balance, starting_balance)
 
+	def test_stripe_webhook_credits_a_paid_session_once_and_ignores_unpaid_sessions(self):
+		from types import SimpleNamespace
+		starting_balance = self.user.credit_account.balance
+
+		def event(session_id, payment_status):
+			session = SimpleNamespace(
+				id=session_id, payment_status=payment_status, amount_total=500,
+				metadata={"user_id": str(self.user.pk), "credits": "5000"},
+			)
+			return {"type": "checkout.session.completed", "data": {"object": session}}
+
+		with override_settings(STRIPE_WEBHOOK_SECRET="whsec_test"):
+			with patch("stripe.Webhook.construct_event", return_value=event("cs_unpaid", "unpaid")):
+				self.client.post("/recharge/webhook/", b"{}", content_type="application/json")
+			with patch("stripe.Webhook.construct_event", return_value=event("cs_paid", "paid")):
+				first = self.client.post("/recharge/webhook/", b"{}", content_type="application/json")
+				retry = self.client.post("/recharge/webhook/", b"{}", content_type="application/json")
+
+		self.user.credit_account.refresh_from_db()
+		self.assertEqual((first.status_code, retry.status_code), (200, 200))
+		self.assertFalse(RechargePurchase.objects.filter(stripe_session_id="cs_unpaid").exists())
+		self.assertEqual(self.user.credit_account.balance, starting_balance + 5000)
+
+	def test_signed_ipn_is_not_credited_when_paydunya_does_not_confirm_the_payment(self):
+		"""Le hash PayDunya est fixe : une IPN forgée avec lui ne doit rien créditer."""
+		starting_balance = self.user.credit_account.balance
+		purchase = RechargePurchase.objects.create(
+			user=self.user,
+			method=RechargePurchase.Method.PAYDUNYA,
+			paydunya_token="pay-token",
+			amount_cents=120_000,
+			credits=20_000,
+		)
+		forged = {
+			"hash": hashlib.sha512(b"master-key").hexdigest(),
+			"status": "completed",
+			"invoice": {"token": "pay-token", "total_amount": "1200"},
+		}
+		with (
+			override_settings(PAYDUNYA_MASTER_KEY="master-key", **PAYDUNYA_API_KEYS),
+			patch("ai_user.paydunya.requests.get",
+				return_value=_paydunya_confirmation({**forged, "status": "pending"})),
+		):
+			response = self.client.post(
+				"/recharge/paydunya-webhook/", {"data": forged}, content_type="application/json",
+			)
+
+		purchase.refresh_from_db()
+		self.user.credit_account.refresh_from_db()
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(purchase.status, RechargePurchase.Status.PENDING)
+		self.assertEqual(self.user.credit_account.balance, starting_balance)
+
 	def test_paydunya_webhook_credits_a_form_encoded_ipn_payload(self):
 		starting_balance = self.user.credit_account.balance
 		RechargePurchase.objects.create(
@@ -367,9 +435,17 @@ class RechargeTests(TestCase):
 		)
 		master_key = "master-key"
 
-		with override_settings(PAYDUNYA_MASTER_KEY=master_key):
+		signed = {
+			"hash": hashlib.sha512(master_key.encode()).hexdigest(),
+			"status": "completed",
+			"invoice": {"token": "pay-token", "total_amount": "1200"},
+		}
+		with (
+			override_settings(PAYDUNYA_MASTER_KEY=master_key, **PAYDUNYA_API_KEYS),
+			patch("ai_user.paydunya.requests.get", return_value=_paydunya_confirmation(signed)),
+		):
 			response = self.client.post("/recharge/paydunya-webhook/", {
-				"data[hash]": hashlib.sha512(master_key.encode()).hexdigest(),
+				"data[hash]": signed["hash"],
 				"data[status]": "completed",
 				"data[invoice][token]": "pay-token",
 				"data[invoice][total_amount]": "1200",
@@ -444,7 +520,8 @@ class PayDunyaConfirmationTests(TestCase):
 		self.assertEqual(self.user.credit_account.transactions.filter(note="PayDunya test_pay-token").count(), 1)
 
 	def test_return_after_ipn_does_not_request_provider_or_credit_again(self):
-		self.client.post("/recharge/paydunya-webhook/", self.payload, content_type="application/json")
+		with patch("ai_user.paydunya.requests.get", return_value=self.provider_response()):
+			self.client.post("/recharge/paydunya-webhook/", self.payload, content_type="application/json")
 		with patch("ai_user.paydunya.requests.get") as get:
 			response = self.client.get("/recharge/success/?token=test_pay-token")
 		self.assertContains(response, "Recharge ajoutée")
@@ -546,7 +623,8 @@ class PayDunyaConfirmationTests(TestCase):
 	def test_webhook_rejects_amount_with_extra_fraction_before_crediting(self):
 		payload = deepcopy(self.payload)
 		payload["invoice"]["total_amount"] = "200.001"
-		response = self.client.post("/recharge/paydunya-webhook/", payload, content_type="application/json")
+		with patch("ai_user.paydunya.requests.get", return_value=self.provider_response(payload)):
+			response = self.client.post("/recharge/paydunya-webhook/", payload, content_type="application/json")
 		self.assertEqual(response.status_code, 400)
 		self.assert_balance(self.starting_balance)
 

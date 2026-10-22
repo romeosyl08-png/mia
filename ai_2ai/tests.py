@@ -140,3 +140,58 @@ class VendoredAssetTests(SimpleTestCase):
         # Un CDN compromis ne doit plus pouvoir retirer DOMPurify.
         rendered = Path(settings.BASE_DIR) / "chat" / "templates" / "includes" / "markdown_scripts.html"
         self.assertNotIn("http", rendered.read_text().replace("http://localhost", ""))
+
+
+class OutboundGuardTests(SimpleTestCase):
+    """Les connexions sortantes vers le réseau interne sont refusées à la connexion."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import http.server
+        import threading
+        cls.server = http.server.HTTPServer(('127.0.0.1', 0), http.server.SimpleHTTPRequestHandler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.url = f'http://127.0.0.1:{cls.server.server_port}/'
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        super().tearDownClass()
+
+    def test_public_ip_classification(self):
+        from ai_2ai.outbound import is_public_ip
+        for address in ('127.0.0.1', '10.0.0.1', '169.254.169.254', '::1', '::ffff:127.0.0.1', '224.0.0.1', 'bad'):
+            self.assertFalse(is_public_ip(address), address)
+        self.assertTrue(is_public_ip('8.8.8.8'))
+
+    def test_sync_session_refuses_a_loopback_connection(self):
+        import requests
+        from ai_2ai.outbound import public_session
+        with self.assertRaises(requests.ConnectionError):
+            public_session().get(self.url, timeout=5)
+
+    def test_fetch_url_does_not_trust_a_dns_answer_that_changes_after_validation(self):
+        from unittest.mock import patch
+        from bara.tools.executor import execute_tool
+        answers = iter([
+            [(2, 1, 6, '', ('8.8.8.8', 80))],                         # contrôle préalable
+            [(2, 1, 6, '', ('127.0.0.1', self.server.server_port))],  # connexion réelle
+        ])
+        with patch('socket.getaddrinfo', side_effect=lambda *args, **kwargs: next(answers)):
+            # Passe par le registre d'outils, comme l'agent.
+            result = execute_tool('fetch_url', None, {'url': 'http://rebind.example/'})
+        self.assertIn('non autorisée', result.get('error', ''))
+
+    def test_async_transport_refuses_a_loopback_connection(self):
+        import asyncio
+        import httpx
+        from ai_2ai.outbound import public_async_transport
+
+        async def fetch():
+            async with httpx.AsyncClient(transport=public_async_transport()) as client:
+                await client.get(self.url)
+
+        with self.assertRaises(httpx.ConnectError):
+            asyncio.run(fetch())

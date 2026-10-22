@@ -42,9 +42,9 @@ from .currency import (
 from .models import GoogleIdentity, RechargePurchase, TelegramIdentity
 from .paydunya import (
     PayDunyaError,
-    apply_invoice as _apply_paydunya_invoice,
     checkout_url as _paydunya_checkout_url,
     confirm_purchase as _confirm_paydunya_purchase,
+    handle_notification as _handle_paydunya_notification,
     headers as _paydunya_headers,
     is_configured as _paydunya_is_configured,
 )
@@ -567,8 +567,12 @@ def stripe_webhook(request):
 	except Exception:
 		return HttpResponse("Signature invalide.", status=400)
 
-	if event["type"] == "checkout.session.completed":
+	if event["type"] in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
 		session = event["data"]["object"]
+		# « completed » signifie seulement que le client a fini le formulaire :
+		# certains moyens de paiement sont encore en attente à ce moment-là.
+		if getattr(session, "payment_status", None) != "paid":
+			return HttpResponse("ok")
 		metadata = session.metadata or {}
 		try:
 			user_id = int(metadata["user_id"])
@@ -576,7 +580,7 @@ def stripe_webhook(request):
 		except (KeyError, TypeError, ValueError):
 			return HttpResponse("Metadonnees invalides.", status=400)
 		with transaction.atomic():
-			purchase, created = RechargePurchase.objects.get_or_create(
+			purchase, _ = RechargePurchase.objects.get_or_create(
 				stripe_session_id=session.id,
 				defaults={
 					"user_id": user_id,
@@ -584,12 +588,14 @@ def stripe_webhook(request):
 					"credits": credits,
 				},
 			)
-			if created or purchase.status != RechargePurchase.Status.PAID:
+			# Verrou : deux livraisons simultanées du même événement ne créditent qu'une fois.
+			purchase = RechargePurchase.objects.select_for_update().get(pk=purchase.pk)
+			if purchase.status != RechargePurchase.Status.PAID:
 				purchase.status = RechargePurchase.Status.PAID
 				purchase.paid_at = timezone.now()
 				purchase.save(update_fields=["status", "paid_at"])
 				account = purchase.user.credit_account
-				account.credit(credits, reason="recharge", note=f"Stripe {session.id}")
+				account.credit(purchase.credits, reason="recharge", note=f"Stripe {session.id}")
 	return HttpResponse("ok")
 
 @csrf_exempt
@@ -607,7 +613,7 @@ def paydunya_webhook(request):
         return HttpResponse("Notification invalide.", status=400)
 
     try:
-        _apply_paydunya_invoice(data)
+        _handle_paydunya_notification(data)
     except PayDunyaError as error:
         return HttpResponse(str(error), status=error.status_code)
     return HttpResponse("ok")

@@ -108,7 +108,7 @@ class SharedConversationParsingTests(SimpleTestCase):
         page = MagicMock(status_code=200, headers={'Content-Type': 'text/html'})
         page.iter_content.return_value = [exported_page([message('user', 'Idée'), message('assistant', 'Réponse lisible')]).encode()]
         with patch('bara.tools.definitions.socket.getaddrinfo', return_value=[(2, 1, 6, '', ('8.8.8.8', 443))]), \
-                patch('bara.tools.definitions.http_requests.get', return_value=page) as network:
+                patch('bara.tools.definitions._public_get', return_value=page) as network:
             result = fetch_url(None, URL + '?ogimg=plain')
         self.assertEqual(result['source_type'], 'chatgpt_shared_conversation')
         self.assertIn('Réponse lisible', result['content'])

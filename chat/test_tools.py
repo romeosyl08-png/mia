@@ -60,7 +60,7 @@ class ChatWorkspaceToolTests(TestCase):
         page.headers = {'Content-Type': 'text/html'}
         page.iter_content.return_value = [b'<html><title>Definition</title><p>Distance divided by time</p></html>']
         address = [(2, 1, 6, '', ('8.8.8.8', 443))]
-        with patch('bara.tools.definitions.http_requests.post', return_value=search_response) as search, patch('bara.tools.definitions.http_requests.get', return_value=page) as fetch, patch('bara.tools.definitions.socket.getaddrinfo', return_value=address):
+        with patch('bara.tools.definitions.http_requests.post', return_value=search_response) as search, patch('bara.tools.definitions._public_get', return_value=page) as fetch, patch('bara.tools.definitions.socket.getaddrinfo', return_value=address):
             response, result, _, provider = self.send([
                 {'tool_calls': [tool_call('web_search', {'query': 'définition vitesse'})]},
                 {'tool_calls': [tool_call('fetch_url', {'url': 'https://example.test/vitesse'})]},

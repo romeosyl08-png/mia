@@ -13,6 +13,7 @@ from .workspace_runtime import materialize_workspace
 from .registry import register_tool
 from django.core.files.base import ContentFile
 import requests as http_requests
+from ai_2ai.outbound import public_session
 from django.conf import settings
 import os
 
@@ -459,6 +460,11 @@ def _validate_url(url):
     return None
 
 
+def _public_get(url, **kwargs):
+    """GET qui revérifie l'adresse connectée : un DNS piégé ne peut pas viser le réseau interne."""
+    return public_session().get(url, **kwargs)
+
+
 @register_tool(
     name="fetch_url",
     description="Télécharge une page web (http/https) et retourne son texte lisible. Utilise web_search pour trouver l'URL si besoin.",
@@ -478,7 +484,7 @@ def fetch_url(workspace, url):
         if error:
             return {"error": error}
         try:
-            response = http_requests.get(
+            response = _public_get(
                 current,
                 headers={"User-Agent": "BaraBot/1.0 (+https://mia-vkl1.onrender.com)"},
                 timeout=10,

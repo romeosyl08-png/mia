@@ -44,8 +44,8 @@ def headers():
     }
 
 
-def apply_invoice(data, *, expected_token=None, user_id=None):
-    """Valide une réponse signée et sérialise les crédits IPN/retour navigateur."""
+def _signed_invoice(data):
+    """Vérifie la signature PayDunya et renvoie (facture, jeton)."""
     if not settings.PAYDUNYA_MASTER_KEY:
         raise PayDunyaError("PayDunya non configure.", 503)
     if not isinstance(data, dict):
@@ -62,6 +62,31 @@ def apply_invoice(data, *, expected_token=None, user_id=None):
     token = invoice.get("token")
     if not isinstance(token, str) or not token:
         raise PayDunyaError("Jeton PayDunya manquant.")
+    return invoice, token
+
+
+def handle_notification(data):
+    """Traite une IPN PayDunya.
+
+    Le « hash » PayDunya est fixe (SHA-512 de la clé maître) : il ne dépend ni
+    de la facture ni du moment, et permettrait de forger un paiement s'il
+    fuitait. Une IPN « completed » ne crédite donc rien par elle-même : elle
+    déclenche une confirmation directe auprès de l'API PayDunya.
+    """
+    _, token = _signed_invoice(data)
+    if str(data.get("status", "")).strip().lower() != "completed":
+        return apply_invoice(data)
+    purchase = RechargePurchase.objects.filter(
+        paydunya_token=token, method=RechargePurchase.Method.PAYDUNYA,
+    ).first()
+    if purchase is None:
+        raise PayDunyaError("Transaction inconnue.", 404)
+    return confirm_purchase(purchase)
+
+
+def apply_invoice(data, *, expected_token=None, user_id=None):
+    """Valide une réponse signée et sérialise les crédits IPN/retour navigateur."""
+    invoice, token = _signed_invoice(data)
     if expected_token is not None and token != expected_token:
         raise PayDunyaError("Jeton PayDunya incoherent.")
 
