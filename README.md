@@ -356,6 +356,26 @@ refreshes Big Persona's appearance and restores startup synchronization.
 `--theme persona|light|dark` also selects the mode. An older or unreachable
 appearance endpoint falls back to light/violet without preventing a session.
 
+### Working like a terminal coding agent
+
+- **Project instructions**: `BARRASSONS.md`, `AGENTS.md` and `CLAUDE.md` at the project
+  root are sent with every request (20 000 characters at most). `/init` asks the agent to
+  analyse the project and write `BARRASSONS.md`.
+- **Tools**: `glob` (files by pattern, newest first), `search_code` (plain text or
+  `regex=true`), `read_file` (large files in chunks with `offset`/`limit`), `edit_file`
+  (unique passage, or `replace_all=true`), `write_file` and `run_command` (timeout up to
+  600 s). Listing and search respect `.gitignore` and skip binary files.
+- **Safety**: an existing file is only modified after it was read in the session, and
+  never if it changed since that read. Paths and symlinks cannot leave the project.
+  Every write or command asks for approval; answer `t` to allow file edits, or that exact
+  command, for the rest of the session. `/permissions` shows them, `/permissions reset`
+  withdraws them.
+- **Input**: `@path/to/file` attaches a file to the request; `!command` runs a shell
+  command yourself (no approval, no model call) and adds its output to the context.
+- **Control**: Ctrl+C interrupts the current answer and returns to the prompt without
+  breaking the conversation. `/compact` replaces the history with a summary.
+  A network or server error no longer ends the session.
+
 The selected model must support OpenAI-compatible function tools. API usage is
 charged to the AI2AI account associated with the key. Anthropic models and streamed
 tool calls are not currently supported by this CLI.

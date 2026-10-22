@@ -88,8 +88,8 @@ class Terminal:
     def setup_input(self):
         if readline is None or not sys.stdin.isatty():
             return
-        commands = ['/help', '/model', '/theme', '/status', '/verbose', '/diff', '/undo', '/verify', '/review',
-                    '/memory', '/remember', '/clear', '/exit']
+        commands = ['/help', '/model', '/theme', '/status', '/init', '/compact', '/verbose', '/diff', '/undo',
+                    '/verify', '/review', '/permissions', '/memory', '/remember', '/clear', '/exit']
         def complete(text, state):
             options = [value for value in commands if value.startswith(text)]
             return options[state] if state < len(options) else None
@@ -168,9 +168,12 @@ class Terminal:
             self.line(line, color)
 
     def tool(self, name, args):
-        title = {'list_files':'Lister les fichiers', 'read_file':'Lire un fichier', 'search_code':'Rechercher',
-                 'write_file':'Créer un fichier', 'edit_file':'Modifier un fichier', 'run_command':'Exécuter une commande'}.get(name, name)
-        target = args.get('path') or args.get('query') or args.get('command') or ''
+        title = {'list_files':'Lister les fichiers', 'glob':'Trouver des fichiers', 'read_file':'Lire un fichier',
+                 'search_code':'Rechercher', 'write_file':'Écrire un fichier', 'edit_file':'Modifier un fichier',
+                 'run_command':'Exécuter une commande'}.get(name, name)
+        target = args.get('pattern') or args.get('path') or args.get('query') or args.get('command') or ''
+        if name == 'read_file' and args.get('offset'):
+            target = f'{target} (ligne {args["offset"]})'
         self.line('\n● ' + title + (' · ' + self.clip(target, self.width - len(title) - 7) if target else ''), 'accent')
 
     def result(self, value, verbose=False):
@@ -192,6 +195,8 @@ class Terminal:
                 text = f'{len(value["files"])} fichier(s)'
             elif 'matches' in value:
                 text = f'{len(value["matches"])} résultat(s)'
+            elif 'content' in value and 'total_lines' in value:
+                text = f'Lignes {value["start_line"]} à {value["end_line"]} sur {value["total_lines"]}'
             elif 'content' in value:
                 text = f'{len(value["content"].splitlines())} ligne(s) lues'
             else:

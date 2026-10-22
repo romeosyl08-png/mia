@@ -1,8 +1,8 @@
 import argparse
-import fnmatch
 import getpass
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -10,49 +10,22 @@ import urllib.request
 from urllib.parse import urlsplit, urlunsplit
 import webbrowser
 from pathlib import Path
-from .project import load_session, save_session, record_edit, preview, undo_last, git, git_context, make_worktree
+from .project import load_session, save_session, undo_last, git, git_context, make_worktree
 from .terminal import terminal
 from .memory import configure_link, link_label, load_link, remember
 from .themes import apply_theme, configure_theme
+from .tools import MAX_FILE_CHARS, SKIP_DIRS, TOOLS, ToolSession, confirm, execute_tool, read_file, resolve as _resolve
+from .tools import run_command
 
 
 DEFAULT_API_BASE = "https://mia-vkl1.onrender.com/v1"
-MAX_TOOL_ITERATIONS = 8
-MAX_FILE_CHARS = 60_000
-SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".next", "dist", "build"}
+MAX_TOOL_ITERATIONS = 25
+MAX_HISTORY_MESSAGES = 41
+INSTRUCTION_FILES = ('BARRASSONS.md', 'AGENTS.md', 'CLAUDE.md')
+MAX_INSTRUCTION_CHARS = 20_000
+MENTION = re.compile(r'(?<![\w`])@([\w./-]+[\w/])')
 
-TOOLS = [
-    {"type": "function", "function": {
-        "name": "list_files", "description": "List files in the current project.",
-        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "additionalProperties": False},
-    }},
-    {"type": "function", "function": {
-        "name": "read_file", "description": "Read a UTF-8 text file from the current project.",
-        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False},
-    }},
-    {"type": "function", "function": {
-        "name": "search_code", "description": "Search text in project files. Supports a glob such as **/*.py.",
-        "parameters": {"type": "object", "properties": {
-            "query": {"type": "string"}, "glob": {"type": "string"},
-        }, "required": ["query"], "additionalProperties": False},
-    }},
-    {"type": "function", "function": {
-        "name": "write_file", "description": "Create or replace a project text file. Ask the user for approval first.",
-        "parameters": {"type": "object", "properties": {
-            "path": {"type": "string"}, "content": {"type": "string"},
-        }, "required": ["path", "content"], "additionalProperties": False},
-    }},
-    {"type": "function", "function": {
-        "name": "edit_file", "description": "Replace an exact text passage in a project file. Ask the user for approval first.",
-        "parameters": {"type": "object", "properties": {
-            "path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"},
-        }, "required": ["path", "old_text", "new_text"], "additionalProperties": False},
-    }},
-    {"type": "function", "function": {
-        "name": "run_command", "description": "Run a shell command in the current project. Always ask the user for approval first.",
-        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"], "additionalProperties": False},
-    }},
-]
+__all__ = ['MAX_FILE_CHARS', 'SKIP_DIRS', 'TOOLS', 'execute_tool', '_resolve']
 
 
 def config_path():
@@ -155,110 +128,8 @@ def api_request(config, path, payload=None, *, timeout=120):
         raise RuntimeError(f"Connexion impossible à {url} : {error}") from error
 
 
-def _resolve(root, relative):
-    candidate = (root / relative).resolve()
-    if candidate != root and root not in candidate.parents:
-        raise ValueError("Chemin hors du dossier de travail refusé.")
-    return candidate
-
-
-def _files(root):
-    for directory, child_dirs, filenames in os.walk(root):
-        child_dirs[:] = [name for name in child_dirs if name not in SKIP_DIRS]
-        for filename in filenames:
-            yield Path(directory) / filename
-
-
 def _confirm(action):
-    terminal.line()
-    terminal.panel('Autorisation', action.splitlines(), wrap=True)
-    return terminal.prompt('Autoriser ? [o/N] ').strip().lower() in {"y", "yes", "o", "oui"}
-
-
-def execute_tool(name, args, root):
-    try:
-        if name == "list_files":
-            base = _resolve(root, args.get("path", "."))
-            if not base.is_dir():
-                return {"error": "Dossier introuvable."}
-            files = [str(path.relative_to(root)) for path in _files(base)][:300]
-            return {"files": files, "truncated": len(files) == 300}
-
-        if name == "read_file":
-            path = _resolve(root, args["path"])
-            if not path.is_file():
-                return {"error": "Fichier introuvable."}
-            content = path.read_text(encoding="utf-8")
-            return {"path": str(path.relative_to(root)), "content": content[:MAX_FILE_CHARS], "truncated": len(content) > MAX_FILE_CHARS}
-
-        if name == "search_code":
-            query = args["query"]
-            pattern = args.get("glob", "**/*")
-            matches = []
-            if not query:
-                return {"error": "La recherche est vide."}
-            for path in _files(root):
-                relative = str(path.relative_to(root))
-                if not (path.match(pattern) or fnmatch.fnmatch(path.name, pattern)):
-                    continue
-                try:
-                    lines = path.read_text(encoding="utf-8").splitlines()
-                except (UnicodeDecodeError, OSError):
-                    continue
-                for number, line in enumerate(lines, 1):
-                    if query.casefold() in line.casefold():
-                        matches.append({"path": relative, "line": number, "text": line[:500]})
-                        if len(matches) >= 50:
-                            return {"matches": matches, "truncated": True}
-            return {"matches": matches, "truncated": False}
-
-        if name == "write_file":
-            path = _resolve(root, args["path"])
-            content = args["content"]
-            if len(content) > 200_000:
-                return {"error": "Contenu trop volumineux (limite 200 ko)."}
-            before = path.read_text(encoding='utf-8') if path.exists() else None
-            terminal.diff(preview(path.relative_to(root), before, content)[:20000])
-            if not _confirm(f"Créer/remplacer {path.relative_to(root)} ({len(content)} caractères)"):
-                return {"status": "refused"}
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            record_edit(root, str(path.relative_to(root)), before, content)
-            return {"status": "written", "path": str(path.relative_to(root))}
-
-        if name == "edit_file":
-            path = _resolve(root, args["path"])
-            old_text, new_text = args["old_text"], args["new_text"]
-            if not old_text:
-                return {"error": "Le texte à remplacer ne peut pas être vide."}
-            content = path.read_text(encoding="utf-8")
-            count = content.count(old_text)
-            if count != 1:
-                return {"error": f"Le passage apparaît {count} fois; il doit apparaître exactement une fois."}
-            after = content.replace(old_text, new_text, 1)
-            terminal.diff(preview(path.relative_to(root), content, after)[:20000])
-            if not _confirm(f"Modifier {path.relative_to(root)} : remplacer un passage de {len(old_text)} caractères"):
-                return {"status": "refused"}
-            path.write_text(after, encoding="utf-8")
-            record_edit(root, str(path.relative_to(root)), content, after)
-            return {"status": "updated", "path": str(path.relative_to(root))}
-
-        if name == "run_command":
-            command = args["command"]
-            if not _confirm(f"Exécuter dans {root}:\n  {command}"):
-                return {"status": "refused"}
-            result = subprocess.run(
-                command, cwd=root, shell=True, text=True, capture_output=True, timeout=120, check=False,
-                env={**os.environ,'PYTHONDONTWRITEBYTECODE':'1'},
-            )
-            return {
-                "exit_code": result.returncode,
-                "stdout": result.stdout[-20_000:],
-                "stderr": result.stderr[-20_000:],
-            }
-        return {"error": f"Outil inconnu: {name}"}
-    except (OSError, UnicodeError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
-        return {"error": str(error)}
+    return confirm(action)
 
 
 def _select_model(config, choose=False, requested=None):
@@ -305,25 +176,223 @@ def _select_model(config, choose=False, requested=None):
             terminal.line('Aucun modèle ne correspond. Essaie un nom ou un numéro.', 'red')
 
 
+SYSTEM_PROMPT = (
+    "Tu es Barrassons, un agent de développement qui travaille dans le dossier local indiqué. "
+    "Inspecte le code avant de proposer des changements : utilise glob et search_code pour trouver les fichiers, "
+    "read_file pour les lire (par morceaux avec offset et limit pour les gros fichiers). "
+    "Lis toujours un fichier avant de le modifier ; préfère edit_file à write_file pour une modification partielle. "
+    "Ne prétends jamais avoir exécuté une action si l'outil ne le confirme pas. "
+    "Les écritures et commandes sont soumises à confirmation par l'utilisateur ; une action refusée ne doit pas être "
+    "relancée telle quelle. Après des modifications, exécute les tests appropriés, observe les résultats et corrige "
+    "les erreurs. Respecte les instructions du projet ci-dessous lorsqu'elles existent. "
+    "Réponds en français sauf demande contraire, de façon concise."
+)
+
+INIT_REQUEST = (
+    "Analyse ce projet (structure, langages, commandes de build, de test et de lint, conventions de code, "
+    "points d'attention) puis crée ou mets à jour le fichier BARRASSONS.md à la racine. Il servira d'instructions "
+    "aux prochaines sessions : reste concis (moins de 150 lignes), factuel et vérifié dans le code."
+)
+
+COMPACT_REQUEST = (
+    "Résume la conversation ci-dessus pour pouvoir la poursuivre sans l'historique : objectif de l'utilisateur, "
+    "décisions prises, fichiers lus ou modifiés, commandes exécutées et leurs résultats, travail restant. "
+    "Sois factuel et complet, sans phrase d'introduction."
+)
+
+
+def project_instructions(root):
+    """Instructions du projet (BARRASSONS.md, AGENTS.md, CLAUDE.md), chargées à chaque demande."""
+    parts, remaining = [], MAX_INSTRUCTION_CHARS
+    for name in INSTRUCTION_FILES:
+        path = root / name
+        try:
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding='utf-8').strip()
+        except (OSError, UnicodeError):
+            continue
+        if text and remaining > 0:
+            parts.append(f'--- {name} ---\n{text[:remaining]}')
+            remaining -= len(text)
+    return '\n\n'.join(parts)
+
+
+def system_message(root, test_command=None):
+    content = SYSTEM_PROMPT + f'\nDossier: {root}\n' + git_context(root)
+    if test_command:
+        content += '\nCommande de tests configurée : ' + test_command
+    instructions = project_instructions(root)
+    if instructions:
+        content += '\n\nInstructions du projet :\n' + instructions
+    return {'role': 'system', 'content': content}
+
+
+def close_pending_tool_calls(messages, reason):
+    """Répond aux appels d'outils restés sans résultat : l'API refuse un historique incomplet."""
+    answered = {m.get('tool_call_id') for m in messages if m.get('role') == 'tool'}
+    for message in list(messages):
+        for call in message.get('tool_calls') or []:
+            if call.get('id') not in answered:
+                messages.append({'role': 'tool', 'tool_call_id': call.get('id', ''), 'content': reason})
+                answered.add(call.get('id'))
+
+
+def expand_mentions(text, root, session):
+    """Joint le contenu des fichiers cités avec @chemin à la demande."""
+    attachments, seen, names = [], set(), []
+    for match in MENTION.finditer(text):
+        relative = match.group(1)
+        if relative in seen:
+            continue
+        seen.add(relative)
+        try:
+            if not _resolve(root, relative).is_file():
+                continue
+        except ValueError:
+            continue
+        result = read_file(root, {'path': relative}, session)
+        if 'error' in result:
+            continue
+        suffix = f' (lignes 1 à {result["end_line"]} sur {result["total_lines"]})' if result['truncated'] else ''
+        names.append(result['path'])
+        attachments.append(f'Contenu de {result["path"]}{suffix} :\n```\n{result["content"]}\n```')
+    if names:
+        terminal.line('  ⎿ Joint : ' + ', '.join(names), 'muted')
+    return text + ('\n\n' + '\n\n'.join(attachments) if attachments else '')
+
+
+def trim_history(messages):
+    """Garde le message système et la fin de la conversation, en commençant par une demande."""
+    if len(messages) <= MAX_HISTORY_MESSAGES:
+        return messages
+    tail = messages[-(MAX_HISTORY_MESSAGES - 1):]
+    while tail and tail[0].get('role') != 'user':
+        tail.pop(0)
+    return messages[:1] + tail if tail else messages
+
+
+class Turn:
+    """Compteurs d'une session : jetons de texte, jetons facturés et solde."""
+
+    def __init__(self, balance=None):
+        self.tokens = self.credits = 0
+        self.balance = balance
+
+    def record(self, response):
+        usage = response.get('usage') or {}
+        self.tokens += int(usage.get('total_tokens') or 0)
+        self.credits += int(usage.get('credits_charged') or 0)
+        if usage.get('remaining_balance') is not None:
+            self.balance = usage['remaining_balance']
+
+
+def compact(config, model, messages, counters):
+    """Remplace l'historique par un résumé produit par le modèle."""
+    with terminal.busy('Résumé de la conversation…'):
+        response = api_request(config, '/chat/completions', {
+            'model': model, 'messages': messages + [{'role': 'user', 'content': COMPACT_REQUEST}],
+            'max_tokens': 2048, 'temperature': 0.2,
+        })
+    counters.record(response)
+    summary = (response['choices'][0]['message'].get('content') or '').strip()
+    if not summary:
+        raise RuntimeError('Le modèle n’a pas produit de résumé ; l’historique est conservé.')
+    return messages[:1] + [{'role': 'user', 'content': 'Résumé de la conversation précédente :\n' + summary},
+                           {'role': 'assistant', 'content': 'Compris, je reprends à partir de ce résumé.'}]
+
+
+def model_turn(config, root, model, messages, session, counters, persist, test_command, verbose):
+    """Boucle modèle → outils jusqu'à une réponse finale."""
+    changed_files = False
+    verification_attempts = 0
+    for _ in range(MAX_TOOL_ITERATIONS):
+        with terminal.busy('Réflexion…'):
+            selection = load_link(root, config)
+            response = api_request(config, "/chat/completions", {
+                "model": model,
+                "messages": messages,
+                "tools": TOOLS,
+                "max_tokens": 4096,
+                "temperature": 0.2,
+                **({'memory': selection} if selection else {}),
+            })
+        counters.record(response)
+        assistant = response["choices"][0]["message"]
+        messages.append(assistant)
+        persist()
+        tool_calls = assistant.get("tool_calls") or []
+        if not tool_calls:
+            if changed_files and test_command and verification_attempts < 2:
+                verification_attempts += 1
+                verification = execute_tool('run_command', {'command': test_command}, root, session)
+                terminal.result(verification, verbose)
+                messages.append({'role': 'user', 'content': 'Résultat réel des tests configurés : '
+                                 + json.dumps(verification, ensure_ascii=False)
+                                 + '. Corrige les erreurs si possible ; indique clairement une vérification refusée ou échouée.'})
+                persist()
+                if verification.get('exit_code') == 0:
+                    changed_files = False
+                elif verification.get('status') != 'refused':
+                    continue
+            terminal.assistant(assistant.get("content") or "(réponse vide)")
+            if changed_files and test_command:
+                terminal.line('La vérification configurée reste non validée. Consulte les résultats ci-dessus.', 'red')
+            return
+        if assistant.get('content'):
+            terminal.assistant(assistant['content'])
+        for call in tool_calls:
+            function = call.get("function") or {}
+            name = function.get("name", "")
+            try:
+                args = json.loads(function.get("arguments") or "{}")
+                if not isinstance(args, dict):
+                    raise ValueError('Un objet JSON est attendu.')
+                terminal.tool(name, args)
+                result = execute_tool(name, args, root, session)
+                if result.get('status') in {'written', 'updated'}:
+                    changed_files = True
+                if name == 'run_command' and args.get('command') == test_command and result.get('exit_code') == 0:
+                    changed_files = False
+            except (TypeError, ValueError) as error:
+                result = {"error": f"Arguments invalides: {error}"}
+            terminal.result(result, verbose)
+            messages.append({
+                "role": "tool", "tool_call_id": call.get("id", ""),
+                "name": name, "content": json.dumps(result, ensure_ascii=False),
+            })
+            persist()
+    terminal.line("Limite d'itérations d'outils atteinte pour cette demande. Écris « continue » pour poursuivre.", 'muted')
+
+
+HELP_ESSENTIALS = ['Écris ta demande en français pour travailler.', '',
+                   '@fichier  Joindre un fichier à la demande', '!commande Lancer une commande shell',
+                   '/model    Changer d’IA', '/undo     Annuler la dernière modification', '/exit     Quitter', '',
+                   '/help tout    Toutes les commandes']
+HELP_ALL = ['/model    Choisir une IA', '/theme    Apparence de Big Persona, thème et couleur',
+            '/status   Voir le serveur et les jetons', '/init     Créer BARRASSONS.md, les instructions du projet',
+            '/compact  Résumer la conversation pour libérer le contexte',
+            '/verbose  Afficher les résultats détaillés des outils', '/diff     Voir les changements Git',
+            '/undo     Annuler la dernière édition', '/verify   Lancer les tests configurés',
+            '/permissions  Voir ou retirer les autorisations de la session',
+            '/memory   Lier la mémoire personnelle ou un projet Bara',
+            '/remember texte  Enregistrer un souvenir partagé après confirmation',
+            '/review   Demander une revue du diff', '/clear    Effacer le contexte', '/exit     Quitter', '',
+            '@chemin : joindre un fichier · !commande : exécuter directement',
+            'Ctrl+C : interrompre la réponse en cours · Tab : compléter · ↑/↓ : historique',
+            '\\ puis Entrée : nouvelle ligne']
+
+
 def run_session(config, root, model, resume=False, test_command=None, balance=None):
-    system = (
-        "Tu es Barrassons, un agent de développement qui travaille dans le dossier local indiqué. "
-        "Inspecte le code avant de proposer des changements. Utilise les outils pour lire, rechercher et modifier les fichiers. "
-        "Ne prétends jamais avoir exécuté une action si l'outil ne le confirme pas. "
-        "Les écritures et commandes sont soumises à confirmation par l'utilisateur. "
-        "Après des modifications, exécute les tests appropriés, observe les résultats et corrige les erreurs. "
-        "Lis AGENTS.md et les instructions du projet lorsqu’ils existent. Réponds en français sauf demande contraire."
-    )
-    messages = [{"role": "system", "content": system + f"\nDossier courant: {root}"}]
+    messages = [system_message(root, test_command)]
     saved = load_session(root)
     if resume and isinstance(saved.get('messages'), list):
         messages = saved['messages']
         # Resolve unfinished calls without executing them again.
-        answered = {m.get('tool_call_id') for m in messages if m.get('role') == 'tool'}
-        for m in list(messages):
-            for call in m.get('tool_calls', []):
-                if call.get('id') not in answered:
-                    messages.append({'role':'tool','tool_call_id':call['id'],'content':'Exécution précédente interrompue. Résultat incertain ; ne pas répéter automatiquement.'})
+        close_pending_tool_calls(messages, 'Exécution précédente interrompue. Résultat incertain ; ne pas répéter automatiquement.')
+    session = ToolSession()
+    counters = Turn(balance)
+
     def persist():
         state = load_session(root)
         state.update(messages=messages, model=model, root=str(root))
@@ -334,14 +403,16 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
         branch = ''
     terminal.setup_input()
     terminal.welcome(root, model, branch, resolve_api_base(config))
+    instructions = [name for name in INSTRUCTION_FILES if (root / name).is_file()]
+    if instructions:
+        terminal.line('Instructions : ' + ', '.join(instructions), 'muted')
     linked_memory = load_link(root, config)
     if linked_memory:
         terminal.line('Mémoire : ' + link_label(linked_memory), 'muted')
-    tokens = credits = 0
     verbose = False
     while True:
         try:
-            terminal.status(model, tokens, credits, balance)
+            terminal.status(model, counters.tokens, counters.credits, counters.balance)
             text = terminal.request()
         except (EOFError, KeyboardInterrupt):
             terminal.line("\nÀ bientôt.", 'muted')
@@ -352,24 +423,15 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             return
         if text == "/clear":
             messages = messages[:1]
+            session.read_hashes.clear()
             persist()
             terminal.line("Contexte effacé.", 'muted')
             continue
         if text == '/help':
-            terminal.panel('L’essentiel', ['Écris ta demande en français pour travailler.', '',
-                '/model    Changer d’IA', '/theme    Changer l’apparence',
-                '/undo     Annuler la dernière modification', '/exit     Quitter', '',
-                '/help tout    Toutes les commandes'], wrap=True)
+            terminal.panel('L’essentiel', HELP_ESSENTIALS, wrap=True)
             continue
         if text in {'/help tout', '/help all'}:
-            terminal.panel('Toutes les commandes', ['/model    Choisir une IA', '/theme    Apparence de Big Persona, thème et couleur',
-                '/status   Voir le serveur et les jetons',
-                '/verbose  Afficher les résultats détaillés des outils', '/diff     Voir les changements Git',
-                '/undo     Annuler la dernière édition', '/verify   Lancer les tests configurés',
-                '/memory   Lier la mémoire personnelle ou un projet Bara',
-                '/remember texte  Enregistrer un souvenir partagé après confirmation',
-                '/review   Demander une revue du diff', '/clear    Effacer le contexte', '/exit     Quitter', '',
-                'Tab : compléter · ↑/↓ : historique · \\ puis Entrée : nouvelle ligne'], wrap=True)
+            terminal.panel('Toutes les commandes', HELP_ALL, wrap=True)
             continue
         if text == '/theme' or text.startswith('/theme '):
             try:
@@ -393,6 +455,16 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
             verbose = not verbose
             terminal.line('Affichage détaillé activé.' if verbose else 'Affichage compact activé.', 'muted')
             continue
+        if text == '/permissions' or text == '/permissions reset':
+            if text.endswith('reset'):
+                session.allow_edits = False
+                session.allowed_commands.clear()
+                terminal.line('Autorisations de la session retirées.', 'green')
+            else:
+                rows = ['Fichiers : ' + ('modifications autorisées' if session.allow_edits else 'confirmation demandée')]
+                rows += ['Commande autorisée : ' + command for command in sorted(session.allowed_commands)]
+                terminal.panel('Autorisations de la session', rows + ['', '/permissions reset pour tout retirer'], wrap=True)
+            continue
         if text == '/model':
             model = _select_model({**config, 'model': model}, choose=True)
             config['model'] = model
@@ -402,9 +474,10 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
         if text == '/status':
             try:
                 with terminal.busy('Actualisation des jetons…'):
-                    balance = api_request(config, '/balance').get('credits')
+                    counters.balance = api_request(config, '/balance').get('credits')
                 terminal.panel('Session', [f'Modèle : {model}', f'Projet : {root}',
                     f'Branche : {branch or "sans dépôt"}', f'Serveur : {resolve_api_base(config)}',
+                    f'Messages en contexte : {len(messages)}',
                     'Mémoire : ' + link_label(load_link(root, config))])
             except RuntimeError as error:
                 terminal.line(str(error), 'red')
@@ -416,97 +489,83 @@ def run_session(config, root, model, resume=False, test_command=None, balance=No
                 terminal.line(str(error), 'red')
             continue
         if text == '/undo':
-            terminal.result(undo_last(root, _confirm), verbose)
+            result = undo_last(root, _confirm)
+            # Le fichier a changé : il faudra le relire avant toute nouvelle modification.
+            if result.get('path'):
+                session.read_hashes.pop(str(_resolve(root, result['path'])), None)
+            terminal.result(result, verbose)
+            continue
+        if text == '/compact':
+            if len(messages) < 3:
+                terminal.line('Rien à résumer pour l’instant.', 'muted')
+                continue
+            try:
+                close_pending_tool_calls(messages, 'Résultat indisponible.')
+                messages = compact(config, model, messages, counters)
+                session.read_hashes.clear()
+                persist()
+                terminal.line('Conversation résumée. Les fichiers devront être relus avant modification.', 'green')
+            except (RuntimeError, KeyError, IndexError) as error:
+                terminal.line(str(error), 'red')
+            except KeyboardInterrupt:
+                terminal.line('\nRésumé interrompu ; l’historique est conservé.', 'muted')
             continue
         if text == '/verify':
             if not test_command:
                 terminal.line('Configure --test-command, par exemple "python -m pytest".', 'muted')
             else:
-                result = execute_tool('run_command', {'command':test_command}, root)
+                result = execute_tool('run_command', {'command': test_command}, root, session)
                 terminal.result(result, verbose)
-                messages.append({'role':'user','content':'Résultat réel de la vérification : ' + json.dumps(result, ensure_ascii=False)})
+                messages.append({'role': 'user', 'content': 'Résultat réel de la vérification : ' + json.dumps(result, ensure_ascii=False)})
                 persist()
+            continue
+        if text.startswith('!'):
+            command = text[1:].strip()
+            if not command:
+                terminal.line('Écris une commande après « ! », par exemple !git status.', 'muted')
+                continue
+            # La commande est tapée par l'utilisateur lui-même : pas de confirmation.
+            terminal.tool('run_command', {'command': command})
+            try:
+                result = run_command(root, {'command': command}, approved=True)
+            except KeyboardInterrupt:
+                result = {'error': 'Commande interrompue.'}
+            terminal.result(result, verbose)
+            messages.append({'role': 'user', 'content': f'J’ai exécuté moi-même la commande `{command}`. Résultat : '
+                             + json.dumps(result, ensure_ascii=False)})
+            messages.append({'role': 'assistant', 'content': 'Résultat noté.'})
+            persist()
             continue
         if text == '/review':
             try:
-                text = 'Revois ce diff : cherche les bugs et régressions, puis indique les vérifications nécessaires.\n' + git(root,'diff','HEAD')[:60000]
+                text = 'Revois ce diff : cherche les bugs et régressions, puis indique les vérifications nécessaires.\n' + git(root, 'diff', 'HEAD')[:60000]
             except ValueError as error:
                 terminal.line(str(error), 'red')
                 continue
+        elif text == '/init':
+            text = INIT_REQUEST
         elif text.startswith('/'):
             terminal.line('Commande inconnue. /help affiche les commandes.', 'muted')
             continue
-        messages[0] = {'role':'system','content':system + f'\nDossier: {root}\n' + git_context(root) + ('\nCommande de tests configurée : '+test_command if test_command else '')}
+        else:
+            text = expand_mentions(text, root, session)
+        messages[0] = system_message(root, test_command)
         messages.append({"role": "user", "content": text})
         persist()
-        changed_files = False
-        verification_attempts = 0
-        for _ in range(MAX_TOOL_ITERATIONS):
-            with terminal.busy('Réflexion…'):
-                selection = load_link(root, config)
-                response = api_request(config, "/chat/completions", {
-                    "model": model,
-                    "messages": messages,
-                    "tools": TOOLS,
-                    "max_tokens": 2048,
-                    "temperature": 0.2,
-                    **({'memory': selection} if selection else {}),
-                })
-            usage = response.get('usage') or {}
-            tokens += int(usage.get('total_tokens') or 0)
-            credits += int(usage.get('credits_charged') or 0)
-            if usage.get('remaining_balance') is not None:
-                balance = usage['remaining_balance']
-            choice = response["choices"][0]
-            assistant = choice["message"]
-            messages.append(assistant)
+        try:
+            model_turn(config, root, model, messages, session, counters, persist, test_command, verbose)
+        except KeyboardInterrupt:
+            close_pending_tool_calls(messages, 'Interrompu par l’utilisateur avant la fin de cet outil.')
+            messages.append({'role': 'user', 'content': 'J’ai interrompu ta réponse. Attends ma prochaine demande.'})
+            messages.append({'role': 'assistant', 'content': 'D’accord, j’attends ta prochaine demande.'})
             persist()
-            tool_calls = assistant.get("tool_calls") or []
-            if not tool_calls:
-                if changed_files and test_command and verification_attempts < 2:
-                    verification_attempts += 1
-                    verification = execute_tool('run_command',{'command':test_command},root)
-                    terminal.result(verification, verbose)
-                    messages.append({'role':'user','content':'Résultat réel des tests configurés : '+json.dumps(verification,ensure_ascii=False)+'. Corrige les erreurs si possible ; indique clairement une vérification refusée ou échouée.'})
-                    persist()
-                    if verification.get('exit_code') == 0:
-                        changed_files = False
-                    elif verification.get('status') != 'refused':
-                        continue
-                answer = assistant.get("content") or "(réponse vide)"
-                terminal.assistant(answer)
-                if changed_files and test_command:
-                    terminal.line('La vérification configurée reste non validée. Consulte les résultats ci-dessus.', 'red')
-                break
-            for call in tool_calls:
-                function = call.get("function") or {}
-                name = function.get("name", "")
-                try:
-                    args = json.loads(function.get("arguments") or "{}")
-                    if not isinstance(args, dict):
-                        raise ValueError('Un objet JSON est attendu.')
-                    terminal.tool(name, args)
-                    result = execute_tool(name, args, root)
-                    if result.get('status') in {'written','updated'}:
-                        changed_files = True
-                    if name == 'run_command' and args.get('command') == test_command and result.get('exit_code') == 0:
-                        changed_files = False
-                except (TypeError, ValueError) as error:
-                    result = {"error": f"Arguments invalides: {error}"}
-                terminal.result(result, verbose)
-                messages.append({
-                    "role": "tool", "tool_call_id": call.get("id", ""),
-                    "name": name, "content": json.dumps(result, ensure_ascii=False),
-                })
-                persist()
-        else:
-            terminal.line("Limite d'itérations d'outils atteinte pour cette demande.", 'muted')
-        if len(messages) > 41:
-            tail = messages[-40:]
-            while tail and tail[0].get("role") != "user":
-                tail.pop(0)
-            if tail:
-                messages = messages[:1] + tail
+            terminal.line('\nInterrompu. Tu peux écrire une nouvelle demande.', 'muted')
+        except (RuntimeError, KeyError, IndexError, TypeError) as error:
+            # Erreur réseau, serveur ou réponse mal formée : la session continue, l'historique reste valide.
+            close_pending_tool_calls(messages, 'Résultat indisponible.')
+            persist()
+            terminal.line(str(error) if isinstance(error, RuntimeError) else 'Réponse inattendue du serveur.', 'red')
+        messages = trim_history(messages)
 
 
 def main():
